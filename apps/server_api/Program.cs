@@ -5,6 +5,7 @@ using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.Security;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,6 +62,11 @@ builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AccountingService>();
 builder.Services.AddProblemDetails();
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(
+        new JsonStringEnumConverter());
+});
 
 var app = builder.Build();
 
