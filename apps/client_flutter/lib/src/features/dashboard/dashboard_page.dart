@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../../core/database/local_database.dart';
+
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
     super.key,
     required this.displayName,
     required this.role,
+    required this.companyId,
+    required this.localDatabase,
+    required this.accountsSynced,
   });
 
   final String displayName;
   final String role;
+  final String companyId;
+  final LocalDatabase localDatabase;
+  final bool accountsSynced;
 
   static const _items = <_NavItem>[
     _NavItem('داشبورد', Icons.dashboard_outlined),
@@ -57,7 +65,12 @@ class DashboardPage extends StatelessWidget {
                 ),
               ),
             Expanded(
-              child: _DashboardBody(displayName: displayName),
+              child: _DashboardBody(
+                displayName: displayName,
+                companyId: companyId,
+                localDatabase: localDatabase,
+                accountsSynced: accountsSynced,
+              ),
             ),
           ],
         ),
@@ -107,9 +120,27 @@ class _Navigation extends StatelessWidget {
 }
 
 class _DashboardBody extends StatelessWidget {
-  const _DashboardBody({required this.displayName});
+  const _DashboardBody({
+    required this.displayName,
+    required this.companyId,
+    required this.localDatabase,
+    required this.accountsSynced,
+  });
 
   final String displayName;
+  final String companyId;
+  final LocalDatabase localDatabase;
+  final bool accountsSynced;
+
+  Future<_LocalStatus> _loadLocalStatus() async {
+    return _LocalStatus(
+      cachedAccounts:
+          await localDatabase.cachedAccountCount(companyId),
+      pendingChanges:
+          await localDatabase.pendingOutboxCount(),
+      databasePath: localDatabase.databasePath ?? 'unknown',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,26 +167,89 @@ class _DashboardBody extends StatelessWidget {
                   ],
                 ),
               ),
-              const Chip(
-                avatar: Icon(Icons.cloud_done_outlined, size: 18),
-                label: Text('Online'),
+              Chip(
+                avatar: Icon(
+                  accountsSynced
+                      ? Icons.cloud_done_outlined
+                      : Icons.cloud_off_outlined,
+                  size: 18,
+                ),
+                label: Text(
+                  accountsSynced
+                      ? 'Online + Local Cache'
+                      : 'Local Cache',
+                ),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          const Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: [
-              _MetricCard('فروش امروز', '—', Icons.trending_up),
-              _MetricCard('دریافتنی‌ها', '—', Icons.payments_outlined),
-              _MetricCard('موجودی انبار', '—', Icons.inventory_outlined),
-              _MetricCard(
-                'مانده نقد',
-                '—',
-                Icons.account_balance_wallet_outlined,
-              ),
-            ],
+          FutureBuilder<_LocalStatus>(
+            future: _loadLocalStatus(),
+            builder: (context, snapshot) {
+              final status = snapshot.data;
+
+              return Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  const _MetricCard(
+                    'فروش امروز',
+                    '—',
+                    Icons.trending_up,
+                  ),
+                  const _MetricCard(
+                    'دریافتنی‌ها',
+                    '—',
+                    Icons.payments_outlined,
+                  ),
+                  _MetricCard(
+                    'حساب‌های کش‌شده',
+                    status?.cachedAccounts.toString() ?? '…',
+                    Icons.storage_outlined,
+                  ),
+                  _MetricCard(
+                    'تغییرات منتظر Sync',
+                    status?.pendingChanges.toString() ?? '…',
+                    Icons.sync_outlined,
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+          FutureBuilder<_LocalStatus>(
+            future: _loadLocalStatus(),
+            builder: (context, snapshot) {
+              final path = snapshot.data?.databasePath ?? 'در حال بارگذاری...';
+
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Offline-First Storage',
+                        style:
+                            Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'SQLite محلی روی همین دستگاه فعال است.',
+                      ),
+                      const SizedBox(height: 8),
+                      SelectableText(
+                        path,
+                        textDirection: TextDirection.ltr,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 24),
           Card(
@@ -176,9 +270,11 @@ class _DashboardBody extends StatelessWidget {
                   const _StatusRow('Company / User / Device models', true),
                   const _StatusRow('کدینگ اولیه حساب‌ها', true),
                   const _StatusRow('اعتبارسنجی سند دوطرفه', true),
-                  const _StatusRow('PostgreSQL + SQLite persistence', false),
+                  const _StatusRow('Server persistence', true),
+                  const _StatusRow('Client SQLite / Offline cache', true),
+                  const _StatusRow('Outbox foundation', true),
                   const _StatusRow('TOTP / QR Pairing', false),
-                  const _StatusRow('Sync Engine', false),
+                  const _StatusRow('Full Sync Engine', false),
                 ],
               ),
             ),
@@ -187,6 +283,18 @@ class _DashboardBody extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LocalStatus {
+  const _LocalStatus({
+    required this.cachedAccounts,
+    required this.pendingChanges,
+    required this.databasePath,
+  });
+
+  final int cachedAccounts;
+  final int pendingChanges;
+  final String databasePath;
 }
 
 class _MetricCard extends StatelessWidget {
@@ -234,7 +342,9 @@ class _StatusRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(done ? Icons.check_circle : Icons.radio_button_unchecked),
+      leading: Icon(
+        done ? Icons.check_circle : Icons.radio_button_unchecked,
+      ),
       title: Text(label),
     );
   }
