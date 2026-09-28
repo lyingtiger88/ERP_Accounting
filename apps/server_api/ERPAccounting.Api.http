@@ -1,0 +1,31 @@
+@host = http://localhost:5000
+
+### Health
+GET {{host}}/health
+
+### Create the first company + owner
+POST {{host}}/api/auth/bootstrap
+Content-Type: application/json
+
+{
+  "companyName": "Demo Company",
+  "username": "owner",
+  "displayName": "Demo Owner",
+  "password": "ChangeMe-12345"
+}
+
+### Login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "owner",
+  "password": "ChangeMe-12345",
+  "deviceName": "Development PC",
+  "platform": "Windows"
+}
+
+### Current user
+# Replace TOKEN with accessToken returned by /login
+GET {{host}}/api/me
+Authorization: Bearer TOKEN
