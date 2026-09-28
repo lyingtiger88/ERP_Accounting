@@ -4,20 +4,54 @@
 
 ### Windows development machine
 - Windows 10 or 11
-- Flutter stable (current project baseline: Flutter 3.47+)
+- Flutter stable
 - Android Studio / Android SDK for Android builds
 - Visual Studio with Desktop development with C++ for Flutter Windows builds
 - .NET SDK 10
+- PostgreSQL 18, either through Docker Desktop or a local installation
 
 ## First setup
 
-From PowerShell at repository root:
+From the repository root:
 
 ```powershell
-./scripts/bootstrap.ps1
+Start_ERP_Dev.bat
 ```
 
-The script generates Flutter's standard `windows/` and `android/` runners if they are not present, then restores Flutter and .NET dependencies.
+If Flutter or .NET 10 are missing, use:
+
+```text
+Install_Flutter_Windows.bat
+Install_DotNet10_Windows.bat
+```
+
+## Start PostgreSQL
+
+Recommended development path:
+
+```text
+Start_Postgres_Dev.bat
+```
+
+This uses `compose.yaml` and starts a PostgreSQL container with the development database.
+
+Expected development connection:
+
+```text
+Host: 127.0.0.1
+Port: 5432
+Database: erp_accounting
+Username: erp
+Password: erp_dev_password
+```
+
+The password above is intentionally development-only. Production secrets must never be committed.
+
+If Docker is not installed, a native PostgreSQL installation can be used with the same connection values, or override the connection using:
+
+```powershell
+$env:ConnectionStrings__Postgres="Host=...;Port=5432;Database=...;Username=...;Password=..."
+```
 
 ## Run API
 
@@ -26,9 +60,9 @@ cd apps/server_api
 dotnet run
 ```
 
-Use `ERPAccounting.Api.http` for Phase 1 smoke requests.
+On startup, the development API currently calls EF Core `EnsureCreated` to create the initial schema if the database is empty.
 
-> Phase 1 currently uses development-only in-memory persistence. Restarting the API clears users, companies, devices and sessions.
+Use `ERPAccounting.Api.http` for smoke requests.
 
 ## Run Windows client
 
@@ -49,19 +83,18 @@ flutter run -d android
 ## Current implementation boundary
 
 Implemented:
-- Responsive Flutter login shell
-- Responsive ERP dashboard shell
-- Company/User/TrustedDevice domain models
-- First-company bootstrap endpoint
-- Password hashing
-- Login and temporary bearer session
-- Pending trusted-device registration
+- Responsive Windows/Android Flutter shell
+- API-backed company bootstrap and login
+- PostgreSQL persistence through EF Core
+- Persistent Company/User/TrustedDevice records
+- Persistent chart of accounts and journal entries
+- General ledger and trial balance
+- Development bearer sessions
 
 Next:
-1. PostgreSQL persistence
-2. SQLite client persistence
-3. API client wiring from Flutter login
-4. JWT/refresh-token session model
-5. TOTP MFA and recovery codes
-6. QR device pairing
-7. Sync change journal
+1. EF Core migrations replacing `EnsureCreated`
+2. SQLite local client database
+3. Refresh-token persistence
+4. TOTP MFA and recovery codes
+5. QR device pairing
+6. Sync change journal
