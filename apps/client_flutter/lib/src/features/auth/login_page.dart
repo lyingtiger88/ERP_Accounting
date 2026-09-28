@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_client.dart';
 import '../dashboard/dashboard_page.dart';
+import 'bootstrap_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -12,7 +16,11 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _apiClient = ApiClient();
+
   bool _obscurePassword = true;
+  bool _busy = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -21,10 +29,57 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  void _continueDemo() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => const DashboardPage(),
+  Future<void> _login() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      final result = await _apiClient.login(
+        username: _username.text,
+        password: _password.text,
+        deviceName: Platform.isAndroid ? 'Android Device' : 'Windows PC',
+      );
+
+      if (!mounted) return;
+
+      if (result.mfaRequired) {
+        setState(() {
+          _error = 'این حساب نیاز به مرحله دوم احراز هویت دارد؛ صفحه MFA در گام بعدی فعال می‌شود.';
+        });
+        return;
+      }
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => DashboardPage(
+            displayName: result.displayName,
+            role: result.role,
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _openBootstrap() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => BootstrapPage(apiClient: _apiClient),
+      ),
+    );
+
+    if (!mounted || created != true) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('شرکت ایجاد شد. حالا با حساب مدیر وارد شوید.'),
       ),
     );
   }
@@ -47,7 +102,7 @@ class _LoginPageState extends State<LoginPage> {
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.all(40),
-                        child: _BrandPanel(),
+                        child: const _BrandPanel(),
                       ),
                     ),
                   Expanded(
@@ -64,19 +119,25 @@ class _LoginPageState extends State<LoginPage> {
                                 Text(
                                   'ورود به حساب',
                                   textAlign: TextAlign.right,
-                                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium
+                                      ?.copyWith(
                                         fontWeight: FontWeight.w700,
                                       ),
                                 ),
                                 const SizedBox(height: 8),
-                                const Text(
-                                  'نسخه اولیه ERP Accounting',
+                                Text(
+                                  'API: ' + _apiClient.baseUrl,
                                   textAlign: TextAlign.right,
+                                  style: Theme.of(context).textTheme.bodySmall,
                                 ),
                                 const SizedBox(height: 28),
                                 TextField(
                                   controller: _username,
+                                  enabled: !_busy,
                                   textDirection: TextDirection.ltr,
+                                  onSubmitted: (_) => _login(),
                                   decoration: const InputDecoration(
                                     labelText: 'نام کاربری',
                                     prefixIcon: Icon(Icons.person_outline),
@@ -85,15 +146,20 @@ class _LoginPageState extends State<LoginPage> {
                                 const SizedBox(height: 16),
                                 TextField(
                                   controller: _password,
+                                  enabled: !_busy,
                                   obscureText: _obscurePassword,
                                   textDirection: TextDirection.ltr,
+                                  onSubmitted: (_) => _login(),
                                   decoration: InputDecoration(
                                     labelText: 'رمز عبور',
                                     prefixIcon: const Icon(Icons.lock_outline),
                                     suffixIcon: IconButton(
-                                      onPressed: () => setState(
-                                        () => _obscurePassword = !_obscurePassword,
-                                      ),
+                                      onPressed: _busy
+                                          ? null
+                                          : () => setState(
+                                                () => _obscurePassword =
+                                                    !_obscurePassword,
+                                              ),
                                       icon: Icon(
                                         _obscurePassword
                                             ? Icons.visibility_outlined
@@ -102,30 +168,62 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                                   ),
                                 ),
+                                if (_error != null) ...[
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    _error!,
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .error,
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 20),
                                 FilledButton.icon(
-                                  onPressed: _continueDemo,
-                                  icon: const Icon(Icons.login),
+                                  onPressed: _busy ? null : _login,
+                                  icon: _busy
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.login),
                                   label: const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 13),
+                                    padding:
+                                        EdgeInsets.symmetric(vertical: 13),
                                     child: Text('ورود'),
                                   ),
                                 ),
                                 const SizedBox(height: 12),
                                 OutlinedButton.icon(
-                                  onPressed: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('QR Pairing در مرحله امنیت فعال خواهد شد.'),
-                                      ),
-                                    );
-                                  },
+                                  onPressed: _busy
+                                      ? null
+                                      : () {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'QR Pairing در مرحله امنیت فعال خواهد شد.',
+                                              ),
+                                            ),
+                                          );
+                                        },
                                   icon: const Icon(Icons.qr_code_scanner),
                                   label: const Text('اتصال اختیاری با QR'),
                                 ),
-                                const SizedBox(height: 18),
+                                const SizedBox(height: 10),
+                                TextButton(
+                                  onPressed: _busy ? null : _openBootstrap,
+                                  child:
+                                      const Text('راه‌اندازی اولین شرکت'),
+                                ),
+                                const SizedBox(height: 10),
                                 const Text(
-                                  '2FA / MFA و دستگاه‌های مورد اعتماد در Phase 1 Security فعال می‌شوند.',
+                                  '2FA / MFA و Trusted Devices در ادامه Phase 1 تکمیل می‌شوند.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(fontSize: 12),
                                 ),
@@ -147,6 +245,8 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 class _BrandPanel extends StatelessWidget {
+  const _BrandPanel();
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
