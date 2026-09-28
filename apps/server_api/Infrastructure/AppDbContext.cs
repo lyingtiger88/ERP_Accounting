@@ -1,0 +1,117 @@
+using ERPAccounting.Api.Domain;
+using Microsoft.EntityFrameworkCore;
+
+namespace ERPAccounting.Api.Infrastructure;
+
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options)
+{
+    public DbSet<Company> Companies => Set<Company>();
+    public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<TrustedDevice> Devices => Set<TrustedDevice>();
+    public DbSet<LedgerAccount> Accounts => Set<LedgerAccount>();
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<JournalLine> JournalLines => Set<JournalLine>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Company>(entity =>
+        {
+            entity.ToTable("companies");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.LegalName).HasMaxLength(250);
+            entity.Property(x => x.TaxId).HasMaxLength(80);
+        });
+
+        modelBuilder.Entity<AppUser>(entity =>
+        {
+            entity.ToTable("users");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Username).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.PasswordHash).IsRequired();
+            entity.Property(x => x.Role).HasConversion<string>().HasMaxLength(40);
+            entity.HasIndex(x => x.Username).IsUnique();
+            entity.HasIndex(x => x.CompanyId);
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TrustedDevice>(entity =>
+        {
+            entity.ToTable("trusted_devices");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DeviceName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Platform).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.PublicKeyFingerprint).HasMaxLength(256);
+            entity.Property(x => x.TrustState).HasConversion<string>().HasMaxLength(30);
+            entity.HasIndex(x => new { x.UserId, x.TrustState });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LedgerAccount>(entity =>
+        {
+            entity.ToTable("ledger_accounts");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(30);
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<JournalEntry>(entity =>
+        {
+            entity.ToTable("journal_entries");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Number).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
+            entity.HasIndex(x => new { x.CompanyId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.DocumentDate });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines)
+                .WithOne()
+                .HasForeignKey(x => x.JournalEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<JournalLine>(entity =>
+        {
+            entity.ToTable("journal_lines");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.Property(x => x.Debit).HasPrecision(20, 4);
+            entity.Property(x => x.Credit).HasPrecision(20, 4);
+            entity.HasIndex(x => x.AccountId);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.AccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+}
