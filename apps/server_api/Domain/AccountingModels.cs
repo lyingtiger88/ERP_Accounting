@@ -18,35 +18,36 @@ public enum JournalStatus
 
 public sealed class LedgerAccount
 {
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public required Guid CompanyId { get; init; }
-    public required string Code { get; init; }
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string Code { get; set; }
     public required string Name { get; set; }
-    public required AccountType Type { get; init; }
-    public Guid? ParentId { get; init; }
+    public required AccountType Type { get; set; }
+    public Guid? ParentId { get; set; }
     public bool IsActive { get; set; } = true;
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class JournalEntry
 {
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public required Guid CompanyId { get; init; }
-    public required string Number { get; init; }
-    public required DateOnly DocumentDate { get; init; }
-    public string? Description { get; init; }
-    public required IReadOnlyList<JournalLine> Lines { get; init; }
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string Number { get; set; }
+    public required DateOnly DocumentDate { get; set; }
+    public string? Description { get; set; }
+    public List<JournalLine> Lines { get; set; } = [];
     public JournalStatus Status { get; set; } = JournalStatus.Posted;
-    public required Guid CreatedByUserId { get; init; }
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    public required Guid CreatedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? PostedAt { get; set; }
 }
 
 public sealed class JournalLine
 {
-    public Guid Id { get; init; } = Guid.NewGuid();
-    public required Guid AccountId { get; init; }
-    public string? Description { get; init; }
-    public decimal Debit { get; init; }
-    public decimal Credit { get; init; }
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid JournalEntryId { get; set; }
+    public required Guid AccountId { get; set; }
+    public string? Description { get; set; }
+    public decimal Debit { get; set; }
+    public decimal Credit { get; set; }
 }
