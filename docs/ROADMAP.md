@@ -10,7 +10,7 @@
 - [x] Create Flutter client workspace
 - [x] Create ASP.NET Core server workspace
 - [x] Establish CI
-- [ ] Define database migration strategy
+- [x] Define multi-provider database migration strategy
 
 ## Phase 1 — Identity, Company & Accounting Foundation
 - [x] Company / organization bootstrap
@@ -28,11 +28,12 @@
 - [x] Trial balance (initial)
 - [ ] Audit log
 - [x] PostgreSQL persistence
-- [ ] SQLite client persistence
+- [x] Initial SQLite client persistence layer
 
 ## Phase 2 — Sync
 - [ ] Device identity
-- [ ] Change journal
+- [x] Outbox/change-journal schema foundation
+- [ ] Change journal processing
 - [ ] Delta upload/download
 - [ ] Conflict policies
 - [ ] Online API synchronization
