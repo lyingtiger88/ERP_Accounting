@@ -12,4 +12,6 @@ public sealed class InMemoryStore
     public Dictionary<Guid, Company> Companies { get; } = new();
     public Dictionary<Guid, AppUser> Users { get; } = new();
     public Dictionary<Guid, TrustedDevice> Devices { get; } = new();
+    public Dictionary<Guid, LedgerAccount> Accounts { get; } = new();
+    public Dictionary<Guid, JournalEntry> JournalEntries { get; } = new();
 }
