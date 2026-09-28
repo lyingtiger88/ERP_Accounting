@@ -7,46 +7,68 @@ $root = Split-Path -Parent $PSScriptRoot
 
 Write-Host "== ERP Accounting developer bootstrap ==" -ForegroundColor Cyan
 
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+function Get-DotNetSdks {
+    param([string]$DotNetExe)
+    if (-not (Test-Path $DotNetExe)) { return @() }
+    try { return @(& $DotNetExe --list-sdks 2>$null) }
+    catch { return @() }
+}
+
+$localDotnetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\dotnet"
+$localDotnetExe = Join-Path $localDotnetRoot "dotnet.exe"
+$dotnetExe = $null
+$dotnetSdks = @()
+
+if (Test-Path $localDotnetExe) {
+    $localSdks = Get-DotNetSdks -DotNetExe $localDotnetExe
+    if ($localSdks | Where-Object { $_ -match '^10\.' }) {
+        $dotnetExe = $localDotnetExe
+        $dotnetSdks = $localSdks
+        $env:DOTNET_ROOT = $localDotnetRoot
+        $env:Path = "$localDotnetRoot;$env:Path"
+    }
+}
+
+if (-not $dotnetExe) {
+    $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($dotnetCommand) {
+        $candidateSdks = Get-DotNetSdks -DotNetExe $dotnetCommand.Source
+        if ($candidateSdks | Where-Object { $_ -match '^10\.' }) {
+            $dotnetExe = $dotnetCommand.Source
+            $dotnetSdks = $candidateSdks
+        } else {
+            $dotnetSdks = $candidateSdks
+        }
+    }
+}
+
+if (-not $dotnetExe) {
     Write-Host ""
-    Write-Host ".NET SDK was not found." -ForegroundColor Yellow
+    Write-Host ".NET 10 SDK was not found." -ForegroundColor Yellow
+    if ($dotnetSdks.Count -gt 0) {
+        Write-Host "Detected SDKs:" -ForegroundColor Yellow
+        $dotnetSdks | ForEach-Object { Write-Host "  $_" }
+    }
+    Write-Host ""
     Write-Host "Run: .\Install_DotNet10_Windows.bat" -ForegroundColor Cyan
     throw ".NET SDK 10 is required."
 }
 
-$dotnetSdks = dotnet --list-sdks
 $dotnet10 = $dotnetSdks | Where-Object { $_ -match '^10\.' }
 
-if (-not $dotnet10) {
-    Write-Host ""
-    Write-Host ".NET is installed, but .NET 10 SDK is missing." -ForegroundColor Yellow
-    Write-Host "Installed SDKs:" -ForegroundColor Yellow
-    $dotnetSdks | ForEach-Object { Write-Host "  $_" }
-    Write-Host ""
-    Write-Host "Run the one-click installer from the repository root:" -ForegroundColor Yellow
-    Write-Host "    .\Install_DotNet10_Windows.bat" -ForegroundColor Cyan
-    throw ".NET SDK 10 is required."
-}
-
-# If Flutter was just installed in the project-recommended location but the
-# current terminal has an old PATH snapshot, make it available immediately.
 if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
     $recommendedFlutterBin = "C:\src\flutter\bin"
-    if (Test-Path (Join-Path $recommendedFlutterBin "flutter.bat")) {
-        $env:Path = "$recommendedFlutterBin;$env:Path"
-    }
+    if (Test-Path (Join-Path $recommendedFlutterBin "flutter.bat")) { $env:Path = "$recommendedFlutterBin;$env:Path" }
 }
 
 if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
     Write-Host ""
     Write-Host "Flutter SDK was not found." -ForegroundColor Yellow
-    Write-Host "Run the one-click installer from the repository root:" -ForegroundColor Yellow
-    Write-Host "    .\Install_Flutter_Windows.bat" -ForegroundColor Cyan
-    Write-Host ""
+    Write-Host "Run: .\Install_Flutter_Windows.bat" -ForegroundColor Cyan
     throw "Flutter SDK is required."
 }
 
-$dotnetVersion = dotnet --version
+$dotnetVersion = & $dotnetExe --version
 Write-Host ".NET active SDK: $dotnetVersion"
 Write-Host ".NET 10 detected: $($dotnet10 | Select-Object -First 1)"
 
@@ -64,20 +86,14 @@ if (-not $SkipFlutterCreate) {
             flutter create --platforms=windows,android --project-name erp_accounting .
         }
         flutter pub get
-    }
-    finally {
-        Pop-Location
-    }
+    } finally { Pop-Location }
 }
 
 Push-Location $server
 try {
     Write-Host "Restoring .NET API..."
-    dotnet restore
-}
-finally {
-    Pop-Location
-}
+    & $dotnetExe restore
+} finally { Pop-Location }
 
 Write-Host ""
 Write-Host "Bootstrap complete." -ForegroundColor Green
