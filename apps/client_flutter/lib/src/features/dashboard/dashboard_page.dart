@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
+import '../accounting/cached_accounts_page.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
@@ -49,6 +50,8 @@ class DashboardPage extends StatelessWidget {
                     items: _items,
                     displayName: displayName,
                     role: role,
+                    companyId: companyId,
+                    localDatabase: localDatabase,
                   ),
                 ),
               )
@@ -62,6 +65,8 @@ class DashboardPage extends StatelessWidget {
                   items: _items,
                   displayName: displayName,
                   role: role,
+                  companyId: companyId,
+                  localDatabase: localDatabase,
                 ),
               ),
             Expanded(
@@ -84,11 +89,15 @@ class _Navigation extends StatelessWidget {
     required this.items,
     required this.displayName,
     required this.role,
+    required this.companyId,
+    required this.localDatabase,
   });
 
   final List<_NavItem> items;
   final String displayName;
   final String role;
+  final String companyId;
+  final LocalDatabase localDatabase;
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +117,18 @@ class _Navigation extends StatelessWidget {
               leading: Icon(item.icon),
               title: Text(item.label),
               selected: item == items.first,
-              onTap: () {},
+              onTap: () {
+                if (item.label == 'حسابداری') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => CachedAccountsPage(
+                        companyId: companyId,
+                        localDatabase: localDatabase,
+                      ),
+                    ),
+                  );
+                }
+              },
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
