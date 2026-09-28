@@ -7,25 +7,28 @@
 - [x] Online + USB synchronization design direction
 - [x] Optional QR device pairing requirement
 - [x] MFA / 2FA requirement
-- [ ] Create Flutter client workspace
-- [ ] Create ASP.NET Core server workspace
-- [ ] Establish CI
+- [x] Create Flutter client workspace
+- [x] Create ASP.NET Core server workspace
+- [x] Establish CI
 - [ ] Define database migration strategy
 
 ## Phase 1 — Identity, Company & Accounting Foundation
-- [ ] Company / organization profiles
-- [ ] Users, roles and permissions
-- [ ] Password authentication
+- [x] Company / organization bootstrap
+- [x] Users and role model
+- [x] Password authentication
+- [ ] Persistent authorization / refresh-token model
 - [ ] TOTP MFA
 - [ ] Backup codes
-- [ ] Trusted devices
+- [ ] Trusted-device management UI/API
 - [ ] Optional QR pairing
-- [ ] Chart of accounts
+- [x] Chart of accounts
 - [ ] Fiscal years and periods
-- [ ] Journal entries
-- [ ] General ledger
-- [ ] Trial balance
+- [x] Journal entries with double-entry validation
+- [x] General ledger (initial)
+- [x] Trial balance (initial)
 - [ ] Audit log
+- [ ] PostgreSQL persistence
+- [ ] SQLite client persistence
 
 ## Phase 2 — Sync
 - [ ] Device identity
