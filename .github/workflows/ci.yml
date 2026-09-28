@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: ASP.NET Core API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore apps/server_api/ERPAccounting.Api.csproj
+
+      - name: Build
+        run: dotnet build apps/server_api/ERPAccounting.Api.csproj --configuration Release --no-restore
+
+  flutter:
+    name: Flutter analyze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Packages
+        working-directory: apps/client_flutter
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: apps/client_flutter
+        run: flutter analyze
