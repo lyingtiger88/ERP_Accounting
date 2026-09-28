@@ -140,6 +140,97 @@ public sealed class AccountingService(InMemoryStore store)
         }
     }
 
+
+    public IReadOnlyList<TrialBalanceRow> GetTrialBalance(Guid companyId)
+    {
+        lock (store.Gate)
+        {
+            var journals = store.JournalEntries.Values
+                .Where(x => x.CompanyId == companyId && x.Status == JournalStatus.Posted)
+                .ToArray();
+
+            var rows = new List<TrialBalanceRow>();
+
+            foreach (var account in store.Accounts.Values
+                         .Where(x => x.CompanyId == companyId)
+                         .OrderBy(x => x.Code))
+            {
+                var lines = journals
+                    .SelectMany(x => x.Lines)
+                    .Where(x => x.AccountId == account.Id)
+                    .ToArray();
+
+                var debit = lines.Sum(x => x.Debit);
+                var credit = lines.Sum(x => x.Credit);
+
+                rows.Add(new TrialBalanceRow(
+                    account.Id,
+                    account.Code,
+                    account.Name,
+                    debit,
+                    credit,
+                    debit - credit));
+            }
+
+            return rows;
+        }
+    }
+
+    public IReadOnlyList<GeneralLedgerRow> GetGeneralLedger(
+        Guid companyId,
+        Guid? accountId = null)
+    {
+        lock (store.Gate)
+        {
+            var accountLookup = store.Accounts.Values
+                .Where(x => x.CompanyId == companyId)
+                .ToDictionary(x => x.Id);
+
+            var ordered = store.JournalEntries.Values
+                .Where(x => x.CompanyId == companyId && x.Status == JournalStatus.Posted)
+                .OrderBy(x => x.DocumentDate)
+                .ThenBy(x => x.CreatedAt)
+                .ToArray();
+
+            var balances = new Dictionary<Guid, decimal>();
+            var rows = new List<GeneralLedgerRow>();
+
+            foreach (var journal in ordered)
+            {
+                foreach (var line in journal.Lines)
+                {
+                    if (!accountLookup.TryGetValue(line.AccountId, out var account))
+                    {
+                        continue;
+                    }
+
+                    var current = balances.GetValueOrDefault(account.Id);
+                    current += line.Debit - line.Credit;
+                    balances[account.Id] = current;
+
+                    if (accountId is not null && account.Id != accountId.Value)
+                    {
+                        continue;
+                    }
+
+                    rows.Add(new GeneralLedgerRow(
+                        journal.Id,
+                        journal.Number,
+                        journal.DocumentDate,
+                        account.Id,
+                        account.Code,
+                        account.Name,
+                        line.Description ?? journal.Description,
+                        line.Debit,
+                        line.Credit,
+                        current));
+                }
+            }
+
+            return rows;
+        }
+    }
+
     public void SeedDefaultAccounts(Guid companyId)
     {
         lock (store.Gate)
