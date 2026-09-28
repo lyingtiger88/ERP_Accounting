@@ -213,15 +213,16 @@ Implemented so far:
 
 ### Immediate next steps
 
-1. Run and verify PostgreSQL persistence
+1. Verify persistent local SQLite server mode
 2. Add EF Core migrations
-3. SQLite local persistence for Windows/Android
-4. Persistent sessions and refresh-token rotation
-5. TOTP 2FA + backup codes
-6. QR device pairing
-7. First real sync journal
+3. Verify PostgreSQL provider when Docker/PostgreSQL is available
+4. Add client-side SQLite local persistence for Windows/Android
+5. Persistent sessions and refresh-token rotation
+6. TOTP 2FA + backup codes
+7. QR device pairing
+8. First real sync journal
 
-> Server persistence has moved to PostgreSQL through EF Core. Client-side SQLite is the next persistence layer.
+> Server persistence uses EF Core. Local development defaults to a persistent SQLite database so Docker is optional; PostgreSQL remains the server/production provider. Client-side offline SQLite is still a separate next step.
 
 ## Core goals
 
@@ -238,7 +239,7 @@ Implemented so far:
 
 - **Client:** Flutter (Windows + Android)
 - **Backend:** ASP.NET Core / .NET 10
-- **Server database:** PostgreSQL + EF Core
+- **Server database:** PostgreSQL + EF Core (server/production); SQLite fallback for local development
 - **Local database:** SQLite (next)
 - **Sync:** versioned delta sync with conflict handling
 - **Security:** password hashing now; refresh sessions, TOTP, passkeys/biometrics and QR pairing planned
