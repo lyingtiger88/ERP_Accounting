@@ -8,12 +8,53 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var postgresConnection = builder.Configuration.GetConnectionString("Postgres")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings:Postgres is required.");
+var databaseProvider = builder.Configuration["Database:Provider"]?.Trim()
+    ?? "Sqlite";
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(postgresConnection));
+{
+    if (databaseProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+        databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
+    {
+        var postgresConnection = builder.Configuration.GetConnectionString("Postgres")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:Postgres is required when Database:Provider=Postgres.");
+
+        options.UseNpgsql(postgresConnection);
+        return;
+    }
+
+    if (databaseProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+    {
+        var configured = builder.Configuration.GetConnectionString("Sqlite");
+        string sqliteConnection;
+
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            sqliteConnection = configured;
+        }
+        else
+        {
+            var dataDirectory = Path.Combine(
+                builder.Environment.ContentRootPath,
+                "data");
+
+            Directory.CreateDirectory(dataDirectory);
+
+            var databasePath = Path.Combine(
+                dataDirectory,
+                "erp_accounting.db");
+
+            sqliteConnection = $"Data Source={databasePath}";
+        }
+
+        options.UseSqlite(sqliteConnection);
+        return;
+    }
+
+    throw new InvalidOperationException(
+        $"Unsupported Database:Provider '{databaseProvider}'. Use Sqlite or Postgres.");
+});
 
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<SessionStore>();
@@ -35,7 +76,7 @@ app.MapGet("/", () => Results.Ok(new
 {
     product = "ERP Accounting",
     phase = "Phase 1 Foundation",
-    persistence = "PostgreSQL / EF Core",
+    persistence = databaseProvider,
     status = "ok",
     utc = DateTimeOffset.UtcNow
 }));
@@ -50,6 +91,7 @@ app.MapGet("/health", async (
     {
         status = database ? "healthy" : "degraded",
         database,
+        provider = databaseProvider,
         utc = DateTimeOffset.UtcNow
     });
 });
