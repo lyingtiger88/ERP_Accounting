@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'core/database/local_database.dart';
 import 'features/auth/login_page.dart';
 
 class ErpAccountingApp extends StatelessWidget {
-  const ErpAccountingApp({super.key});
+  const ErpAccountingApp({
+    super.key,
+    required this.localDatabase,
+  });
+
+  final LocalDatabase localDatabase;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +33,7 @@ class ErpAccountingApp extends StatelessWidget {
           margin: EdgeInsets.zero,
         ),
       ),
-      home: const LoginPage(),
+      home: LoginPage(localDatabase: localDatabase),
     );
   }
 }
