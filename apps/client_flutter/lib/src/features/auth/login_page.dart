@@ -3,11 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/database/local_database.dart';
 import '../dashboard/dashboard_page.dart';
 import 'bootstrap_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({
+    super.key,
+    required this.localDatabase,
+  });
+
+  final LocalDatabase localDatabase;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -46,16 +52,52 @@ class _LoginPageState extends State<LoginPage> {
 
       if (result.mfaRequired) {
         setState(() {
-          _error = 'این حساب نیاز به مرحله دوم احراز هویت دارد؛ صفحه MFA در گام بعدی فعال می‌شود.';
+          _error =
+              'این حساب نیاز به مرحله دوم احراز هویت دارد؛ صفحه MFA در گام بعدی فعال می‌شود.';
         });
         return;
       }
+
+      await widget.localDatabase.cacheUserProfile(
+        userId: result.userId,
+        companyId: result.companyId,
+        displayName: result.displayName,
+        role: result.role,
+      );
+
+      bool accountsSynced = false;
+
+      try {
+        final accounts = await _apiClient.getAccounts(
+          bearerToken: result.accessToken,
+        );
+
+        await widget.localDatabase.replaceAccounts(
+          companyId: result.companyId,
+          accounts: accounts,
+        );
+
+        await widget.localDatabase.setMeta(
+          'last_account_sync_at',
+          DateTime.now().toUtc().toIso8601String(),
+        );
+
+        accountsSynced = true;
+      } on ApiException {
+        // Successful authentication should not be discarded just because
+        // the first cache refresh failed. Existing local data stays intact.
+      }
+
+      if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
           builder: (_) => DashboardPage(
             displayName: result.displayName,
             role: result.role,
+            companyId: result.companyId,
+            localDatabase: widget.localDatabase,
+            accountsSynced: accountsSynced,
           ),
         ),
       );
