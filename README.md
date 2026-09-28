@@ -75,8 +75,9 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] PostgreSQL server database
 - [x] Entity Framework Core
 - [ ] Database migrations
-- [ ] SQLite database on Windows
-- [ ] SQLite database on Android
+- [x] Shared client SQLite storage layer (Windows/Android)
+- [x] Windows offline cache validation path
+- [ ] Android device validation
 - [ ] Secure local credential storage
 
 ### Phase 2 — Synchronization Engine
@@ -213,14 +214,14 @@ Implemented so far:
 
 ### Immediate next steps
 
-1. Verify persistent local SQLite server mode
-2. Add EF Core migrations
+1. Validate client-side SQLite cache on Windows
+2. Freeze Phase 1 schema and generate provider-specific EF Core migrations
 3. Verify PostgreSQL provider when Docker/PostgreSQL is available
-4. Add client-side SQLite local persistence for Windows/Android
+4. Turn sync_outbox into the first real change journal
 5. Persistent sessions and refresh-token rotation
 6. TOTP 2FA + backup codes
 7. QR device pairing
-8. First real sync journal
+8. Push/pull Sync Engine
 
 > Server persistence uses EF Core. Local development defaults to a persistent SQLite database so Docker is optional; PostgreSQL remains the server/production provider. Client-side offline SQLite is still a separate next step.
 
@@ -240,7 +241,7 @@ Implemented so far:
 - **Client:** Flutter (Windows + Android)
 - **Backend:** ASP.NET Core / .NET 10
 - **Server database:** PostgreSQL + EF Core (server/production); SQLite fallback for local development
-- **Local database:** SQLite (next)
+- **Local database:** SQLite on Windows/Android (initial layer implemented)
 - **Sync:** versioned delta sync with conflict handling
 - **Security:** password hashing now; refresh sessions, TOTP, passkeys/biometrics and QR pairing planned
 
@@ -251,4 +252,6 @@ See:
 - `docs/ARCHITECTURE.md`
 - `docs/SECURITY.md`
 - `docs/SYNC_PROTOCOL.md`
+- `docs/OFFLINE_FIRST.md`
+- `docs/MIGRATIONS.md`
 - `docs/ROADMAP.md`
