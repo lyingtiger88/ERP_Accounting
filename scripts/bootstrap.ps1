@@ -11,7 +11,21 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw ".NET SDK 10 is required."
 }
 
+# If Flutter was just installed in the project-recommended location but the
+# current terminal has an old PATH snapshot, make it available immediately.
 if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
+    $recommendedFlutterBin = "C:\src\flutter\bin"
+    if (Test-Path (Join-Path $recommendedFlutterBin "flutter.bat")) {
+        $env:Path = "$recommendedFlutterBin;$env:Path"
+    }
+}
+
+if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
+    Write-Host ""
+    Write-Host "Flutter SDK was not found." -ForegroundColor Yellow
+    Write-Host "Run the one-click installer from the repository root:" -ForegroundColor Yellow
+    Write-Host "    .\Install_Flutter_Windows.bat" -ForegroundColor Cyan
+    Write-Host ""
     throw "Flutter SDK is required."
 }
 
