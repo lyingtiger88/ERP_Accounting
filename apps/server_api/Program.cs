@@ -4,44 +4,73 @@ using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.Security;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<InMemoryStore>();
+var postgresConnection = builder.Configuration.GetConnectionString("Postgres")
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:Postgres is required.");
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(postgresConnection));
+
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
-builder.Services.AddSingleton<AuthService>();
-builder.Services.AddSingleton<AccountingService>();
+builder.Services.AddSingleton<SessionStore>();
+builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<AccountingService>();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.EnsureCreatedAsync();
+}
+
 app.MapGet("/", () => Results.Ok(new
 {
     product = "ERP Accounting",
     phase = "Phase 1 Foundation",
+    persistence = "PostgreSQL / EF Core",
     status = "ok",
     utc = DateTimeOffset.UtcNow
 }));
 
-app.MapGet("/health", () => Results.Ok(new
+app.MapGet("/health", async (
+    AppDbContext db,
+    CancellationToken cancellationToken) =>
 {
-    status = "healthy",
-    utc = DateTimeOffset.UtcNow
-}));
+    var database = await db.Database.CanConnectAsync(cancellationToken);
+
+    return Results.Ok(new
+    {
+        status = database ? "healthy" : "degraded",
+        database,
+        utc = DateTimeOffset.UtcNow
+    });
+});
 
 var auth = app.MapGroup("/api/auth");
 
-auth.MapPost("/bootstrap", (
+auth.MapPost("/bootstrap", async (
     BootstrapRequest request,
     AuthService authService,
-    AccountingService accountingService) =>
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
 {
     try
     {
-        var created = authService.Bootstrap(request);
-        accountingService.SeedDefaultAccounts(created.Company.Id);
+        var created = await authService.BootstrapAsync(
+            request,
+            cancellationToken);
+
+        await accountingService.SeedDefaultAccountsAsync(
+            created.Company.Id,
+            cancellationToken);
 
         return Results.Created($"/api/companies/{created.Company.Id}", new
         {
@@ -61,17 +90,30 @@ auth.MapPost("/bootstrap", (
     }
 });
 
-auth.MapPost("/login", (LoginRequest request, AuthService authService) =>
+auth.MapPost("/login", async (
+    LoginRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
 {
-    var result = authService.Login(request);
+    var result = await authService.LoginAsync(
+        request,
+        cancellationToken);
+
     return result is null
         ? Results.Unauthorized()
         : Results.Ok(result);
 });
 
-app.MapGet("/api/me", (HttpRequest request, AuthService authService) =>
+app.MapGet("/api/me", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
 {
-    var user = CurrentUser(request, authService);
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
     return user is null
         ? Results.Unauthorized()
         : Results.Ok(new
@@ -87,24 +129,36 @@ app.MapGet("/api/me", (HttpRequest request, AuthService authService) =>
 
 var accounting = app.MapGroup("/api/accounting");
 
-accounting.MapGet("/accounts", (
+accounting.MapGet("/accounts", async (
     HttpRequest request,
     AuthService authService,
-    AccountingService accountingService) =>
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
 {
-    var user = CurrentUser(request, authService);
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
     return user is null
         ? Results.Unauthorized()
-        : Results.Ok(accountingService.GetAccounts(user.CompanyId));
+        : Results.Ok(await accountingService.GetAccountsAsync(
+            user.CompanyId,
+            cancellationToken));
 });
 
-accounting.MapPost("/accounts", (
+accounting.MapPost("/accounts", async (
     HttpRequest request,
     CreateAccountRequest payload,
     AuthService authService,
-    AccountingService accountingService) =>
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
 {
-    var user = CurrentUser(request, authService);
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
     if (user is null)
     {
         return Results.Unauthorized();
@@ -117,8 +171,14 @@ accounting.MapPost("/accounts", (
 
     try
     {
-        var account = accountingService.CreateAccount(user.CompanyId, payload);
-        return Results.Created($"/api/accounting/accounts/{account.Id}", account);
+        var account = await accountingService.CreateAccountAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken);
+
+        return Results.Created(
+            $"/api/accounting/accounts/{account.Id}",
+            account);
     }
     catch (ArgumentException ex)
     {
@@ -130,24 +190,36 @@ accounting.MapPost("/accounts", (
     }
 });
 
-accounting.MapGet("/journals", (
+accounting.MapGet("/journals", async (
     HttpRequest request,
     AuthService authService,
-    AccountingService accountingService) =>
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
 {
-    var user = CurrentUser(request, authService);
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
     return user is null
         ? Results.Unauthorized()
-        : Results.Ok(accountingService.GetJournalEntries(user.CompanyId));
+        : Results.Ok(await accountingService.GetJournalEntriesAsync(
+            user.CompanyId,
+            cancellationToken));
 });
 
-accounting.MapPost("/journals", (
+accounting.MapPost("/journals", async (
     HttpRequest request,
     CreateJournalRequest payload,
     AuthService authService,
-    AccountingService accountingService) =>
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
 {
-    var user = CurrentUser(request, authService);
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
     if (user is null)
     {
         return Results.Unauthorized();
@@ -160,12 +232,15 @@ accounting.MapPost("/journals", (
 
     try
     {
-        var journal = accountingService.PostJournal(
+        var journal = await accountingService.PostJournalAsync(
             user.CompanyId,
             user.Id,
-            payload);
+            payload,
+            cancellationToken);
 
-        return Results.Created($"/api/accounting/journals/{journal.Id}", journal);
+        return Results.Created(
+            $"/api/accounting/journals/{journal.Id}",
+            journal);
     }
     catch (ArgumentException ex)
     {
@@ -177,40 +252,61 @@ accounting.MapPost("/journals", (
     }
 });
 
-
-accounting.MapGet("/trial-balance", (
+accounting.MapGet("/trial-balance", async (
     HttpRequest request,
     AuthService authService,
-    AccountingService accountingService) =>
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
 {
-    var user = CurrentUser(request, authService);
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
     return user is null
         ? Results.Unauthorized()
-        : Results.Ok(accountingService.GetTrialBalance(user.CompanyId));
+        : Results.Ok(await accountingService.GetTrialBalanceAsync(
+            user.CompanyId,
+            cancellationToken));
 });
 
-accounting.MapGet("/general-ledger", (
+accounting.MapGet("/general-ledger", async (
     HttpRequest request,
     Guid? accountId,
     AuthService authService,
-    AccountingService accountingService) =>
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
 {
-    var user = CurrentUser(request, authService);
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
     return user is null
         ? Results.Unauthorized()
-        : Results.Ok(accountingService.GetGeneralLedger(user.CompanyId, accountId));
+        : Results.Ok(await accountingService.GetGeneralLedgerAsync(
+            user.CompanyId,
+            accountId,
+            cancellationToken));
 });
 
 app.Run();
 
-static AppUser? CurrentUser(HttpRequest request, AuthService authService)
+static async Task<AppUser?> CurrentUserAsync(
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken)
 {
     var rawHeader = request.Headers.Authorization.ToString();
-    var token = rawHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+    var token = rawHeader.StartsWith(
+        "Bearer ",
+        StringComparison.OrdinalIgnoreCase)
         ? rawHeader["Bearer ".Length..].Trim()
         : null;
 
-    return authService.Resolve(token);
+    return await authService.ResolveAsync(
+        token,
+        cancellationToken);
 }
 
 static bool CanWriteAccounting(AppUser user)
