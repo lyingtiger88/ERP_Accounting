@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 
 import 'src/app.dart';
+import 'src/core/database/local_database.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ErpAccountingApp());
+
+  final localDatabase = LocalDatabase.instance;
+  await localDatabase.initialize();
+
+  runApp(
+    ErpAccountingApp(localDatabase: localDatabase),
+  );
 }
