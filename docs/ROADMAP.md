@@ -27,7 +27,7 @@
 - [x] General ledger (initial)
 - [x] Trial balance (initial)
 - [ ] Audit log
-- [ ] PostgreSQL persistence
+- [x] PostgreSQL persistence
 - [ ] SQLite client persistence
 
 ## Phase 2 — Sync
