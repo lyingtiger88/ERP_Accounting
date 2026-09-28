@@ -72,8 +72,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Account turnover reports
 
 #### Persistence
-- [ ] PostgreSQL server database **← NEXT**
-- [ ] Entity Framework Core
+- [x] PostgreSQL server database
+- [x] Entity Framework Core
 - [ ] Database migrations
 - [ ] SQLite database on Windows
 - [ ] SQLite database on Android
@@ -213,15 +213,15 @@ Implemented so far:
 
 ### Immediate next steps
 
-1. PostgreSQL + Entity Framework Core persistence
-2. Database migrations
+1. Run and verify PostgreSQL persistence
+2. Add EF Core migrations
 3. SQLite local persistence for Windows/Android
 4. Persistent sessions and refresh-token rotation
 5. TOTP 2FA + backup codes
 6. QR device pairing
 7. First real sync journal
 
-> The current API persistence is intentionally in-memory for the first runnable milestone. PostgreSQL and SQLite are the next persistence layer.
+> Server persistence has moved to PostgreSQL through EF Core. Client-side SQLite is the next persistence layer.
 
 ## Core goals
 
@@ -238,8 +238,8 @@ Implemented so far:
 
 - **Client:** Flutter (Windows + Android)
 - **Backend:** ASP.NET Core / .NET 10
-- **Server database:** PostgreSQL (planned next)
-- **Local database:** SQLite (planned next)
+- **Server database:** PostgreSQL + EF Core
+- **Local database:** SQLite (next)
 - **Sync:** versioned delta sync with conflict handling
 - **Security:** password hashing now; refresh sessions, TOTP, passkeys/biometrics and QR pairing planned
 
