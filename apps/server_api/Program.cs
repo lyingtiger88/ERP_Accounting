@@ -177,6 +177,30 @@ accounting.MapPost("/journals", (
     }
 });
 
+
+accounting.MapGet("/trial-balance", (
+    HttpRequest request,
+    AuthService authService,
+    AccountingService accountingService) =>
+{
+    var user = CurrentUser(request, authService);
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(accountingService.GetTrialBalance(user.CompanyId));
+});
+
+accounting.MapGet("/general-ledger", (
+    HttpRequest request,
+    Guid? accountId,
+    AuthService authService,
+    AccountingService accountingService) =>
+{
+    var user = CurrentUser(request, authService);
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(accountingService.GetGeneralLedger(user.CompanyId, accountId));
+});
+
 app.Run();
 
 static AppUser? CurrentUser(HttpRequest request, AuthService authService)
