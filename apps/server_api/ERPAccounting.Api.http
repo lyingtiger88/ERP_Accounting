@@ -29,3 +29,53 @@ Content-Type: application/json
 # Replace TOKEN with accessToken returned by /login
 GET {{host}}/api/me
 Authorization: Bearer TOKEN
+
+### Chart of accounts
+GET {{host}}/api/accounting/accounts
+Authorization: Bearer TOKEN
+
+### Trial balance
+GET {{host}}/api/accounting/trial-balance
+Authorization: Bearer TOKEN
+
+### General ledger
+GET {{host}}/api/accounting/general-ledger
+Authorization: Bearer TOKEN
+
+### Create account
+POST {{host}}/api/accounting/accounts
+Authorization: Bearer TOKEN
+Content-Type: application/json
+
+{
+  "code": "1110",
+  "name": "Petty Cash",
+  "type": "Asset",
+  "parentId": null
+}
+
+### Post a balanced journal
+# Replace ACCOUNT_ID_1 and ACCOUNT_ID_2 using /accounts output
+POST {{host}}/api/accounting/journals
+Authorization: Bearer TOKEN
+Content-Type: application/json
+
+{
+  "number": "JV-0001",
+  "documentDate": "2026-09-28",
+  "description": "Opening test entry",
+  "lines": [
+    {
+      "accountId": "ACCOUNT_ID_1",
+      "description": "Debit line",
+      "debit": 1000,
+      "credit": 0
+    },
+    {
+      "accountId": "ACCOUNT_ID_2",
+      "description": "Credit line",
+      "debit": 0,
+      "credit": 1000
+    }
+  ]
+}
