@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 
 class DashboardPage extends StatelessWidget {
-  const DashboardPage({super.key});
+  const DashboardPage({
+    super.key,
+    required this.displayName,
+    required this.role,
+  });
+
+  final String displayName;
+  final String role;
 
   static const _items = <_NavItem>[
     _NavItem('داشبورد', Icons.dashboard_outlined),
@@ -29,7 +36,13 @@ class DashboardPage extends StatelessWidget {
             : null,
         drawer: compact
             ? Drawer(
-                child: SafeArea(child: _Navigation(items: _items)),
+                child: SafeArea(
+                  child: _Navigation(
+                    items: _items,
+                    displayName: displayName,
+                    role: role,
+                  ),
+                ),
               )
             : null,
         body: Row(
@@ -37,9 +50,15 @@ class DashboardPage extends StatelessWidget {
             if (!compact)
               SizedBox(
                 width: 250,
-                child: _Navigation(items: _items),
+                child: _Navigation(
+                  items: _items,
+                  displayName: displayName,
+                  role: role,
+                ),
               ),
-            const Expanded(child: _DashboardBody()),
+            Expanded(
+              child: _DashboardBody(displayName: displayName),
+            ),
           ],
         ),
       ),
@@ -48,9 +67,15 @@ class DashboardPage extends StatelessWidget {
 }
 
 class _Navigation extends StatelessWidget {
-  const _Navigation({required this.items});
+  const _Navigation({
+    required this.items,
+    required this.displayName,
+    required this.role,
+  });
 
   final List<_NavItem> items;
+  final String displayName;
+  final String role;
 
   @override
   Widget build(BuildContext context) {
@@ -59,10 +84,10 @@ class _Navigation extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const ListTile(
-            leading: CircleAvatar(child: Icon(Icons.business)),
-            title: Text('شرکت نمونه'),
-            subtitle: Text('سال مالی جاری'),
+          ListTile(
+            leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+            title: Text(displayName),
+            subtitle: Text(role),
           ),
           const Divider(height: 32),
           for (final item in items)
@@ -82,7 +107,9 @@ class _Navigation extends StatelessWidget {
 }
 
 class _DashboardBody extends StatelessWidget {
-  const _DashboardBody();
+  const _DashboardBody({required this.displayName});
+
+  final String displayName;
 
   @override
   Widget build(BuildContext context) {
@@ -94,16 +121,24 @@ class _DashboardBody extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  'داشبورد مدیریتی',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'داشبورد مدیریتی',
+                      style:
+                          Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text('خوش آمدی، ' + displayName),
+                  ],
                 ),
               ),
               const Chip(
                 avatar: Icon(Icons.cloud_done_outlined, size: 18),
-                label: Text('Sync آماده'),
+                label: Text('Online'),
               ),
             ],
           ),
@@ -115,7 +150,11 @@ class _DashboardBody extends StatelessWidget {
               _MetricCard('فروش امروز', '—', Icons.trending_up),
               _MetricCard('دریافتنی‌ها', '—', Icons.payments_outlined),
               _MetricCard('موجودی انبار', '—', Icons.inventory_outlined),
-              _MetricCard('مانده نقد', '—', Icons.account_balance_wallet_outlined),
+              _MetricCard(
+                'مانده نقد',
+                '—',
+                Icons.account_balance_wallet_outlined,
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -133,8 +172,10 @@ class _DashboardBody extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   const _StatusRow('رابط Windows / Android', true),
-                  const _StatusRow('هسته API', true),
+                  const _StatusRow('اتصال Login به API', true),
                   const _StatusRow('Company / User / Device models', true),
+                  const _StatusRow('کدینگ اولیه حساب‌ها', true),
+                  const _StatusRow('اعتبارسنجی سند دوطرفه', true),
                   const _StatusRow('PostgreSQL + SQLite persistence', false),
                   const _StatusRow('TOTP / QR Pairing', false),
                   const _StatusRow('Sync Engine', false),
