@@ -172,6 +172,29 @@ class LocalDatabase {
     });
   }
 
+  Future<List<CachedAccount>> getCachedAccounts(String companyId) async {
+    final rows = await _db.query(
+      'cached_accounts',
+      where: 'company_id = ?',
+      whereArgs: [companyId],
+      orderBy: 'code ASC',
+    );
+
+    return rows
+        .map(
+          (row) => CachedAccount(
+            id: row['id'] as String,
+            companyId: row['company_id'] as String,
+            code: row['code'] as String,
+            name: row['name'] as String,
+            type: row['type'] as String,
+            parentId: row['parent_id'] as String?,
+            isActive: (row['is_active'] as int) == 1,
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<int> cachedAccountCount(String companyId) async {
     final rows = await _db.rawQuery(
       'SELECT COUNT(*) AS count FROM cached_accounts WHERE company_id = ?',
@@ -213,4 +236,25 @@ class LocalDatabase {
     if (rows.isEmpty) return null;
     return rows.first['value'] as String?;
   }
+}
+
+
+class CachedAccount {
+  const CachedAccount({
+    required this.id,
+    required this.companyId,
+    required this.code,
+    required this.name,
+    required this.type,
+    required this.parentId,
+    required this.isActive,
+  });
+
+  final String id;
+  final String companyId;
+  final String code;
+  final String name;
+  final String type;
+  final String? parentId;
+  final bool isActive;
 }
