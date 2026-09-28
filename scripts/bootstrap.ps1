@@ -8,6 +8,23 @@ $root = Split-Path -Parent $PSScriptRoot
 Write-Host "== ERP Accounting developer bootstrap ==" -ForegroundColor Cyan
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+    Write-Host ""
+    Write-Host ".NET SDK was not found." -ForegroundColor Yellow
+    Write-Host "Run: .\Install_DotNet10_Windows.bat" -ForegroundColor Cyan
+    throw ".NET SDK 10 is required."
+}
+
+$dotnetSdks = dotnet --list-sdks
+$dotnet10 = $dotnetSdks | Where-Object { $_ -match '^10\.' }
+
+if (-not $dotnet10) {
+    Write-Host ""
+    Write-Host ".NET is installed, but .NET 10 SDK is missing." -ForegroundColor Yellow
+    Write-Host "Installed SDKs:" -ForegroundColor Yellow
+    $dotnetSdks | ForEach-Object { Write-Host "  $_" }
+    Write-Host ""
+    Write-Host "Run the one-click installer from the repository root:" -ForegroundColor Yellow
+    Write-Host "    .\Install_DotNet10_Windows.bat" -ForegroundColor Cyan
     throw ".NET SDK 10 is required."
 }
 
@@ -30,7 +47,8 @@ if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
 }
 
 $dotnetVersion = dotnet --version
-Write-Host ".NET: $dotnetVersion"
+Write-Host ".NET active SDK: $dotnetVersion"
+Write-Host ".NET 10 detected: $($dotnet10 | Select-Object -First 1)"
 
 $flutterVersion = (flutter --version | Select-Object -First 1)
 Write-Host "Flutter: $flutterVersion"
