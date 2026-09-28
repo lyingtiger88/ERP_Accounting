@@ -98,6 +98,22 @@ class ApiClient {
     return LoginResult.fromJson(payload as Map<String, dynamic>);
   }
 
+  Future<List<Map<String, dynamic>>> getAccounts({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/accounts',
+      bearerToken: bearerToken,
+    );
+
+    final items = payload as List<dynamic>;
+
+    return items
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
   Future<dynamic> _request(
     String method,
     String path, {
@@ -105,15 +121,22 @@ class ApiClient {
     String? bearerToken,
   }) async {
     final client = HttpClient();
+
     try {
-      final request = await client.openUrl(method, Uri.parse(baseUrl + path));
+      final request = await client.openUrl(
+        method,
+        Uri.parse(baseUrl + path),
+      );
+
       request.headers.contentType = ContentType.json;
+
       if (bearerToken != null) {
         request.headers.set(
           HttpHeaders.authorizationHeader,
           'Bearer ' + bearerToken,
         );
       }
+
       if (body != null) {
         request.write(jsonEncode(body));
       }
@@ -124,10 +147,13 @@ class ApiClient {
           responseText.isEmpty ? null : jsonDecode(responseText);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        String message = 'Request failed (' + response.statusCode.toString() + ')';
+        String message =
+            'Request failed (' + response.statusCode.toString() + ')';
+
         if (decoded is Map<String, dynamic> && decoded['error'] is String) {
           message = decoded['error'] as String;
         }
+
         throw ApiException(message, response.statusCode);
       }
 
