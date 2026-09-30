@@ -56,7 +56,7 @@ public sealed record CreateJournalRequest(
 public sealed record SyncJournalRequest(
     string ChangeId,
     string LocalDocumentId,
-    Guid FiscalYearId,
+    Guid? FiscalYearId,
     DateOnly DocumentDate,
     string? Description,
     IReadOnlyList<CreateJournalLineRequest> Lines);
