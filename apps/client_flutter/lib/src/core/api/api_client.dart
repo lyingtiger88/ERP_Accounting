@@ -366,6 +366,29 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> reverseJournal({
+    required String bearerToken,
+    required String journalEntryId,
+    required DateTime documentDate,
+    required String reason,
+    String? fiscalYearId,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/accounting/journals/' +
+          journalEntryId +
+          '/reverse',
+      bearerToken: bearerToken,
+      body: {
+        'documentDate': _dateOnly(documentDate),
+        'reason': reason,
+        'fiscalYearId': fiscalYearId,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<JournalPullPage> pullJournalChanges({
     required String bearerToken,
     required int afterCursor,
