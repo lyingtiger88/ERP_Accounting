@@ -21,6 +21,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<DetailAccountSyncState> DetailAccountSyncStates => Set<DetailAccountSyncState>();
     public DbSet<DetailAccountSyncReceipt> DetailAccountSyncReceipts => Set<DetailAccountSyncReceipt>();
     public DbSet<DetailAccountServerChange> DetailAccountServerChanges => Set<DetailAccountServerChange>();
+    public DbSet<JournalReversalLink> JournalReversalLinks => Set<JournalReversalLink>();
+    public DbSet<AccountingAuditLog> AccountingAuditLogs => Set<AccountingAuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -266,6 +268,46 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .WithMany()
                 .HasForeignKey(x => x.DetailAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<JournalReversalLink>(entity =>
+        {
+            entity.ToTable("journal_reversal_links");
+            entity.HasKey(x => x.OriginalJournalEntryId);
+            entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+            entity.HasIndex(x => x.ReversalJournalEntryId).IsUnique();
+            entity.HasOne<JournalEntry>()
+                .WithOne()
+                .HasForeignKey<JournalReversalLink>(x => x.OriginalJournalEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntry>()
+                .WithOne()
+                .HasForeignKey<JournalReversalLink>(x => x.ReversalJournalEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AccountingAuditLog>(entity =>
+        {
+            entity.ToTable("accounting_audit_logs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.EntityType).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Action).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Reason).HasMaxLength(1000);
+            entity.Property(x => x.PayloadJson);
+            entity.HasIndex(x => new { x.CompanyId, x.EntityType, x.EntityId });
+            entity.HasIndex(x => new { x.CompanyId, x.CreatedAt });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
