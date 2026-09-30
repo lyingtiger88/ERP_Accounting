@@ -141,15 +141,23 @@ auth.MapPost("/bootstrap", async (
 auth.MapPost("/login", async (
     LoginRequest request,
     AuthService authService,
+    AccountingService accountingService,
     CancellationToken cancellationToken) =>
 {
     var result = await authService.LoginAsync(
         request,
         cancellationToken);
 
-    return result is null
-        ? Results.Unauthorized()
-        : Results.Ok(result);
+    if (result is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    await accountingService.SeedDefaultAccountsAsync(
+        result.CompanyId,
+        cancellationToken);
+
+    return Results.Ok(result);
 });
 
 app.MapGet("/api/me", async (
