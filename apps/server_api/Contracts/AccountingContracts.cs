@@ -29,6 +29,9 @@ public sealed record CreateFiscalYearRequest(
     DateOnly EndDate,
     bool IsDefault);
 
+public sealed record SetFiscalYearStateRequest(
+    bool IsClosed);
+
 public sealed record CreateDetailAccountRequest(
     string Code,
     string Name,
