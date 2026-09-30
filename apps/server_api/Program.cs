@@ -314,6 +314,43 @@ accounting.MapPost("/fiscal-years", async (
     }
 });
 
+accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/state", async (
+    HttpRequest request,
+    Guid fiscalYearId,
+    SetFiscalYearStateRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.SetFiscalYearClosedAsync(
+            user.CompanyId,
+            fiscalYearId,
+            payload.IsClosed,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 accounting.MapGet("/detail-accounts", async (
     HttpRequest request,
     AuthService authService,
