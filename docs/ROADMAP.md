@@ -42,7 +42,9 @@
 - [ ] Device identity
 - [x] Outbox/change-journal schema foundation
 - [x] Accounting documents enqueue transactionally into Outbox
-- [ ] Outbox push/change-journal processing
+- [x] Outbox push/change-journal processing
+- [x] Idempotent accounting journal upload
+- [ ] Server-to-client journal pull / sync cursors
 - [ ] Delta upload/download
 - [ ] Conflict policies
 - [ ] Online API synchronization
