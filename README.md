@@ -63,7 +63,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Hierarchical chart of accounts UI
 - [ ] Fiscal years
 - [ ] Accounting periods
-- [ ] Draft / post / reverse journal workflow
+- [x] Client-side Draft / Pending Sync journal workflow
+- [ ] Server-side Draft / post / reverse journal workflow
 - [ ] Subsidiary/detail accounts
 - [ ] Opening balances
 - [ ] Closing fiscal year
@@ -83,7 +84,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 ### Phase 2 — Synchronization Engine
 
 - [ ] Device identity
-- [ ] Change journal
+- [x] Client sync outbox/change-journal foundation
+- [ ] Outbox push processor
 - [ ] Entity revisions
 - [ ] Sync cursors
 - [ ] Delta upload/download
@@ -209,6 +211,8 @@ Implemented so far:
 - Initial chart of accounts
 - Balanced double-entry journal validation
 - Initial general ledger and trial balance reports
+- Offline journal-entry UI with Rial amounts
+- Local Draft/Pending Sync documents stored transactionally with Outbox
 - CI for ASP.NET Core build and Flutter analysis
 - Architecture for online sync, USB sync, QR pairing and MFA
 
@@ -217,7 +221,7 @@ Implemented so far:
 1. Validate client-side SQLite cache on Windows
 2. Freeze Phase 1 schema and generate provider-specific EF Core migrations
 3. Verify PostgreSQL provider when Docker/PostgreSQL is available
-4. Turn sync_outbox into the first real change journal
+4. Implement Outbox push: local accounting document → API journal
 5. Persistent sessions and refresh-token rotation
 6. TOTP 2FA + backup codes
 7. QR device pairing
