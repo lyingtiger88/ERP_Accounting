@@ -24,6 +24,8 @@
 - [x] Chart of accounts
 - [ ] Fiscal years and periods
 - [x] Journal entries with double-entry validation
+- [x] Offline journal-entry UI
+- [x] Local Draft / Pending Sync journal storage
 - [x] General ledger (initial)
 - [x] Trial balance (initial)
 - [ ] Audit log
@@ -33,7 +35,8 @@
 ## Phase 2 — Sync
 - [ ] Device identity
 - [x] Outbox/change-journal schema foundation
-- [ ] Change journal processing
+- [x] Accounting documents enqueue transactionally into Outbox
+- [ ] Outbox push/change-journal processing
 - [ ] Delta upload/download
 - [ ] Conflict policies
 - [ ] Online API synchronization
