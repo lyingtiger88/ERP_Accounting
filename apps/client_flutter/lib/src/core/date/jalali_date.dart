@@ -63,6 +63,72 @@ class JalaliDate {
     return JalaliDate(year: jy, month: jm, day: jd);
   }
 
+  static DateTime toGregorian(
+    int jalaliYear,
+    int jalaliMonth,
+    int jalaliDay,
+  ) {
+    var jy = jalaliYear + 1595;
+    var days = -355668 +
+        (365 * jy) +
+        ((jy ~/ 33) * 8) +
+        (((jy % 33) + 3) ~/ 4) +
+        jalaliDay +
+        (jalaliMonth < 7
+            ? (jalaliMonth - 1) * 31
+            : ((jalaliMonth - 7) * 30) + 186);
+
+    var gy = 400 * (days ~/ 146097);
+    days %= 146097;
+
+    if (days > 36524) {
+      days--;
+      gy += 100 * (days ~/ 36524);
+      days %= 36524;
+
+      if (days >= 365) {
+        days++;
+      }
+    }
+
+    gy += 4 * (days ~/ 1461);
+    days %= 1461;
+
+    if (days > 365) {
+      gy += (days - 1) ~/ 365;
+      days = (days - 1) % 365;
+    }
+
+    var gd = days + 1;
+
+    final leap =
+        (gy % 4 == 0 && gy % 100 != 0) || (gy % 400 == 0);
+    final monthLengths = <int>[
+      0,
+      31,
+      leap ? 29 : 28,
+      31,
+      30,
+      31,
+      30,
+      31,
+      31,
+      30,
+      31,
+      30,
+      31,
+    ];
+
+    var gm = 1;
+
+    while (gm <= 12 && gd > monthLengths[gm]) {
+      gd -= monthLengths[gm];
+      gm++;
+    }
+
+    return DateTime(gy, gm, gd);
+  }
+
   String get formatted {
     return year.toString().padLeft(4, '0') +
         '/' +
