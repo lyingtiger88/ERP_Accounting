@@ -122,6 +122,28 @@ public sealed class AccountingService(AppDbContext db)
         return fiscalYear;
     }
 
+    public async Task<FiscalYear> SetFiscalYearClosedAsync(
+        Guid companyId,
+        Guid fiscalYearId,
+        bool isClosed,
+        CancellationToken cancellationToken = default)
+    {
+        var fiscalYear = await db.FiscalYears.FirstOrDefaultAsync(
+            x => x.Id == fiscalYearId && x.CompanyId == companyId,
+            cancellationToken);
+
+        if (fiscalYear is null)
+        {
+            throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+        }
+
+        fiscalYear.IsClosed = isClosed;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return fiscalYear;
+    }
+
     public async Task<FiscalYear> EnsureDefaultFiscalYearAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
