@@ -1,0 +1,49 @@
+namespace ERPAccounting.Api.Domain;
+
+public enum DetailAccountType
+{
+    Customer,
+    Supplier,
+    Person,
+    Employee,
+    Bank,
+    Government,
+    Other
+}
+
+public sealed class FiscalYear
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string Name { get; set; }
+    public required int PersianYear { get; set; }
+    public required DateOnly StartDate { get; set; }
+    public required DateOnly EndDate { get; set; }
+    public bool IsDefault { get; set; }
+    public bool IsClosed { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class DetailAccount
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    public required DetailAccountType Type { get; set; }
+    public string? NationalId { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class JournalEntryFiscalYear
+{
+    public required Guid JournalEntryId { get; set; }
+    public required Guid FiscalYearId { get; set; }
+}
+
+public sealed class JournalLineDimension
+{
+    public required Guid JournalLineId { get; set; }
+    public Guid? DetailAccountId { get; set; }
+}
