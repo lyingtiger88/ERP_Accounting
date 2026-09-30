@@ -131,3 +131,13 @@ public sealed record SyncDetailAccountResponse(
     DetailAccountView? Entity,
     DetailAccountSyncConflict? Conflict,
     bool Duplicate);
+
+
+public sealed record DetailAccountServerChangeView(
+    long Cursor,
+    DetailAccountView Entity);
+
+public sealed record DetailAccountPullResponse(
+    long NextCursor,
+    bool HasMore,
+    IReadOnlyList<DetailAccountServerChangeView> Changes);
