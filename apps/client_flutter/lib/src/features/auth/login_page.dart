@@ -114,6 +114,7 @@ class _LoginPageState extends State<LoginPage> {
             displayName: result.displayName,
             role: result.role,
             companyId: result.companyId,
+            accessToken: result.accessToken,
             localDatabase: widget.localDatabase,
             accountsSynced: accountsSynced,
           ),
