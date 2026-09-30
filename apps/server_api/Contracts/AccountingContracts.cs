@@ -162,4 +162,5 @@ public sealed record AccountingAuditView(
     string Action,
     string? Reason,
     Guid UserId,
+    string UserDisplayName,
     DateTimeOffset CreatedAt);
