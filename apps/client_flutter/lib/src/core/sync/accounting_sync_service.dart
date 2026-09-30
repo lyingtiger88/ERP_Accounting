@@ -7,6 +7,7 @@ class AccountingSyncRunResult {
   const AccountingSyncRunResult({
     required this.pushed,
     required this.pushFailed,
+    required this.conflicts,
     required this.pulled,
     required this.remainingOutbox,
     required this.stoppedByNetwork,
@@ -16,6 +17,7 @@ class AccountingSyncRunResult {
 
   final int pushed;
   final int pushFailed;
+  final int conflicts;
   final int pulled;
   final int remainingOutbox;
   final bool stoppedByNetwork;
@@ -76,6 +78,7 @@ class AccountingSyncService {
       return AccountingSyncRunResult(
         pushed: push.synced,
         pushFailed: push.failed,
+        conflicts: push.conflicts,
         pulled: 0,
         remainingOutbox: push.remaining,
         stoppedByNetwork: true,
@@ -100,6 +103,7 @@ class AccountingSyncService {
     return AccountingSyncRunResult(
       pushed: push.synced,
       pushFailed: push.failed,
+      conflicts: push.conflicts,
       pulled: pull.pulled,
       remainingOutbox: push.remaining,
       stoppedByNetwork: false,
