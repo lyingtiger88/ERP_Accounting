@@ -63,3 +63,16 @@ This makes it possible to verify local persistence even if the API is stopped af
 5. Add conflict policies.
 6. Add secure offline trusted-device authentication.
 7. Add USB transport for the same change journal.
+
+
+## Journal Outbox Processing
+
+Accounting documents queued as Pending are uploaded to `POST /api/accounting/sync-journal`.
+
+The upload uses a stable `change_id` and local document ID. The server stores a `journal_sync_receipts` record so retries are idempotent: a timeout or repeated upload returns the already-created journal instead of posting a duplicate.
+
+On success the client updates the local document to Synced, stores the server journal ID and final journal number, and marks the Outbox row with `sent_at`.
+
+On failure the Outbox row remains pending and records `attempt_count` plus `last_error`. Network/auth failures stop the current batch; validation errors stay visible for manual correction or later retry.
+
+Legacy pending documents created before fiscal-year IDs were introduced are backfilled from the cached fiscal-year date range before automatic upload.
