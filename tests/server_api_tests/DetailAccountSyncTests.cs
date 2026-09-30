@@ -166,21 +166,119 @@ public sealed class DetailAccountSyncTests
         Assert.True(secondPage.NextCursor > firstPage.NextCursor);
     }
 
+    [Fact]
+    public async Task PostedJournal_CanBeReversedOnce_WithAuditTrail()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+
+        await service.SeedDefaultAccountsAsync(fixture.Company.Id);
+        var fiscalYear = await service.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+
+        var cash = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "1110");
+
+        var revenue = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "4100");
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        var journal = await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                today,
+                "فروش نقدی تست",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        cash.Id,
+                        "دریافت نقدی",
+                        10_000_000m,
+                        0m),
+                    new CreateJournalLineRequest(
+                        revenue.Id,
+                        "درآمد فروش",
+                        0m,
+                        10_000_000m)
+                },
+                fiscalYear.Id));
+
+        var reversal = await service.ReverseJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            journal.Id,
+            new ReverseJournalRequest(
+                today,
+                "اصلاح سند تست",
+                fiscalYear.Id));
+
+        Assert.Equal(journal.Id, reversal.OriginalJournalEntryId);
+        Assert.NotEqual(journal.Id, reversal.ReversalJournalEntryId);
+        Assert.NotEqual(journal.Number, reversal.ReversalNumber);
+
+        var link = await fixture.Db.JournalReversalLinks.SingleAsync();
+        Assert.Equal(journal.Id, link.OriginalJournalEntryId);
+        Assert.Equal(
+            reversal.ReversalJournalEntryId,
+            link.ReversalJournalEntryId);
+
+        var trialBalance = await service.GetTrialBalanceAsync(
+            fixture.Company.Id);
+
+        Assert.Equal(
+            0m,
+            trialBalance.Single(x => x.AccountId == cash.Id).Balance);
+        Assert.Equal(
+            0m,
+            trialBalance.Single(x => x.AccountId == revenue.Id).Balance);
+
+        var audit = await service.GetAuditLogsAsync(
+            fixture.Company.Id);
+
+        Assert.Contains(audit, x =>
+            x.EntityId == journal.Id &&
+            x.Action == "POST");
+        Assert.Contains(audit, x =>
+            x.EntityId == journal.Id &&
+            x.Action == "REVERSE");
+        Assert.Contains(audit, x =>
+            x.EntityId == reversal.ReversalJournalEntryId &&
+            x.Action == "REVERSAL_POST");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ReverseJournalAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                journal.Id,
+                new ReverseJournalRequest(
+                    today,
+                    "تلاش تکراری",
+                    fiscalYear.Id)));
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
             SqliteConnection connection,
             AppDbContext db,
-            Company company)
+            Company company,
+            AppUser user)
         {
             Connection = connection;
             Db = db;
             Company = company;
+            User = user;
         }
 
         private SqliteConnection Connection { get; }
         public AppDbContext Db { get; }
         public Company Company { get; }
+        public AppUser User { get; }
 
         public static async Task<TestFixture> CreateAsync()
         {
@@ -200,9 +298,24 @@ public sealed class DetailAccountSyncTests
             };
 
             db.Companies.Add(company);
+
+            var user = new AppUser
+            {
+                CompanyId = company.Id,
+                Username = "owner",
+                DisplayName = "Owner",
+                PasswordHash = "test-hash",
+                Role = UserRole.Owner
+            };
+
+            db.Users.Add(user);
             await db.SaveChangesAsync();
 
-            return new TestFixture(connection, db, company);
+            return new TestFixture(
+                connection,
+                db,
+                company,
+                user);
         }
 
         public async ValueTask DisposeAsync()
