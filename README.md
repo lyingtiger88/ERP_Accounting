@@ -64,13 +64,13 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Debit/Credit account nature metadata
 - [x] Control vs postable account enforcement
 - [x] Solar Hijri journal numbering
-- [ ] Configurable fiscal years
+- [x] Configurable fiscal years
 - [ ] Accounting periods
 - [x] Client-side Draft / Pending Sync journal workflow
 - [ ] Server-side Draft / post / reverse journal workflow
-- [ ] Floating detail accounts (تفصیلی شناور)
+- [x] Floating detail accounts (تفصیلی شناور)
 - [ ] Opening balances
-- [ ] Closing fiscal year
+- [x] Fiscal year close/reopen enforcement
 - [ ] Profit & loss
 - [ ] Balance sheet
 - [ ] Account turnover reports
@@ -216,21 +216,23 @@ Implemented so far:
 - Initial general ledger and trial balance reports
 - Offline journal-entry UI with Rial amounts
 - Local Draft/Pending Sync documents stored transactionally with Outbox
+- Configurable Solar Hijri fiscal years with close/reopen control
+- Floating detail accounts cached offline and selectable per journal line
 - CI for ASP.NET Core build and Flutter analysis
 - Architecture for online sync, USB sync, QR pairing and MFA
 
 ### Immediate next steps
 
-1. Validate client-side SQLite cache on Windows
-2. Freeze Phase 1 schema and generate provider-specific EF Core migrations
-3. Verify PostgreSQL provider when Docker/PostgreSQL is available
-4. Implement Outbox push: local accounting document → API journal
+1. Validate fiscal-year/detail-cache upgrade on Windows
+2. Implement Outbox push: local accounting document → API journal
+3. Freeze Phase 1 schema and generate provider-specific EF Core migrations
+4. Verify PostgreSQL provider when Docker/PostgreSQL is available
 5. Persistent sessions and refresh-token rotation
 6. TOTP 2FA + backup codes
 7. QR device pairing
 8. Push/pull Sync Engine
 
-> Server persistence uses EF Core. Local development defaults to a persistent SQLite database so Docker is optional; PostgreSQL remains the server/production provider. Client-side offline SQLite is still a separate next step.
+> Server persistence uses EF Core. Local development defaults to a persistent SQLite database so Docker is optional; PostgreSQL remains the server/production provider. Client-side offline SQLite, journal drafts, fiscal-year cache, floating-detail cache and transactional Outbox are implemented.
 
 ## Core goals
 
