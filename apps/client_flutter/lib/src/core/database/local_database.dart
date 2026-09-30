@@ -14,7 +14,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 5;
+  static const _databaseVersion = 6;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -184,6 +184,15 @@ class LocalDatabase {
 
       await _createMasterDataSchema(db);
     }
+
+    if (oldVersion < 6 && oldVersion >= 2) {
+      await db.execute(
+        "ALTER TABLE local_accounting_documents ADD COLUMN reversal_of_server_id TEXT",
+      );
+      await db.execute(
+        "ALTER TABLE local_accounting_documents ADD COLUMN reversed_by_server_id TEXT",
+      );
+    }
   }
 
   Future<void> _createMasterDataSchema(Database db) async {
@@ -258,6 +267,8 @@ class LocalDatabase {
         fiscal_year_id TEXT,
         server_id TEXT,
         server_number TEXT,
+        reversal_of_server_id TEXT,
+        reversed_by_server_id TEXT,
         document_date TEXT NOT NULL,
         description TEXT,
         status TEXT NOT NULL,
@@ -1272,6 +1283,8 @@ class LocalDatabase {
           'fiscal_year_id': change.fiscalYearId,
           'server_id': change.journalEntryId,
           'server_number': change.number,
+          'reversal_of_server_id':
+              change.reversalOfJournalEntryId,
           'document_date': change.documentDate,
           'description': change.description ?? '',
           'status': change.status,
@@ -1295,6 +1308,21 @@ class LocalDatabase {
             values,
             where: 'id = ?',
             whereArgs: [localDocumentId],
+          );
+        }
+
+        if (change.reversalOfJournalEntryId != null) {
+          await txn.update(
+            'local_accounting_documents',
+            {
+              'reversed_by_server_id': change.journalEntryId,
+              'updated_at': now,
+            },
+            where: 'company_id = ? AND server_id = ?',
+            whereArgs: [
+              companyId,
+              change.reversalOfJournalEntryId,
+            ],
           );
         }
 
@@ -1385,7 +1413,12 @@ class LocalDatabase {
           debitTotal: (summary['debit_total'] as num).toInt(),
           creditTotal: (summary['credit_total'] as num).toInt(),
           lineCount: (summary['line_count'] as num).toInt(),
+          serverId: document['server_id'] as String?,
           serverNumber: document['server_number'] as String?,
+          reversalOfServerId:
+              document['reversal_of_server_id'] as String?,
+          reversedByServerId:
+              document['reversed_by_server_id'] as String?,
           syncAttempts:
               (pendingOutbox?['attempt_count'] as int?) ?? 0,
           syncError: pendingOutbox?['last_error'] as String?,
@@ -1659,7 +1692,10 @@ class LocalAccountingDocument {
     required this.debitTotal,
     required this.creditTotal,
     required this.lineCount,
+    required this.serverId,
     required this.serverNumber,
+    required this.reversalOfServerId,
+    required this.reversedByServerId,
     required this.syncAttempts,
     required this.syncError,
   });
@@ -1673,7 +1709,10 @@ class LocalAccountingDocument {
   final int debitTotal;
   final int creditTotal;
   final int lineCount;
+  final String? serverId;
   final String? serverNumber;
+  final String? reversalOfServerId;
+  final String? reversedByServerId;
   final int syncAttempts;
   final String? syncError;
 
