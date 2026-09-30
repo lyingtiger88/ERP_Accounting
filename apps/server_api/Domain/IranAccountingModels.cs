@@ -67,3 +67,32 @@ public sealed class JournalServerChange
     public required Guid JournalEntryId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+
+public sealed class DetailAccountSyncState
+{
+    public required Guid DetailAccountId { get; set; }
+    public required Guid CompanyId { get; set; }
+    public long Revision { get; set; } = 1;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class DetailAccountSyncReceipt
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string ChangeId { get; set; }
+    public required Guid DetailAccountId { get; set; }
+    public required long AppliedRevision { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class DetailAccountServerChange
+{
+    public long Sequence { get; set; }
+    public required Guid CompanyId { get; set; }
+    public required Guid DetailAccountId { get; set; }
+    public required long Revision { get; set; }
+    public required string Operation { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
