@@ -20,6 +20,10 @@ public sealed class AccountingService(AppDbContext db)
             .ToArrayAsync(cancellationToken);
 
         var lookup = accounts.ToDictionary(x => x.Id);
+        var parentIds = accounts
+            .Where(x => x.ParentId.HasValue)
+            .Select(x => x.ParentId!.Value)
+            .ToHashSet();
 
         return accounts
             .Select(account =>
@@ -38,7 +42,8 @@ public sealed class AccountingService(AppDbContext db)
                     level,
                     nature,
                     GetLevelTitle(level),
-                    nature == AccountNature.Debit ? "بدهکار" : "بستانکار");
+                    nature == AccountNature.Debit ? "بدهکار" : "بستانکار",
+                    !parentIds.Contains(account.Id));
             })
             .ToArray();
     }
@@ -153,6 +158,19 @@ public sealed class AccountingService(AppDbContext db)
         {
             throw new ArgumentException(
                 "One or more accounts are unavailable.");
+        }
+
+        var containsControlAccount = await db.Accounts.AnyAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.ParentId.HasValue &&
+                accountIds.Contains(x.ParentId.Value),
+            cancellationToken);
+
+        if (containsControlAccount)
+        {
+            throw new ArgumentException(
+                "Journal lines can only use postable leaf accounts.");
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(
