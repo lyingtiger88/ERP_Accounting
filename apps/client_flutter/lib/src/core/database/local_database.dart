@@ -154,12 +154,17 @@ class LocalDatabase {
 
     if (oldVersion < 4) {
       await _createMasterDataSchema(db);
-      await db.execute(
-        "ALTER TABLE local_accounting_documents ADD COLUMN fiscal_year_id TEXT",
-      );
-      await db.execute(
-        "ALTER TABLE local_document_lines ADD COLUMN detail_account_id TEXT",
-      );
+
+      // Versions below 2 create the accounting tables above using the
+      // current schema, so their v4 columns already exist.
+      if (oldVersion >= 2) {
+        await db.execute(
+          "ALTER TABLE local_accounting_documents ADD COLUMN fiscal_year_id TEXT",
+        );
+        await db.execute(
+          "ALTER TABLE local_document_lines ADD COLUMN detail_account_id TEXT",
+        );
+      }
     }
   }
 
