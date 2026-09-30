@@ -43,6 +43,34 @@ class LoginResult {
   }
 }
 
+class JournalSyncResult {
+  const JournalSyncResult({
+    required this.journalEntryId,
+    required this.number,
+    required this.status,
+    required this.postedAt,
+    required this.duplicate,
+  });
+
+  final String journalEntryId;
+  final String number;
+  final String status;
+  final DateTime? postedAt;
+  final bool duplicate;
+
+  factory JournalSyncResult.fromJson(Map<String, dynamic> json) {
+    return JournalSyncResult(
+      journalEntryId: json['journalEntryId'] as String,
+      number: json['number'] as String,
+      status: json['status'].toString(),
+      postedAt: json['postedAt'] == null
+          ? null
+          : DateTime.parse(json['postedAt'] as String),
+      duplicate: json['duplicate'] as bool? ?? false,
+    );
+  }
+}
+
 class ApiClient {
   ApiClient({String? baseUrl}) : baseUrl = baseUrl ?? _defaultBaseUrl();
 
@@ -210,6 +238,45 @@ class ApiClient {
     final month = value.month.toString().padLeft(2, '0');
     final day = value.day.toString().padLeft(2, '0');
     return year + '-' + month + '-' + day;
+  }
+
+  Future<JournalSyncResult> syncJournal({
+    required String bearerToken,
+    required String changeId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final fiscalYearId = payload['fiscalYearId'] as String?;
+    final localDocumentId = payload['localDocumentId'] as String?;
+
+    if (fiscalYearId == null || fiscalYearId.isEmpty) {
+      throw const ApiException(
+        'سند محلی سال مالی ندارد و قابل همگام‌سازی نیست.',
+      );
+    }
+
+    if (localDocumentId == null || localDocumentId.isEmpty) {
+      throw const ApiException(
+        'شناسه سند محلی برای همگام‌سازی موجود نیست.',
+      );
+    }
+
+    final response = await _request(
+      'POST',
+      '/api/accounting/sync-journal',
+      bearerToken: bearerToken,
+      body: {
+        'changeId': changeId,
+        'localDocumentId': localDocumentId,
+        'fiscalYearId': fiscalYearId,
+        'documentDate': payload['documentDate'],
+        'description': payload['description'],
+        'lines': payload['lines'],
+      },
+    );
+
+    return JournalSyncResult.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   Future<dynamic> _request(
