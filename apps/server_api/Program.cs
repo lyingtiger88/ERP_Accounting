@@ -585,6 +585,70 @@ accounting.MapPost("/sync-journal", async (
     }
 });
 
+accounting.MapPost("/journals/{journalEntryId:guid}/reverse", async (
+    HttpRequest request,
+    Guid journalEntryId,
+    ReverseJournalRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.ReverseJournalAsync(
+            user.CompanyId,
+            user.Id,
+            journalEntryId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/audit", async (
+    HttpRequest request,
+    Guid? entityId,
+    int? limit,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await accountingService.GetAuditLogsAsync(
+            user.CompanyId,
+            entityId,
+            limit ?? 100,
+            cancellationToken));
+});
+
 accounting.MapGet("/sync/journals", async (
     HttpRequest request,
     long? after,
