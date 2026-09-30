@@ -82,8 +82,10 @@ class OutboxSyncService {
         processed++;
         failed++;
 
-        if (error.statusCode == null) {
-          stoppedByNetwork = true;
+        if (error.statusCode == null ||
+            error.statusCode == 401 ||
+            error.statusCode == 403) {
+          stoppedByNetwork = error.statusCode == null;
           break;
         }
       } catch (error) {
