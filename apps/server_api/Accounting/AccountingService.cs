@@ -48,6 +48,188 @@ public sealed class AccountingService(AppDbContext db)
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<FiscalYear>> GetFiscalYearsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        return await db.FiscalYears
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderByDescending(x => x.StartDate)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<FiscalYear> CreateFiscalYearAsync(
+        Guid companyId,
+        CreateFiscalYearRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var name = request.Name.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Fiscal year name is required.");
+        }
+
+        if (request.PersianYear is < 1200 or > 1700)
+        {
+            throw new ArgumentException("Persian fiscal year is outside the supported range.");
+        }
+
+        if (request.EndDate < request.StartDate)
+        {
+            throw new ArgumentException("Fiscal year end date cannot be before start date.");
+        }
+
+        var overlaps = await db.FiscalYears.AnyAsync(
+            x =>
+                x.CompanyId == companyId &&
+                request.StartDate <= x.EndDate &&
+                request.EndDate >= x.StartDate,
+            cancellationToken);
+
+        if (overlaps)
+        {
+            throw new InvalidOperationException(
+                "Fiscal year overlaps an existing fiscal year.");
+        }
+
+        if (request.IsDefault)
+        {
+            var defaults = await db.FiscalYears
+                .Where(x => x.CompanyId == companyId && x.IsDefault)
+                .ToArrayAsync(cancellationToken);
+
+            foreach (var current in defaults)
+            {
+                current.IsDefault = false;
+            }
+        }
+
+        var fiscalYear = new FiscalYear
+        {
+            CompanyId = companyId,
+            Name = name,
+            PersianYear = request.PersianYear,
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            IsDefault = request.IsDefault
+        };
+
+        db.FiscalYears.Add(fiscalYear);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return fiscalYear;
+    }
+
+    public async Task<FiscalYear> EnsureDefaultFiscalYearAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        var existing = await db.FiscalYears
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.StartDate <= today &&
+                x.EndDate >= today)
+            .OrderByDescending(x => x.IsDefault)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var persianCalendar = new PersianCalendar();
+        var now = DateTime.Today;
+        var persianYear = persianCalendar.GetYear(now);
+
+        var start = DateOnly.FromDateTime(
+            persianCalendar.ToDateTime(
+                persianYear,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0));
+
+        var nextStart = DateOnly.FromDateTime(
+            persianCalendar.ToDateTime(
+                persianYear + 1,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0));
+
+        var end = nextStart.AddDays(-1);
+        var hasDefault = await db.FiscalYears.AnyAsync(
+            x => x.CompanyId == companyId && x.IsDefault,
+            cancellationToken);
+
+        return await CreateFiscalYearAsync(
+            companyId,
+            new CreateFiscalYearRequest(
+                $"سال مالی {persianYear}",
+                persianYear,
+                start,
+                end,
+                !hasDefault),
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DetailAccount>> GetDetailAccountsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        return await db.DetailAccounts
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderBy(x => x.Code)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<DetailAccount> CreateDetailAccountAsync(
+        Guid companyId,
+        CreateDetailAccountRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var code = request.Code.Trim();
+        var name = request.Name.Trim();
+        var nationalId = request.NationalId?.Trim();
+
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Detail code and name are required.");
+        }
+
+        var duplicateCode = await db.DetailAccounts.AnyAsync(
+            x => x.CompanyId == companyId && x.Code == code,
+            cancellationToken);
+
+        if (duplicateCode)
+        {
+            throw new InvalidOperationException("Detail account code already exists.");
+        }
+
+        var detail = new DetailAccount
+        {
+            CompanyId = companyId,
+            Code = code,
+            Name = name,
+            Type = request.Type,
+            NationalId = string.IsNullOrWhiteSpace(nationalId) ? null : nationalId
+        };
+
+        db.DetailAccounts.Add(detail);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return detail;
+    }
+
     public async Task<LedgerAccount> CreateAccountAsync(
         Guid companyId,
         CreateAccountRequest request,
@@ -141,6 +323,40 @@ public sealed class AccountingService(AppDbContext db)
             throw new ArgumentException("Journal entry is not balanced.");
         }
 
+        var fiscalYear = await ResolveFiscalYearAsync(
+            companyId,
+            request.FiscalYearId,
+            request.DocumentDate,
+            cancellationToken);
+
+        if (fiscalYear.IsClosed)
+        {
+            throw new InvalidOperationException(
+                "The selected fiscal year is closed.");
+        }
+
+        var detailIds = request.Lines
+            .Where(x => x.DetailAccountId.HasValue)
+            .Select(x => x.DetailAccountId!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (detailIds.Length > 0)
+        {
+            var validDetailCount = await db.DetailAccounts.CountAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.IsActive &&
+                    detailIds.Contains(x.Id),
+                cancellationToken);
+
+            if (validDetailCount != detailIds.Length)
+            {
+                throw new ArgumentException(
+                    "One or more floating detail accounts are unavailable.");
+            }
+        }
+
         var accountIds = request.Lines
             .Select(x => x.AccountId)
             .Distinct()
@@ -183,7 +399,7 @@ public sealed class AccountingService(AppDbContext db)
         {
             number = await GenerateJournalNumberAsync(
                 companyId,
-                request.DocumentDate,
+                fiscalYear,
                 cancellationToken);
         }
         else
@@ -219,6 +435,28 @@ public sealed class AccountingService(AppDbContext db)
         }).ToList();
 
         db.JournalEntries.Add(entry);
+        db.JournalEntryFiscalYears.Add(new JournalEntryFiscalYear
+        {
+            JournalEntryId = entry.Id,
+            FiscalYearId = fiscalYear.Id
+        });
+
+        for (var index = 0; index < request.Lines.Count; index++)
+        {
+            var requestLine = request.Lines[index];
+
+            if (requestLine.DetailAccountId is not Guid detailAccountId)
+            {
+                continue;
+            }
+
+            db.JournalLineDimensions.Add(new JournalLineDimension
+            {
+                JournalLineId = entry.Lines[index].Id,
+                DetailAccountId = detailAccountId
+            });
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -397,15 +635,60 @@ public sealed class AccountingService(AppDbContext db)
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<string> GenerateJournalNumberAsync(
+    private async Task<FiscalYear> ResolveFiscalYearAsync(
         Guid companyId,
+        Guid? fiscalYearId,
         DateOnly documentDate,
         CancellationToken cancellationToken)
     {
-        var persianCalendar = new PersianCalendar();
-        var dateTime = documentDate.ToDateTime(TimeOnly.MinValue);
-        var fiscalYear = persianCalendar.GetYear(dateTime);
-        var prefix = fiscalYear.ToString(CultureInfo.InvariantCulture) + "/";
+        FiscalYear? fiscalYear;
+
+        if (fiscalYearId is Guid selectedId)
+        {
+            fiscalYear = await db.FiscalYears.FirstOrDefaultAsync(
+                x => x.Id == selectedId && x.CompanyId == companyId,
+                cancellationToken);
+
+            if (fiscalYear is null)
+            {
+                throw new ArgumentException(
+                    "Selected fiscal year does not exist in this company.");
+            }
+        }
+        else
+        {
+            fiscalYear = await db.FiscalYears
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    x.StartDate <= documentDate &&
+                    x.EndDate >= documentDate)
+                .OrderByDescending(x => x.IsDefault)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (fiscalYear is null)
+        {
+            throw new InvalidOperationException(
+                "No fiscal year covers the document date.");
+        }
+
+        if (documentDate < fiscalYear.StartDate ||
+            documentDate > fiscalYear.EndDate)
+        {
+            throw new ArgumentException(
+                "Document date is outside the selected fiscal year.");
+        }
+
+        return fiscalYear;
+    }
+
+    private async Task<string> GenerateJournalNumberAsync(
+        Guid companyId,
+        FiscalYear fiscalYear,
+        CancellationToken cancellationToken)
+    {
+        var prefix =
+            fiscalYear.PersianYear.ToString(CultureInfo.InvariantCulture) + "/";
 
         var existingNumbers = await db.JournalEntries
             .AsNoTracking()
