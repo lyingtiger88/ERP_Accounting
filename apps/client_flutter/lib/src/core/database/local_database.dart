@@ -694,6 +694,84 @@ class LocalDatabase {
         .toList(growable: false);
   }
 
+  Future<List<PendingOutboxItem>> getPendingOutbox({
+    int limit = 50,
+  }) async {
+    final rows = await _db.query(
+      'sync_outbox',
+      where: 'sent_at IS NULL',
+      orderBy: 'created_at ASC, id ASC',
+      limit: limit,
+    );
+
+    return rows
+        .map(
+          (row) => PendingOutboxItem(
+            id: row['id'] as int,
+            changeId: row['change_id'] as String,
+            companyId: row['company_id'] as String,
+            entityType: row['entity_type'] as String,
+            entityId: row['entity_id'] as String,
+            operation: row['operation'] as String,
+            payload: Map<String, dynamic>.from(
+              jsonDecode(row['payload_json'] as String) as Map,
+            ),
+            attemptCount: row['attempt_count'] as int,
+            lastError: row['last_error'] as String?,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> markOutboxSent({
+    required int outboxId,
+    required String localDocumentId,
+    required String serverId,
+    required String serverNumber,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.update(
+        'sync_outbox',
+        {
+          'sent_at': now,
+          'last_error': null,
+        },
+        where: 'id = ?',
+        whereArgs: [outboxId],
+      );
+
+      await txn.update(
+        'local_accounting_documents',
+        {
+          'server_id': serverId,
+          'server_number': serverNumber,
+          'status': 'Posted',
+          'sync_status': 'Synced',
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [localDocumentId],
+      );
+    });
+  }
+
+  Future<void> markOutboxFailed({
+    required int outboxId,
+    required String error,
+  }) async {
+    await _db.rawUpdate(
+      '''
+      UPDATE sync_outbox
+      SET attempt_count = attempt_count + 1,
+          last_error = ?
+      WHERE id = ?
+      ''',
+      [error, outboxId],
+    );
+  }
+
   Future<int> pendingOutboxCount() async {
     final rows = await _db.rawQuery(
       'SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL',
@@ -905,4 +983,29 @@ class CachedDetailAccount {
   final String type;
   final String? nationalId;
   final bool isActive;
+}
+
+
+class PendingOutboxItem {
+  const PendingOutboxItem({
+    required this.id,
+    required this.changeId,
+    required this.companyId,
+    required this.entityType,
+    required this.entityId,
+    required this.operation,
+    required this.payload,
+    required this.attemptCount,
+    required this.lastError,
+  });
+
+  final int id;
+  final String changeId;
+  final String companyId;
+  final String entityType;
+  final String entityId;
+  final String operation;
+  final Map<String, dynamic> payload;
+  final int attemptCount;
+  final String? lastError;
 }
