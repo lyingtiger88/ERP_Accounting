@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
-import '../../core/sync/outbox_sync_service.dart';
+import '../../core/sync/accounting_sync_service.dart';
 import '../dashboard/dashboard_page.dart';
 import 'bootstrap_page.dart';
 
@@ -112,15 +112,16 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       try {
-        await OutboxSyncService(
+        await AccountingSyncService(
           localDatabase: widget.localDatabase,
           apiClient: _apiClient,
-        ).syncPending(
+        ).syncAll(
+          companyId: result.companyId,
           bearerToken: result.accessToken,
         );
 
         await widget.localDatabase.setMeta(
-          'last_outbox_sync_at',
+          'last_accounting_sync_at',
           DateTime.now().toUtc().toIso8601String(),
         );
       } catch (_) {
