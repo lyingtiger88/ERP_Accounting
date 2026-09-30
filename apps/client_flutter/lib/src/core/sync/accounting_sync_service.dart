@@ -1,5 +1,6 @@
 import '../api/api_client.dart';
 import '../database/local_database.dart';
+import 'detail_account_pull_sync_service.dart';
 import 'journal_pull_sync_service.dart';
 import 'outbox_sync_service.dart';
 
@@ -44,10 +45,6 @@ class AccountingSyncService {
     final fiscalYears = await apiClient.getFiscalYears(
       bearerToken: bearerToken,
     );
-    final detailAccounts = await apiClient.getDetailAccounts(
-      bearerToken: bearerToken,
-    );
-
     await localDatabase.replaceAccounts(
       companyId: companyId,
       accounts: accounts,
@@ -55,10 +52,6 @@ class AccountingSyncService {
     await localDatabase.replaceFiscalYears(
       companyId: companyId,
       fiscalYears: fiscalYears,
-    );
-    await localDatabase.replaceDetailAccounts(
-      companyId: companyId,
-      details: detailAccounts,
     );
     await localDatabase.backfillLegacyJournalFiscalYears(
       companyId,
@@ -86,6 +79,14 @@ class AccountingSyncService {
         endCursor: currentCursor,
       );
     }
+
+    await DetailAccountPullSyncService(
+      localDatabase: localDatabase,
+      apiClient: apiClient,
+    ).pullAll(
+      companyId: companyId,
+      bearerToken: bearerToken,
+    );
 
     final pull = await JournalPullSyncService(
       localDatabase: localDatabase,
