@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
+import 'audit_trail_page.dart';
 import 'cached_accounts_page.dart';
 import 'detail_accounts_page.dart';
 import 'fiscal_years_page.dart';
@@ -114,6 +115,17 @@ class AccountingHomePage extends StatelessWidget {
                       companyId: companyId,
                       accessToken: accessToken,
                       localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'تاریخچه حسابرسی',
+                  subtitle: 'ثبت، Sync، برگشت و عملیات حساس',
+                  icon: Icons.manage_history_outlined,
+                  onTap: () => _open(
+                    context,
+                    AuditTrailPage(
+                      accessToken: accessToken,
                     ),
                   ),
                 ),
