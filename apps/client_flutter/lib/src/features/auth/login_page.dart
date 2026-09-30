@@ -71,14 +71,32 @@ class _LoginPageState extends State<LoginPage> {
         final accounts = await _apiClient.getAccounts(
           bearerToken: result.accessToken,
         );
+        final fiscalYears = await _apiClient.getFiscalYears(
+          bearerToken: result.accessToken,
+        );
+        final detailAccounts = await _apiClient.getDetailAccounts(
+          bearerToken: result.accessToken,
+        );
 
         await widget.localDatabase.replaceAccounts(
           companyId: result.companyId,
           accounts: accounts,
         );
+        await widget.localDatabase.replaceFiscalYears(
+          companyId: result.companyId,
+          fiscalYears: fiscalYears,
+        );
+        await widget.localDatabase.replaceDetailAccounts(
+          companyId: result.companyId,
+          details: detailAccounts,
+        );
 
         await widget.localDatabase.setMeta(
           'last_account_sync_at',
+          DateTime.now().toUtc().toIso8601String(),
+        );
+        await widget.localDatabase.setMeta(
+          'last_accounting_master_sync_at',
           DateTime.now().toUtc().toIso8601String(),
         );
 
