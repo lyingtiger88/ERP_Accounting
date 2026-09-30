@@ -341,6 +341,7 @@ accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/state", async (
     {
         return Results.Ok(await accountingService.SetFiscalYearClosedAsync(
             user.CompanyId,
+            user.Id,
             fiscalYearId,
             payload.IsClosed,
             cancellationToken));
@@ -438,6 +439,7 @@ accounting.MapPost("/sync/detail-account", async (
     {
         return Results.Ok(await accountingService.SyncDetailAccountAsync(
             user.CompanyId,
+            user.Id,
             payload,
             cancellationToken));
     }
