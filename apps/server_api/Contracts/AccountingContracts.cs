@@ -22,14 +22,29 @@ public sealed record AccountView(
     string NatureTitle,
     bool IsPostable);
 
+public sealed record CreateFiscalYearRequest(
+    string Name,
+    int PersianYear,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    bool IsDefault);
+
+public sealed record CreateDetailAccountRequest(
+    string Code,
+    string Name,
+    DetailAccountType Type,
+    string? NationalId);
+
 public sealed record CreateJournalLineRequest(
     Guid AccountId,
     string? Description,
     decimal Debit,
-    decimal Credit);
+    decimal Credit,
+    Guid? DetailAccountId = null);
 
 public sealed record CreateJournalRequest(
     string? Number,
     DateOnly DocumentDate,
     string? Description,
-    IReadOnlyList<CreateJournalLineRequest> Lines);
+    IReadOnlyList<CreateJournalLineRequest> Lines,
+    Guid? FiscalYearId = null);
