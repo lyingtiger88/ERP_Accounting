@@ -203,18 +203,37 @@ public sealed class AccountingService(AppDbContext db)
             cancellationToken);
     }
 
-    public async Task<IReadOnlyList<DetailAccount>> GetDetailAccountsAsync(
+    public async Task<IReadOnlyList<DetailAccountView>> GetDetailAccountsAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        return await db.DetailAccounts
+        var details = await db.DetailAccounts
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
             .OrderBy(x => x.Code)
             .ToArrayAsync(cancellationToken);
+
+        var states = await db.DetailAccountSyncStates
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .ToDictionaryAsync(
+                x => x.DetailAccountId,
+                cancellationToken);
+
+        return details
+            .Select(detail =>
+            {
+                states.TryGetValue(detail.Id, out var state);
+
+                return ToDetailAccountView(
+                    detail,
+                    state?.Revision ?? 1,
+                    state?.UpdatedAt ?? detail.CreatedAt);
+            })
+            .ToArray();
     }
 
-    public async Task<DetailAccount> CreateDetailAccountAsync(
+    public async Task<DetailAccountView> CreateDetailAccountAsync(
         Guid companyId,
         CreateDetailAccountRequest request,
         CancellationToken cancellationToken = default)
@@ -223,10 +242,11 @@ public sealed class AccountingService(AppDbContext db)
         var name = request.Name.Trim();
         var nationalId = request.NationalId?.Trim();
 
-        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
-        {
-            throw new ArgumentException("Detail code and name are required.");
-        }
+        ValidateDetailAccountFields(code, name);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
 
         var duplicateCode = await db.DetailAccounts.AnyAsync(
             x => x.CompanyId == companyId && x.Code == code,
@@ -234,22 +254,282 @@ public sealed class AccountingService(AppDbContext db)
 
         if (duplicateCode)
         {
-            throw new InvalidOperationException("Detail account code already exists.");
+            throw new InvalidOperationException(
+                "Detail account code already exists.");
         }
 
+        var now = DateTimeOffset.UtcNow;
         var detail = new DetailAccount
         {
             CompanyId = companyId,
             Code = code,
             Name = name,
             Type = request.Type,
-            NationalId = string.IsNullOrWhiteSpace(nationalId) ? null : nationalId
+            NationalId = string.IsNullOrWhiteSpace(nationalId)
+                ? null
+                : nationalId
         };
 
         db.DetailAccounts.Add(detail);
-        await db.SaveChangesAsync(cancellationToken);
+        db.DetailAccountSyncStates.Add(new DetailAccountSyncState
+        {
+            DetailAccountId = detail.Id,
+            CompanyId = companyId,
+            Revision = 1,
+            UpdatedAt = now
+        });
+        db.DetailAccountServerChanges.Add(new DetailAccountServerChange
+        {
+            CompanyId = companyId,
+            DetailAccountId = detail.Id,
+            Revision = 1,
+            Operation = "Upsert",
+            CreatedAt = now
+        });
 
-        return detail;
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return ToDetailAccountView(detail, 1, now);
+    }
+
+    public async Task<SyncDetailAccountResponse> SyncDetailAccountAsync(
+        Guid companyId,
+        SyncDetailAccountRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var changeId = request.ChangeId.Trim();
+        var code = request.Code.Trim();
+        var name = request.Name.Trim();
+        var nationalId = request.NationalId?.Trim();
+
+        if (string.IsNullOrWhiteSpace(changeId))
+        {
+            throw new ArgumentException("ChangeId is required.");
+        }
+
+        if (request.BaseRevision < 0)
+        {
+            throw new ArgumentException("BaseRevision cannot be negative.");
+        }
+
+        ValidateDetailAccountFields(code, name);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var receipt = await db.DetailAccountSyncReceipts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.ChangeId == changeId,
+                cancellationToken);
+
+        if (receipt is not null)
+        {
+            if (receipt.DetailAccountId != request.EntityId)
+            {
+                throw new InvalidOperationException(
+                    "ChangeId is already associated with another detail account.");
+            }
+
+            var duplicateDetail = await db.DetailAccounts
+                .AsNoTracking()
+                .FirstAsync(
+                    x =>
+                        x.Id == receipt.DetailAccountId &&
+                        x.CompanyId == companyId,
+                    cancellationToken);
+
+            var duplicateState = await db.DetailAccountSyncStates
+                .AsNoTracking()
+                .FirstAsync(
+                    x => x.DetailAccountId == duplicateDetail.Id,
+                    cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return new SyncDetailAccountResponse(
+                "Applied",
+                ToDetailAccountView(
+                    duplicateDetail,
+                    duplicateState.Revision,
+                    duplicateState.UpdatedAt),
+                null,
+                true);
+        }
+
+        var detail = await db.DetailAccounts
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == request.EntityId &&
+                    x.CompanyId == companyId,
+                cancellationToken);
+
+        if (detail is null)
+        {
+            if (request.BaseRevision != 0)
+            {
+                await transaction.CommitAsync(cancellationToken);
+
+                return new SyncDetailAccountResponse(
+                    "Conflict",
+                    null,
+                    new DetailAccountSyncConflict(
+                        null,
+                        request.BaseRevision),
+                    false);
+            }
+
+            var duplicateCode = await db.DetailAccounts.AnyAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.Code == code,
+                cancellationToken);
+
+            if (duplicateCode)
+            {
+                throw new InvalidOperationException(
+                    "Detail account code already exists.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            detail = new DetailAccount
+            {
+                Id = request.EntityId,
+                CompanyId = companyId,
+                Code = code,
+                Name = name,
+                Type = request.Type,
+                NationalId = string.IsNullOrWhiteSpace(nationalId)
+                    ? null
+                    : nationalId,
+                IsActive = request.IsActive
+            };
+
+            db.DetailAccounts.Add(detail);
+            db.DetailAccountSyncStates.Add(new DetailAccountSyncState
+            {
+                DetailAccountId = detail.Id,
+                CompanyId = companyId,
+                Revision = 1,
+                UpdatedAt = now
+            });
+            db.DetailAccountServerChanges.Add(new DetailAccountServerChange
+            {
+                CompanyId = companyId,
+                DetailAccountId = detail.Id,
+                Revision = 1,
+                Operation = "Upsert",
+                CreatedAt = now
+            });
+            db.DetailAccountSyncReceipts.Add(new DetailAccountSyncReceipt
+            {
+                CompanyId = companyId,
+                ChangeId = changeId,
+                DetailAccountId = detail.Id,
+                AppliedRevision = 1,
+                CreatedAt = now
+            });
+
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return new SyncDetailAccountResponse(
+                "Applied",
+                ToDetailAccountView(detail, 1, now),
+                null,
+                false);
+        }
+
+        var state = await db.DetailAccountSyncStates
+            .FirstOrDefaultAsync(
+                x => x.DetailAccountId == detail.Id,
+                cancellationToken);
+
+        if (state is null)
+        {
+            state = new DetailAccountSyncState
+            {
+                DetailAccountId = detail.Id,
+                CompanyId = companyId,
+                Revision = 1,
+                UpdatedAt = detail.CreatedAt
+            };
+
+            db.DetailAccountSyncStates.Add(state);
+        }
+
+        if (state.Revision != request.BaseRevision)
+        {
+            await transaction.CommitAsync(cancellationToken);
+
+            return new SyncDetailAccountResponse(
+                "Conflict",
+                null,
+                new DetailAccountSyncConflict(
+                    ToDetailAccountView(
+                        detail,
+                        state.Revision,
+                        state.UpdatedAt),
+                    request.BaseRevision),
+                false);
+        }
+
+        var codeUsedByAnother = await db.DetailAccounts.AnyAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.Id != detail.Id &&
+                x.Code == code,
+            cancellationToken);
+
+        if (codeUsedByAnother)
+        {
+            throw new InvalidOperationException(
+                "Detail account code already exists.");
+        }
+
+        detail.Code = code;
+        detail.Name = name;
+        detail.Type = request.Type;
+        detail.NationalId = string.IsNullOrWhiteSpace(nationalId)
+            ? null
+            : nationalId;
+        detail.IsActive = request.IsActive;
+
+        state.Revision++;
+        state.UpdatedAt = DateTimeOffset.UtcNow;
+
+        db.DetailAccountServerChanges.Add(new DetailAccountServerChange
+        {
+            CompanyId = companyId,
+            DetailAccountId = detail.Id,
+            Revision = state.Revision,
+            Operation = "Upsert",
+            CreatedAt = state.UpdatedAt
+        });
+        db.DetailAccountSyncReceipts.Add(new DetailAccountSyncReceipt
+        {
+            CompanyId = companyId,
+            ChangeId = changeId,
+            DetailAccountId = detail.Id,
+            AppliedRevision = state.Revision,
+            CreatedAt = state.UpdatedAt
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new SyncDetailAccountResponse(
+            "Applied",
+            ToDetailAccountView(
+                detail,
+                state.Revision,
+                state.UpdatedAt),
+            null,
+            false);
     }
 
     public async Task<LedgerAccount> CreateAccountAsync(
@@ -878,6 +1158,35 @@ public sealed class AccountingService(AppDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void ValidateDetailAccountFields(
+        string code,
+        string name)
+    {
+        if (string.IsNullOrWhiteSpace(code) ||
+            string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException(
+                "Detail code and name are required.");
+        }
+    }
+
+    private static DetailAccountView ToDetailAccountView(
+        DetailAccount detail,
+        long revision,
+        DateTimeOffset updatedAt)
+    {
+        return new DetailAccountView(
+            detail.Id,
+            detail.CompanyId,
+            detail.Code,
+            detail.Name,
+            detail.Type,
+            detail.NationalId,
+            detail.IsActive,
+            revision,
+            updatedAt);
     }
 
     private async Task<FiscalYear> ResolveFiscalYearAsync(
