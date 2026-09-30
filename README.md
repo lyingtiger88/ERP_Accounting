@@ -60,12 +60,15 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Debit/Credit validation
 - [x] Initial general ledger
 - [x] Initial trial balance
-- [ ] Hierarchical chart of accounts UI
-- [ ] Fiscal years
+- [x] Hierarchical account levels + Iranian Persian base chart
+- [x] Debit/Credit account nature metadata
+- [x] Control vs postable account enforcement
+- [x] Solar Hijri journal numbering
+- [ ] Configurable fiscal years
 - [ ] Accounting periods
 - [x] Client-side Draft / Pending Sync journal workflow
 - [ ] Server-side Draft / post / reverse journal workflow
-- [ ] Subsidiary/detail accounts
+- [ ] Floating detail accounts (تفصیلی شناور)
 - [ ] Opening balances
 - [ ] Closing fiscal year
 - [ ] Profit & loss
