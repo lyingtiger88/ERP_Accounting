@@ -34,6 +34,7 @@ class JournalPullChange {
     required this.description,
     required this.status,
     required this.postedAt,
+    required this.reversalOfJournalEntryId,
     required this.lines,
   });
 
@@ -45,6 +46,7 @@ class JournalPullChange {
   final String? description;
   final String status;
   final DateTime? postedAt;
+  final String? reversalOfJournalEntryId;
   final List<JournalPullLine> lines;
 
   factory JournalPullChange.fromJson(Map<String, dynamic> json) {
@@ -59,6 +61,8 @@ class JournalPullChange {
       postedAt: json['postedAt'] == null
           ? null
           : DateTime.parse(json['postedAt'] as String),
+      reversalOfJournalEntryId:
+          json['reversalOfJournalEntryId'] as String?,
       lines: (json['lines'] as List<dynamic>)
           .map(
             (item) => JournalPullLine.fromJson(
