@@ -46,8 +46,11 @@
 - [x] Idempotent accounting journal upload
 - [x] Server-to-client journal pull / sync cursors
 - [x] Journal delta push/pull
+- [x] Detail-account delta pull cursor
 - [ ] General delta upload/download
-- [ ] Conflict policies
+- [x] Detail-account optimistic revisions
+- [x] Detail-account conflict detection and interactive resolution
+- [ ] General conflict policies
 - [x] Bidirectional accounting journal API synchronization
 - [ ] General online API synchronization
 - [ ] USB export/import package
@@ -84,7 +87,8 @@
 - [ ] Approval workflows
 
 ## Phase 6 — Hardening & Distribution
-- [ ] Automated tests
+- [x] Initial revision/conflict automated tests
+- [ ] Broader automated test coverage
 - [ ] Backup / restore
 - [ ] Disaster recovery
 - [ ] Security review
