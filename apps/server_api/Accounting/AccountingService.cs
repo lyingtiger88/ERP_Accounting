@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Text.Json;
 using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
@@ -690,6 +691,16 @@ public sealed class AccountingService(AppDbContext db)
             request,
             cancellationToken);
 
+        AddAuditLog(
+            companyId,
+            userId,
+            "JournalEntry",
+            entry.Id,
+            "POST",
+            null,
+            new { entry.Number, entry.DocumentDate });
+
+        await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return entry;
     }
@@ -773,6 +784,15 @@ public sealed class AccountingService(AppDbContext db)
             JournalEntryId = entry.Id
         });
 
+        AddAuditLog(
+            companyId,
+            userId,
+            "JournalEntry",
+            entry.Id,
+            "POST_SYNC",
+            null,
+            new { entry.Number, entry.DocumentDate, LocalDocumentId = localDocumentId });
+
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -782,6 +802,205 @@ public sealed class AccountingService(AppDbContext db)
             entry.Status,
             entry.PostedAt,
             false);
+    }
+
+    public async Task<ReverseJournalResponse> ReverseJournalAsync(
+        Guid companyId,
+        Guid userId,
+        Guid journalEntryId,
+        ReverseJournalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var reason = request.Reason.Trim();
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new ArgumentException(
+                "Reversal reason is required.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var original = await db.JournalEntries
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == journalEntryId &&
+                    x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Journal entry does not exist in this company.");
+
+        if (original.Status != JournalStatus.Posted)
+        {
+            throw new InvalidOperationException(
+                "Only posted journal entries can be reversed.");
+        }
+
+        var alreadyReversed = await db.JournalReversalLinks.AnyAsync(
+            x => x.OriginalJournalEntryId == original.Id,
+            cancellationToken);
+
+        if (alreadyReversed)
+        {
+            throw new InvalidOperationException(
+                "Journal entry already has a reversal.");
+        }
+
+        var isReversalEntry = await db.JournalReversalLinks.AnyAsync(
+            x => x.ReversalJournalEntryId == original.Id,
+            cancellationToken);
+
+        if (isReversalEntry)
+        {
+            throw new InvalidOperationException(
+                "A reversal journal cannot be reversed again.");
+        }
+
+        var lineIds = original.Lines
+            .Select(x => x.Id)
+            .ToArray();
+
+        var dimensions = lineIds.Length == 0
+            ? new Dictionary<Guid, Guid?>()
+            : await db.JournalLineDimensions
+                .AsNoTracking()
+                .Where(x => lineIds.Contains(x.JournalLineId))
+                .ToDictionaryAsync(
+                    x => x.JournalLineId,
+                    x => x.DetailAccountId,
+                    cancellationToken);
+
+        var reversalLines = original.Lines
+            .Select(line =>
+            {
+                dimensions.TryGetValue(
+                    line.Id,
+                    out var detailAccountId);
+
+                return new CreateJournalLineRequest(
+                    line.AccountId,
+                    "برگشت: " + (line.Description ?? original.Description ?? string.Empty),
+                    line.Credit,
+                    line.Debit,
+                    detailAccountId);
+            })
+            .ToArray();
+
+        var reversal = await CreatePostedJournalCoreAsync(
+            companyId,
+            userId,
+            new CreateJournalRequest(
+                null,
+                request.DocumentDate,
+                "برگشت سند " + original.Number + " — " + reason,
+                reversalLines,
+                request.FiscalYearId),
+            cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+
+        db.JournalReversalLinks.Add(new JournalReversalLink
+        {
+            OriginalJournalEntryId = original.Id,
+            ReversalJournalEntryId = reversal.Id,
+            CreatedByUserId = userId,
+            Reason = reason,
+            CreatedAt = now
+        });
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "JournalEntry",
+            original.Id,
+            "REVERSE",
+            reason,
+            new
+            {
+                OriginalNumber = original.Number,
+                ReversalJournalEntryId = reversal.Id,
+                ReversalNumber = reversal.Number
+            });
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "JournalEntry",
+            reversal.Id,
+            "REVERSAL_POST",
+            reason,
+            new
+            {
+                OriginalJournalEntryId = original.Id,
+                OriginalNumber = original.Number,
+                ReversalNumber = reversal.Number
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new ReverseJournalResponse(
+            original.Id,
+            reversal.Id,
+            reversal.Number,
+            reversal.PostedAt);
+    }
+
+    public async Task<IReadOnlyList<AccountingAuditView>> GetAuditLogsAsync(
+        Guid companyId,
+        Guid? entityId = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var take = Math.Clamp(limit, 1, 500);
+
+        var query = db.AccountingAuditLogs
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId);
+
+        if (entityId is Guid id)
+        {
+            query = query.Where(x => x.EntityId == id);
+        }
+
+        return await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(take)
+            .Select(x => new AccountingAuditView(
+                x.Id,
+                x.EntityType,
+                x.EntityId,
+                x.Action,
+                x.Reason,
+                x.UserId,
+                x.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    private void AddAuditLog(
+        Guid companyId,
+        Guid userId,
+        string entityType,
+        Guid entityId,
+        string action,
+        string? reason,
+        object? payload)
+    {
+        db.AccountingAuditLogs.Add(new AccountingAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EntityType = entityType,
+            EntityId = entityId,
+            Action = action,
+            Reason = reason,
+            PayloadJson = payload is null
+                ? null
+                : JsonSerializer.Serialize(payload)
+        });
     }
 
     private async Task<JournalEntry> CreatePostedJournalCoreAsync(
