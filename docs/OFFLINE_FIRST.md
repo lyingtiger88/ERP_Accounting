@@ -87,3 +87,12 @@ Clients store the last applied cursor in `local_meta` under a company-scoped key
 Each pulled journal is merged by `server_id`. A journal previously pushed by the same device updates its existing local row, while a journal created by another device is inserted as a new Synced local document. Lines and floating-detail dimensions are replaced transactionally. The cursor advances only in the same successful SQLite transaction.
 
 A full accounting sync now runs in this order: refresh accounting master data, backfill legacy fiscal-year IDs, push Outbox changes, then pull journal deltas until the server reports no more pages.
+
+
+## Mutable Detail Accounts and Conflicts
+
+`cached_detail_accounts` now keeps Revision plus local sync state (`Synced`, `Pending`, or `Conflict`). Offline creates/edits are coalesced into a single unsent DetailAccount Outbox mutation per entity.
+
+Server refresh and delta-pull operations never overwrite a local Pending or Conflict record. When a revision conflict is returned, the acknowledged Outbox row is closed and a durable `sync_conflicts` row stores both the local payload and the server snapshot.
+
+The conflict UI supports two explicit policies for this entity: Keep Server, or Keep Local and retry using the latest server revision. Unresolved conflict count is visible on the dashboard.
