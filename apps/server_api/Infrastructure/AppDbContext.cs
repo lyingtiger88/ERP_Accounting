@@ -12,6 +12,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<LedgerAccount> Accounts => Set<LedgerAccount>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
+    public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
+    public DbSet<DetailAccount> DetailAccounts => Set<DetailAccount>();
+    public DbSet<JournalEntryFiscalYear> JournalEntryFiscalYears => Set<JournalEntryFiscalYear>();
+    public DbSet<JournalLineDimension> JournalLineDimensions => Set<JournalLineDimension>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,6 +115,65 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<LedgerAccount>()
                 .WithMany()
                 .HasForeignKey(x => x.AccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FiscalYear>(entity =>
+        {
+            entity.ToTable("fiscal_years");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.HasIndex(x => new { x.CompanyId, x.Name }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.StartDate, x.EndDate });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DetailAccount>(entity =>
+        {
+            entity.ToTable("detail_accounts");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
+            entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.NationalId).HasMaxLength(50);
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.Name });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<JournalEntryFiscalYear>(entity =>
+        {
+            entity.ToTable("journal_entry_fiscal_years");
+            entity.HasKey(x => x.JournalEntryId);
+            entity.HasIndex(x => x.FiscalYearId);
+            entity.HasOne<JournalEntry>()
+                .WithOne()
+                .HasForeignKey<JournalEntryFiscalYear>(x => x.JournalEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<FiscalYear>()
+                .WithMany()
+                .HasForeignKey(x => x.FiscalYearId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<JournalLineDimension>(entity =>
+        {
+            entity.ToTable("journal_line_dimensions");
+            entity.HasKey(x => x.JournalLineId);
+            entity.HasIndex(x => x.DetailAccountId);
+            entity.HasOne<JournalLine>()
+                .WithOne()
+                .HasForeignKey<JournalLineDimension>(x => x.JournalLineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<DetailAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.DetailAccountId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }
