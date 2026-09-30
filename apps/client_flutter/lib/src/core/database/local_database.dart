@@ -14,7 +14,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 4;
+  static const _databaseVersion = 5;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -168,6 +168,22 @@ class LocalDatabase {
         );
       }
     }
+
+    if (oldVersion < 5) {
+      if (oldVersion >= 4) {
+        await db.execute(
+          "ALTER TABLE cached_detail_accounts ADD COLUMN revision INTEGER NOT NULL DEFAULT 1",
+        );
+        await db.execute(
+          "ALTER TABLE cached_detail_accounts ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Synced'",
+        );
+        await db.execute(
+          "ALTER TABLE cached_detail_accounts ADD COLUMN sync_error TEXT",
+        );
+      }
+
+      await _createMasterDataSchema(db);
+    }
   }
 
   Future<void> _createMasterDataSchema(Database db) async {
@@ -199,6 +215,9 @@ class LocalDatabase {
         type TEXT NOT NULL,
         national_id TEXT,
         is_active INTEGER NOT NULL DEFAULT 1,
+        revision INTEGER NOT NULL DEFAULT 1,
+        sync_status TEXT NOT NULL DEFAULT 'Synced',
+        sync_error TEXT,
         updated_at TEXT NOT NULL
       )
     ''');
@@ -206,6 +225,28 @@ class LocalDatabase {
     await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_cached_detail_accounts_company_code
       ON cached_detail_accounts(company_id, code)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conflict_key TEXT NOT NULL UNIQUE,
+        company_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        local_payload_json TEXT NOT NULL,
+        server_payload_json TEXT,
+        base_revision INTEGER NOT NULL,
+        server_revision INTEGER,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolution TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sync_conflicts_unresolved
+      ON sync_conflicts(company_id, entity_type, resolved_at, created_at)
     ''');
   }
 
