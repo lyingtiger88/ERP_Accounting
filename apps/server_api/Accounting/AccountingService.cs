@@ -585,8 +585,127 @@ public sealed class AccountingService(AppDbContext db)
             });
         }
 
+        db.JournalServerChanges.Add(new JournalServerChange
+        {
+            CompanyId = companyId,
+            JournalEntryId = entry.Id
+        });
+
         await db.SaveChangesAsync(cancellationToken);
         return entry;
+    }
+
+    public async Task<ServerJournalPullResponse> PullJournalChangesAsync(
+        Guid companyId,
+        long afterCursor,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (afterCursor < 0)
+        {
+            throw new ArgumentException("Cursor cannot be negative.");
+        }
+
+        var pageSize = Math.Clamp(limit, 1, 200);
+
+        var changeRows = await db.JournalServerChanges
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Sequence > afterCursor)
+            .OrderBy(x => x.Sequence)
+            .Take(pageSize + 1)
+            .ToArrayAsync(cancellationToken);
+
+        var hasMore = changeRows.Length > pageSize;
+        var page = changeRows.Take(pageSize).ToArray();
+
+        if (page.Length == 0)
+        {
+            return new ServerJournalPullResponse(
+                afterCursor,
+                false,
+                []);
+        }
+
+        var journalIds = page
+            .Select(x => x.JournalEntryId)
+            .ToArray();
+
+        var journals = await db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                journalIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var fiscalLinks = await db.JournalEntryFiscalYears
+            .AsNoTracking()
+            .Where(x => journalIds.Contains(x.JournalEntryId))
+            .ToDictionaryAsync(
+                x => x.JournalEntryId,
+                x => x.FiscalYearId,
+                cancellationToken);
+
+        var lineIds = journals.Values
+            .SelectMany(x => x.Lines)
+            .Select(x => x.Id)
+            .ToArray();
+
+        var dimensions = lineIds.Length == 0
+            ? new Dictionary<Guid, Guid?>()
+            : await db.JournalLineDimensions
+                .AsNoTracking()
+                .Where(x => lineIds.Contains(x.JournalLineId))
+                .ToDictionaryAsync(
+                    x => x.JournalLineId,
+                    x => x.DetailAccountId,
+                    cancellationToken);
+
+        var changes = new List<ServerJournalChangeView>(page.Length);
+
+        foreach (var change in page)
+        {
+            if (!journals.TryGetValue(change.JournalEntryId, out var journal))
+            {
+                continue;
+            }
+
+            fiscalLinks.TryGetValue(journal.Id, out var fiscalYearId);
+
+            var lines = journal.Lines
+                .Select(line =>
+                {
+                    dimensions.TryGetValue(line.Id, out var detailAccountId);
+
+                    return new ServerJournalLineView(
+                        line.AccountId,
+                        detailAccountId,
+                        line.Description,
+                        line.Debit,
+                        line.Credit);
+                })
+                .ToArray();
+
+            changes.Add(new ServerJournalChangeView(
+                change.Sequence,
+                journal.Id,
+                journal.Number,
+                fiscalYearId == Guid.Empty ? null : fiscalYearId,
+                journal.DocumentDate,
+                journal.Description,
+                journal.Status,
+                journal.PostedAt,
+                lines));
+        }
+
+        var nextCursor = page[^1].Sequence;
+
+        return new ServerJournalPullResponse(
+            nextCursor,
+            hasMore,
+            changes);
     }
 
     public async Task<IReadOnlyList<TrialBalanceRow>> GetTrialBalanceAsync(
