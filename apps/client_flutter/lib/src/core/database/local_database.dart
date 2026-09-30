@@ -616,6 +616,18 @@ class LocalDatabase {
     final now = DateTime.now().toUtc().toIso8601String();
 
     await _db.transaction((txn) async {
+      final duplicate = await txn.query(
+        'cached_detail_accounts',
+        columns: ['id'],
+        where: 'company_id = ? AND code = ? AND id != ?',
+        whereArgs: [companyId, trimmedCode, entityId],
+        limit: 1,
+      );
+
+      if (duplicate.isNotEmpty) {
+        throw ArgumentError('کد تفصیلی تکراری است.');
+      }
+
       await txn.insert(
         'cached_detail_accounts',
         {
@@ -668,6 +680,18 @@ class LocalDatabase {
     final now = DateTime.now().toUtc().toIso8601String();
 
     await _db.transaction((txn) async {
+      final duplicate = await txn.query(
+        'cached_detail_accounts',
+        columns: ['id'],
+        where: 'company_id = ? AND code = ? AND id != ?',
+        whereArgs: [detail.companyId, trimmedCode, detail.id],
+        limit: 1,
+      );
+
+      if (duplicate.isNotEmpty) {
+        throw ArgumentError('کد تفصیلی تکراری است.');
+      }
+
       var baseRevision = detail.revision;
 
       final pendingRows = await txn.query(
@@ -1408,6 +1432,22 @@ class LocalDatabase {
         whereArgs: [localDocumentId],
       );
     });
+  }
+
+  Future<void> markDetailAccountSyncError({
+    required String entityId,
+    required String error,
+  }) async {
+    await _db.update(
+      'cached_detail_accounts',
+      {
+        'sync_status': 'Pending',
+        'sync_error': error,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [entityId],
+    );
   }
 
   Future<void> markOutboxFailed({
