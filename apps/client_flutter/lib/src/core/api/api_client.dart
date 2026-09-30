@@ -114,6 +114,87 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> getFiscalYears({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/fiscal-years',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> getDetailAccounts({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/detail-accounts',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createFiscalYear({
+    required String bearerToken,
+    required String name,
+    required int persianYear,
+    required DateTime startDate,
+    required DateTime endDate,
+    required bool isDefault,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/fiscal-years',
+      bearerToken: bearerToken,
+      body: {
+        'name': name,
+        'persianYear': persianYear,
+        'startDate': _dateOnly(startDate),
+        'endDate': _dateOnly(endDate),
+        'isDefault': isDefault,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> createDetailAccount({
+    required String bearerToken,
+    required String code,
+    required String name,
+    required String type,
+    String? nationalId,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/detail-accounts',
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+        'type': type,
+        'nationalId': nationalId,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  static String _dateOnly(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return year + '-' + month + '-' + day;
+  }
+
   Future<dynamic> _request(
     String method,
     String path, {
