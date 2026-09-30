@@ -315,6 +315,68 @@ public static class AccountingSchemaBootstrapper
             )
             ORDER BY s."UpdatedAt", s."DetailAccountId";
             """
+,
+            """
+            CREATE TABLE IF NOT EXISTS journal_reversal_links (
+                "OriginalJournalEntryId" TEXT NOT NULL
+                    CONSTRAINT "PK_journal_reversal_links" PRIMARY KEY,
+                "ReversalJournalEntryId" TEXT NOT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "Reason" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_journal_reversal_links_original"
+                    FOREIGN KEY ("OriginalJournalEntryId")
+                    REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_reversal_links_reversal"
+                    FOREIGN KEY ("ReversalJournalEntryId")
+                    REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_reversal_links_users"
+                    FOREIGN KEY ("CreatedByUserId")
+                    REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_reversal_links_ReversalJournalEntryId"
+            ON journal_reversal_links ("ReversalJournalEntryId");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS accounting_audit_logs (
+                "Id" TEXT NOT NULL
+                    CONSTRAINT "PK_accounting_audit_logs" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "UserId" TEXT NOT NULL,
+                "EntityType" TEXT NOT NULL,
+                "EntityId" TEXT NOT NULL,
+                "Action" TEXT NOT NULL,
+                "Reason" TEXT NULL,
+                "PayloadJson" TEXT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_accounting_audit_logs_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_accounting_audit_logs_users"
+                    FOREIGN KEY ("UserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_accounting_audit_logs_Entity"
+            ON accounting_audit_logs (
+                "CompanyId",
+                "EntityType",
+                "EntityId"
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_accounting_audit_logs_CompanyId_CreatedAt"
+            ON accounting_audit_logs ("CompanyId", "CreatedAt");
+            """
         };
 
         foreach (var command in commands)
@@ -609,6 +671,68 @@ public static class AccountingSchemaBootstrapper
                   AND c."Revision" = s."Revision"
             )
             ORDER BY s."UpdatedAt", s."DetailAccountId";
+            """
+,
+            """
+            CREATE TABLE IF NOT EXISTS journal_reversal_links (
+                "OriginalJournalEntryId" uuid NOT NULL
+                    CONSTRAINT "PK_journal_reversal_links" PRIMARY KEY,
+                "ReversalJournalEntryId" uuid NOT NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "Reason" character varying(1000) NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_journal_reversal_links_original"
+                    FOREIGN KEY ("OriginalJournalEntryId")
+                    REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_reversal_links_reversal"
+                    FOREIGN KEY ("ReversalJournalEntryId")
+                    REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_reversal_links_users"
+                    FOREIGN KEY ("CreatedByUserId")
+                    REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_reversal_links_ReversalJournalEntryId"
+            ON journal_reversal_links ("ReversalJournalEntryId");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS accounting_audit_logs (
+                "Id" uuid NOT NULL
+                    CONSTRAINT "PK_accounting_audit_logs" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "UserId" uuid NOT NULL,
+                "EntityType" character varying(80) NOT NULL,
+                "EntityId" uuid NOT NULL,
+                "Action" character varying(80) NOT NULL,
+                "Reason" character varying(1000) NULL,
+                "PayloadJson" text NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_accounting_audit_logs_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_accounting_audit_logs_users"
+                    FOREIGN KEY ("UserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_accounting_audit_logs_Entity"
+            ON accounting_audit_logs (
+                "CompanyId",
+                "EntityType",
+                "EntityId"
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_accounting_audit_logs_CompanyId_CreatedAt"
+            ON accounting_audit_logs ("CompanyId", "CreatedAt");
             """
         };
 
