@@ -44,10 +44,12 @@
 - [x] Accounting documents enqueue transactionally into Outbox
 - [x] Outbox push/change-journal processing
 - [x] Idempotent accounting journal upload
-- [ ] Server-to-client journal pull / sync cursors
-- [ ] Delta upload/download
+- [x] Server-to-client journal pull / sync cursors
+- [x] Journal delta push/pull
+- [ ] General delta upload/download
 - [ ] Conflict policies
-- [ ] Online API synchronization
+- [x] Bidirectional accounting journal API synchronization
+- [ ] General online API synchronization
 - [ ] USB export/import package
 - [ ] Encryption and signature verification
 - [ ] Sync health diagnostics
