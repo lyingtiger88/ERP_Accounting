@@ -117,6 +117,13 @@ class OutboxSyncService {
           error: error.message,
         );
 
+        if (item.entityType == 'DetailAccount') {
+          await localDatabase.markDetailAccountSyncError(
+            entityId: item.entityId,
+            error: error.message,
+          );
+        }
+
         processed++;
         failed++;
 
@@ -131,6 +138,13 @@ class OutboxSyncService {
           outboxId: item.id,
           error: error.toString(),
         );
+
+        if (item.entityType == 'DetailAccount') {
+          await localDatabase.markDetailAccountSyncError(
+            entityId: item.entityId,
+            error: error.toString(),
+          );
+        }
 
         processed++;
         failed++;
