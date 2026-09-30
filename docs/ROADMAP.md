@@ -25,13 +25,15 @@
 - [x] Iranian Persian base chart + hierarchy metadata
 - [x] Account nature and control/postable rules
 - [x] Solar Hijri journal numbering
-- [ ] Configurable fiscal years and periods
-- [ ] Floating detail accounts
+- [x] Configurable fiscal years
+- [ ] Accounting periods
+- [x] Floating detail accounts
 - [x] Journal entries with double-entry validation
 - [x] Offline journal-entry UI
 - [x] Local Draft / Pending Sync journal storage
 - [x] General ledger (initial)
 - [x] Trial balance (initial)
+- [x] Fiscal year close/reopen enforcement
 - [ ] Audit log
 - [x] PostgreSQL persistence
 - [x] Initial SQLite client persistence layer
