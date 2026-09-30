@@ -966,18 +966,41 @@ public sealed class AccountingService(AppDbContext db)
             query = query.Where(x => x.EntityId == id);
         }
 
-        return await query
+        var logs = await query
             .OrderByDescending(x => x.CreatedAt)
             .Take(take)
-            .Select(x => new AccountingAuditView(
-                x.Id,
-                x.EntityType,
-                x.EntityId,
-                x.Action,
-                x.Reason,
-                x.UserId,
-                x.CreatedAt))
             .ToArrayAsync(cancellationToken);
+
+        var userIds = logs
+            .Select(x => x.UserId)
+            .Distinct()
+            .ToArray();
+
+        var userNames = userIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await db.Users
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    userIds.Contains(x.Id))
+                .ToDictionaryAsync(
+                    x => x.Id,
+                    x => x.DisplayName,
+                    cancellationToken);
+
+        return logs
+            .Select(log => new AccountingAuditView(
+                log.Id,
+                log.EntityType,
+                log.EntityId,
+                log.Action,
+                log.Reason,
+                log.UserId,
+                userNames.GetValueOrDefault(
+                    log.UserId,
+                    "کاربر نامشخص"),
+                log.CreatedAt))
+            .ToArray();
     }
 
     private void AddAuditLog(
