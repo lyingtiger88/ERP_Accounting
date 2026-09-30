@@ -17,6 +17,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<JournalEntryFiscalYear> JournalEntryFiscalYears => Set<JournalEntryFiscalYear>();
     public DbSet<JournalLineDimension> JournalLineDimensions => Set<JournalLineDimension>();
     public DbSet<JournalSyncReceipt> JournalSyncReceipts => Set<JournalSyncReceipt>();
+    public DbSet<JournalServerChange> JournalServerChanges => Set<JournalServerChange>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -194,6 +195,23 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<JournalEntry>()
                 .WithOne()
                 .HasForeignKey<JournalSyncReceipt>(x => x.JournalEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<JournalServerChange>(entity =>
+        {
+            entity.ToTable("journal_server_changes");
+            entity.HasKey(x => x.Sequence);
+            entity.Property(x => x.Sequence).ValueGeneratedOnAdd();
+            entity.HasIndex(x => new { x.CompanyId, x.Sequence });
+            entity.HasIndex(x => x.JournalEntryId).IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<JournalEntry>()
+                .WithOne()
+                .HasForeignKey<JournalServerChange>(x => x.JournalEntryId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
