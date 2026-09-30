@@ -12,7 +12,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 3;
+  static const _databaseVersion = 4;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -99,6 +99,8 @@ class LocalDatabase {
       ON cached_accounts(company_id, code)
     ''');
 
+    await _createMasterDataSchema(db);
+
     await db.execute('''
       CREATE TABLE sync_outbox (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +151,55 @@ class LocalDatabase {
         "ALTER TABLE cached_accounts ADD COLUMN is_postable INTEGER NOT NULL DEFAULT 1",
       );
     }
+
+    if (oldVersion < 4) {
+      await _createMasterDataSchema(db);
+      await db.execute(
+        "ALTER TABLE local_accounting_documents ADD COLUMN fiscal_year_id TEXT",
+      );
+      await db.execute(
+        "ALTER TABLE local_document_lines ADD COLUMN detail_account_id TEXT",
+      );
+    }
+  }
+
+  Future<void> _createMasterDataSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_fiscal_years (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        persian_year INTEGER NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        is_closed INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_cached_fiscal_years_company
+      ON cached_fiscal_years(company_id, start_date, end_date)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_detail_accounts (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        national_id TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_cached_detail_accounts_company_code
+      ON cached_detail_accounts(company_id, code)
+    ''');
   }
 
   Future<void> _createAccountingSchema(Database db) async {
@@ -156,6 +207,7 @@ class LocalDatabase {
       CREATE TABLE IF NOT EXISTS local_accounting_documents (
         id TEXT PRIMARY KEY,
         company_id TEXT NOT NULL,
+        fiscal_year_id TEXT,
         server_id TEXT,
         server_number TEXT,
         document_date TEXT NOT NULL,
@@ -183,6 +235,7 @@ class LocalDatabase {
         id TEXT PRIMARY KEY,
         document_id TEXT NOT NULL,
         account_id TEXT NOT NULL,
+        detail_account_id TEXT,
         description TEXT,
         debit INTEGER NOT NULL DEFAULT 0,
         credit INTEGER NOT NULL DEFAULT 0,
@@ -291,6 +344,122 @@ class LocalDatabase {
         .toList(growable: false);
   }
 
+  Future<void> replaceFiscalYears({
+    required String companyId,
+    required List<Map<String, dynamic>> fiscalYears,
+  }) async {
+    await _db.transaction((txn) async {
+      await txn.delete(
+        'cached_fiscal_years',
+        where: 'company_id = ?',
+        whereArgs: [companyId],
+      );
+
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      for (final fiscalYear in fiscalYears) {
+        await txn.insert(
+          'cached_fiscal_years',
+          {
+            'id': fiscalYear['id'] as String,
+            'company_id': companyId,
+            'name': fiscalYear['name'] as String,
+            'persian_year': fiscalYear['persianYear'] as int,
+            'start_date': fiscalYear['startDate'] as String,
+            'end_date': fiscalYear['endDate'] as String,
+            'is_default': (fiscalYear['isDefault'] as bool? ?? false) ? 1 : 0,
+            'is_closed': (fiscalYear['isClosed'] as bool? ?? false) ? 1 : 0,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<List<CachedFiscalYear>> getCachedFiscalYears(
+    String companyId,
+  ) async {
+    final rows = await _db.query(
+      'cached_fiscal_years',
+      where: 'company_id = ?',
+      whereArgs: [companyId],
+      orderBy: 'start_date DESC',
+    );
+
+    return rows
+        .map(
+          (row) => CachedFiscalYear(
+            id: row['id'] as String,
+            companyId: row['company_id'] as String,
+            name: row['name'] as String,
+            persianYear: row['persian_year'] as int,
+            startDate: row['start_date'] as String,
+            endDate: row['end_date'] as String,
+            isDefault: (row['is_default'] as int) == 1,
+            isClosed: (row['is_closed'] as int) == 1,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> replaceDetailAccounts({
+    required String companyId,
+    required List<Map<String, dynamic>> details,
+  }) async {
+    await _db.transaction((txn) async {
+      await txn.delete(
+        'cached_detail_accounts',
+        where: 'company_id = ?',
+        whereArgs: [companyId],
+      );
+
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      for (final detail in details) {
+        await txn.insert(
+          'cached_detail_accounts',
+          {
+            'id': detail['id'] as String,
+            'company_id': companyId,
+            'code': detail['code'] as String,
+            'name': detail['name'] as String,
+            'type': detail['type'].toString(),
+            'national_id': detail['nationalId'] as String?,
+            'is_active': (detail['isActive'] as bool? ?? true) ? 1 : 0,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<List<CachedDetailAccount>> getCachedDetailAccounts(
+    String companyId,
+  ) async {
+    final rows = await _db.query(
+      'cached_detail_accounts',
+      where: 'company_id = ? AND is_active = 1',
+      whereArgs: [companyId],
+      orderBy: 'code ASC',
+    );
+
+    return rows
+        .map(
+          (row) => CachedDetailAccount(
+            id: row['id'] as String,
+            companyId: row['company_id'] as String,
+            code: row['code'] as String,
+            name: row['name'] as String,
+            type: row['type'] as String,
+            nationalId: row['national_id'] as String?,
+            isActive: (row['is_active'] as int) == 1,
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<int> cachedAccountCount(String companyId) async {
     final rows = await _db.rawQuery(
       'SELECT COUNT(*) AS count FROM cached_accounts WHERE company_id = ?',
@@ -302,6 +471,7 @@ class LocalDatabase {
 
   Future<String> saveLocalJournal({
     required String companyId,
+    required String? fiscalYearId,
     required DateTime documentDate,
     required String description,
     required List<LocalJournalLineInput> lines,
@@ -352,6 +522,7 @@ class LocalDatabase {
         {
           'id': documentId,
           'company_id': companyId,
+          'fiscal_year_id': fiscalYearId,
           'document_date': dateOnly,
           'description': description.trim(),
           'status': queueForSync ? 'PendingSync' : 'Draft',
@@ -370,6 +541,7 @@ class LocalDatabase {
             'id': _newId(),
             'document_id': documentId,
             'account_id': line.accountId,
+            'detail_account_id': line.detailAccountId,
             'description': line.description.trim(),
             'debit': line.debit,
             'credit': line.credit,
@@ -382,6 +554,7 @@ class LocalDatabase {
         final payload = <String, dynamic>{
           'localDocumentId': documentId,
           'companyId': companyId,
+          'fiscalYearId': fiscalYearId,
           'documentDate': dateOnly,
           'description': description.trim(),
           'currency': 'IRR',
@@ -391,6 +564,7 @@ class LocalDatabase {
               .map(
                 (line) => {
                   'accountId': line.accountId,
+                  'detailAccountId': line.detailAccountId,
                   'description': line.description.trim(),
                   'debit': line.debit,
                   'credit': line.credit,
@@ -473,13 +647,17 @@ class LocalDatabase {
         l.id,
         l.document_id,
         l.account_id,
+        l.detail_account_id,
         l.description,
         l.debit,
         l.credit,
         a.code AS account_code,
-        a.name AS account_name
+        a.name AS account_name,
+        d.code AS detail_code,
+        d.name AS detail_name
       FROM local_document_lines l
       LEFT JOIN cached_accounts a ON a.id = l.account_id
+      LEFT JOIN cached_detail_accounts d ON d.id = l.detail_account_id
       WHERE l.document_id = ?
       ORDER BY l.sort_order ASC
       ''',
@@ -494,6 +672,9 @@ class LocalDatabase {
             accountId: row['account_id'] as String,
             accountCode: row['account_code'] as String? ?? '',
             accountName: row['account_name'] as String? ?? 'حساب نامشخص',
+            detailAccountId: row['detail_account_id'] as String?,
+            detailCode: row['detail_code'] as String?,
+            detailName: row['detail_name'] as String?,
             description: row['description'] as String? ?? '',
             debit: (row['debit'] as num).toInt(),
             credit: (row['credit'] as num).toInt(),
@@ -600,12 +781,14 @@ class LocalJournalLineInput {
     required this.description,
     required this.debit,
     required this.credit,
+    this.detailAccountId,
   });
 
   final String accountId;
   final String description;
   final int debit;
   final int credit;
+  final String? detailAccountId;
 }
 
 class LocalAccountingDocument {
@@ -643,6 +826,9 @@ class LocalJournalLine {
     required this.accountId,
     required this.accountCode,
     required this.accountName,
+    required this.detailAccountId,
+    required this.detailCode,
+    required this.detailName,
     required this.description,
     required this.debit,
     required this.credit,
@@ -653,7 +839,59 @@ class LocalJournalLine {
   final String accountId;
   final String accountCode;
   final String accountName;
+  final String? detailAccountId;
+  final String? detailCode;
+  final String? detailName;
   final String description;
   final int debit;
   final int credit;
+}
+
+
+class CachedFiscalYear {
+  const CachedFiscalYear({
+    required this.id,
+    required this.companyId,
+    required this.name,
+    required this.persianYear,
+    required this.startDate,
+    required this.endDate,
+    required this.isDefault,
+    required this.isClosed,
+  });
+
+  final String id;
+  final String companyId;
+  final String name;
+  final int persianYear;
+  final String startDate;
+  final String endDate;
+  final bool isDefault;
+  final bool isClosed;
+
+  bool contains(DateTime date) {
+    final value = LocalDatabase._dateOnly(date);
+    return value.compareTo(startDate) >= 0 &&
+        value.compareTo(endDate) <= 0;
+  }
+}
+
+class CachedDetailAccount {
+  const CachedDetailAccount({
+    required this.id,
+    required this.companyId,
+    required this.code,
+    required this.name,
+    required this.type,
+    required this.nationalId,
+    required this.isActive,
+  });
+
+  final String id;
+  final String companyId;
+  final String code;
+  final String name;
+  final String type;
+  final String? nationalId;
+  final bool isActive;
 }
