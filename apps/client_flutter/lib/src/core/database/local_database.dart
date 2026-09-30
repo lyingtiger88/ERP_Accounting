@@ -702,6 +702,18 @@ class LocalDatabase {
 
       final summary = totals.first;
 
+      final outboxRows = await _db.query(
+        'sync_outbox',
+        columns: ['attempt_count', 'last_error'],
+        where: 'entity_id = ? AND sent_at IS NULL',
+        whereArgs: [document['id']],
+        orderBy: 'id DESC',
+        limit: 1,
+      );
+
+      final pendingOutbox =
+          outboxRows.isEmpty ? null : outboxRows.first;
+
       result.add(
         LocalAccountingDocument(
           id: document['id'] as String,
@@ -714,6 +726,9 @@ class LocalDatabase {
           creditTotal: (summary['credit_total'] as num).toInt(),
           lineCount: (summary['line_count'] as num).toInt(),
           serverNumber: document['server_number'] as String?,
+          syncAttempts:
+              (pendingOutbox?['attempt_count'] as int?) ?? 0,
+          syncError: pendingOutbox?['last_error'] as String?,
         ),
       );
     }
@@ -964,6 +979,8 @@ class LocalAccountingDocument {
     required this.creditTotal,
     required this.lineCount,
     required this.serverNumber,
+    required this.syncAttempts,
+    required this.syncError,
   });
 
   final String id;
@@ -976,6 +993,8 @@ class LocalAccountingDocument {
   final int creditTotal;
   final int lineCount;
   final String? serverNumber;
+  final int syncAttempts;
+  final String? syncError;
 
   bool get isBalanced => debitTotal == creditTotal && debitTotal > 0;
 }
