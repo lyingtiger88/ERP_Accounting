@@ -174,9 +174,17 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                                         ' — ' +
                                         line.accountName,
                                   ),
-                                  subtitle: line.description.isEmpty
-                                      ? null
-                                      : Text(line.description),
+                                  subtitle: Text(
+                                    [
+                                      if (line.detailName != null)
+                                        'تفصیلی: ' +
+                                            (line.detailCode ?? '') +
+                                            ' — ' +
+                                            line.detailName!,
+                                      if (line.description.isNotEmpty)
+                                        line.description,
+                                    ].join(' • '),
+                                  ),
                                   trailing: Text(
                                     line.debit > 0
                                         ? _money(line.debit) + ' بدهکار'
