@@ -106,4 +106,6 @@ class AccountingSyncService {
       startCursor: pull.startCursor,
       endCursor: pull.endCursor,
     );
-  }}
+  }
+}
+
