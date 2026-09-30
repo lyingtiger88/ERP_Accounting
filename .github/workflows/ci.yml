@@ -22,11 +22,17 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore
+      - name: Restore API
         run: dotnet restore apps/server_api/ERPAccounting.Api.csproj
+
+      - name: Restore tests
+        run: dotnet restore tests/server_api_tests/ERPAccounting.Api.Tests.csproj
 
       - name: Build
         run: dotnet build apps/server_api/ERPAccounting.Api.csproj --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/server_api_tests/ERPAccounting.Api.Tests.csproj --configuration Release --no-restore
 
   flutter:
     name: Flutter analyze
