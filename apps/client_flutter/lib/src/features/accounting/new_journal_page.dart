@@ -23,15 +23,47 @@ class _NewJournalPageState extends State<NewJournalPage> {
 
   DateTime _documentDate = DateTime.now();
   bool _busy = false;
-  late Future<List<CachedAccount>> _accountsFuture;
+  late Future<_JournalMasterData> _masterDataFuture;
+  String? _fiscalYearId;
 
   @override
   void initState() {
     super.initState();
-    _accountsFuture =
-        widget.localDatabase.getCachedAccounts(widget.companyId);
+    _masterDataFuture = _loadMasterData();
     _addRow();
     _addRow();
+  }
+
+  Future<_JournalMasterData> _loadMasterData() async {
+    final accounts =
+        await widget.localDatabase.getCachedAccounts(widget.companyId);
+    final fiscalYears =
+        await widget.localDatabase.getCachedFiscalYears(widget.companyId);
+    final detailAccounts =
+        await widget.localDatabase.getCachedDetailAccounts(widget.companyId);
+
+    if (_fiscalYearId == null) {
+      CachedFiscalYear? selected;
+
+      for (final fiscalYear in fiscalYears) {
+        if (!fiscalYear.isClosed && fiscalYear.contains(_documentDate)) {
+          selected = fiscalYear;
+          break;
+        }
+      }
+
+      selected ??= fiscalYears
+          .where((item) => item.isDefault && !item.isClosed)
+          .firstOrNull;
+
+      _fiscalYearId = selected?.id;
+    }
+
+    return _JournalMasterData(
+      accounts: accounts,
+      fiscalYears: fiscalYears,
+      detailAccounts: detailAccounts,
+    );
   }
 
   @override
@@ -113,11 +145,33 @@ class _NewJournalPageState extends State<NewJournalPage> {
     );
 
     if (picked != null && mounted) {
-      setState(() => _documentDate = picked);
+      final fiscalYears =
+          await widget.localDatabase.getCachedFiscalYears(widget.companyId);
+
+      String? matchingFiscalYearId;
+
+      for (final fiscalYear in fiscalYears) {
+        if (!fiscalYear.isClosed && fiscalYear.contains(picked)) {
+          matchingFiscalYearId = fiscalYear.id;
+          break;
+        }
+      }
+
+      setState(() {
+        _documentDate = picked;
+        if (matchingFiscalYearId != null) {
+          _fiscalYearId = matchingFiscalYearId;
+        }
+      });
     }
   }
 
   Future<void> _save({required bool queueForSync}) async {
+    if (_fiscalYearId == null) {
+      _showError('سال مالی معتبر برای این سند انتخاب نشده است.');
+      return;
+    }
+
     final lines = <LocalJournalLineInput>[];
 
     for (var i = 0; i < _rows.length; i++) {
@@ -143,6 +197,7 @@ class _NewJournalPageState extends State<NewJournalPage> {
           description: row.description.text,
           debit: debit,
           credit: credit,
+          detailAccountId: row.detailAccountId,
         ),
       );
     }
@@ -152,6 +207,7 @@ class _NewJournalPageState extends State<NewJournalPage> {
     try {
       await widget.localDatabase.saveLocalJournal(
         companyId: widget.companyId,
+        fiscalYearId: _fiscalYearId,
         documentDate: _documentDate,
         description: _description.text,
         lines: lines,
@@ -199,8 +255,8 @@ class _NewJournalPageState extends State<NewJournalPage> {
         appBar: AppBar(
           title: const Text('ثبت سند حسابداری'),
         ),
-        body: FutureBuilder<List<CachedAccount>>(
-          future: _accountsFuture,
+        body: FutureBuilder<_JournalMasterData>(
+          future: _masterDataFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
@@ -215,9 +271,12 @@ class _NewJournalPageState extends State<NewJournalPage> {
               );
             }
 
-            final accounts = (snapshot.data ?? const <CachedAccount>[])
+            final masterData = snapshot.data!;
+            final accounts = masterData.accounts
                 .where((account) => account.isActive && account.isPostable)
                 .toList(growable: false);
+            final fiscalYears = masterData.fiscalYears;
+            final detailAccounts = masterData.detailAccounts;
 
             if (accounts.isEmpty) {
               return const Center(
@@ -235,13 +294,31 @@ class _NewJournalPageState extends State<NewJournalPage> {
                   runSpacing: 16,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Chip(
-                      avatar: const Icon(Icons.account_balance_outlined, size: 18),
-                      label: Text(
-                        'سال مالی ' +
-                            JalaliDate.fromGregorian(_documentDate)
-                                .year
-                                .toString(),
+                    SizedBox(
+                      width: 260,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _fiscalYearId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'سال مالی',
+                          prefixIcon: Icon(Icons.account_balance_outlined),
+                        ),
+                        items: [
+                          for (final fiscalYear in fiscalYears)
+                            DropdownMenuItem(
+                              value: fiscalYear.id,
+                              enabled: !fiscalYear.isClosed,
+                              child: Text(
+                                fiscalYear.name +
+                                    (fiscalYear.isClosed ? ' (بسته)' : ''),
+                              ),
+                            ),
+                        ],
+                        onChanged: _busy
+                            ? null
+                            : (value) {
+                                setState(() => _fiscalYearId = value);
+                              },
                       ),
                     ),
                     SizedBox(
@@ -273,6 +350,7 @@ class _NewJournalPageState extends State<NewJournalPage> {
                     index: index,
                     row: _rows[index],
                     accounts: accounts,
+                    detailAccounts: detailAccounts,
                     enabled: !_busy,
                     onChanged: () => setState(() {}),
                     onRemove: () => _removeRow(index),
@@ -379,6 +457,7 @@ class _JournalLineCard extends StatelessWidget {
     required this.index,
     required this.row,
     required this.accounts,
+    required this.detailAccounts,
     required this.enabled,
     required this.onChanged,
     required this.onRemove,
@@ -388,6 +467,7 @@ class _JournalLineCard extends StatelessWidget {
   final int index;
   final _JournalRowEditor row;
   final List<CachedAccount> accounts;
+  final List<CachedDetailAccount> detailAccounts;
   final bool enabled;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
@@ -418,6 +498,31 @@ class _JournalLineCard extends StatelessWidget {
               onChanged: enabled
                   ? (value) {
                       row.accountId = value;
+                      onChanged();
+                    }
+                  : null,
+            );
+
+            final detail = DropdownButtonFormField<String>(
+              initialValue: row.detailAccountId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'تفصیلی شناور (اختیاری)',
+              ),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('بدون تفصیلی'),
+                ),
+                for (final item in detailAccounts)
+                  DropdownMenuItem(
+                    value: item.id,
+                    child: Text(item.code + ' — ' + item.name),
+                  ),
+              ],
+              onChanged: enabled
+                  ? (value) {
+                      row.detailAccountId = value;
                       onChanged();
                     }
                   : null,
@@ -458,6 +563,8 @@ class _JournalLineCard extends StatelessWidget {
                 children: [
                   account,
                   const SizedBox(height: 12),
+                  detail,
+                  const SizedBox(height: 12),
                   debit,
                   const SizedBox(height: 12),
                   credit,
@@ -481,6 +588,8 @@ class _JournalLineCard extends StatelessWidget {
               children: [
                 Expanded(flex: 3, child: account),
                 const SizedBox(width: 12),
+                Expanded(flex: 3, child: detail),
+                const SizedBox(width: 12),
                 Expanded(flex: 2, child: debit),
                 const SizedBox(width: 12),
                 Expanded(flex: 2, child: credit),
@@ -503,6 +612,7 @@ class _JournalLineCard extends StatelessWidget {
 
 class _JournalRowEditor {
   String? accountId;
+  String? detailAccountId;
   final debit = TextEditingController();
   final credit = TextEditingController();
   final description = TextEditingController();
@@ -511,5 +621,26 @@ class _JournalRowEditor {
     debit.dispose();
     credit.dispose();
     description.dispose();
+  }
+}
+
+
+class _JournalMasterData {
+  const _JournalMasterData({
+    required this.accounts,
+    required this.fiscalYears,
+    required this.detailAccounts,
+  });
+
+  final List<CachedAccount> accounts;
+  final List<CachedFiscalYear> fiscalYears;
+  final List<CachedDetailAccount> detailAccounts;
+}
+
+extension _FirstOrNullExtension<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    if (!iterator.moveNext()) return null;
+    return iterator.current;
   }
 }
