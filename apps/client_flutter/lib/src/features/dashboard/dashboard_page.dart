@@ -301,6 +301,8 @@ class _DashboardBody extends StatelessWidget {
                   const _StatusRow('Client SQLite / Offline cache', true),
                   const _StatusRow('Outbox foundation', true),
                   const _StatusRow('Offline journal entry', true),
+                  const _StatusRow('Fiscal years / Jalali dates', true),
+                  const _StatusRow('Floating detail accounts', true),
                   const _StatusRow('TOTP / QR Pairing', false),
                   const _StatusRow('Full Sync Engine', false),
                 ],
