@@ -487,6 +487,8 @@ accounting.MapGet("/sync/detail-accounts", async (
 
 accounting.MapGet("/journals", async (
     HttpRequest request,
+    DateOnly? from,
+    DateOnly? to,
     AuthService authService,
     AccountingService accountingService,
     CancellationToken cancellationToken) =>
@@ -496,11 +498,23 @@ accounting.MapGet("/journals", async (
         authService,
         cancellationToken);
 
-    return user is null
-        ? Results.Unauthorized()
-        : Results.Ok(await accountingService.GetJournalEntriesAsync(
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.GetJournalEntriesAsync(
             user.CompanyId,
+            from,
+            to,
             cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 accounting.MapPost("/journals", async (
@@ -685,6 +699,8 @@ accounting.MapGet("/sync/journals", async (
 
 accounting.MapGet("/trial-balance", async (
     HttpRequest request,
+    DateOnly? from,
+    DateOnly? to,
     AuthService authService,
     AccountingService accountingService,
     CancellationToken cancellationToken) =>
@@ -694,16 +710,30 @@ accounting.MapGet("/trial-balance", async (
         authService,
         cancellationToken);
 
-    return user is null
-        ? Results.Unauthorized()
-        : Results.Ok(await accountingService.GetTrialBalanceAsync(
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.GetTrialBalanceAsync(
             user.CompanyId,
+            from,
+            to,
             cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 accounting.MapGet("/general-ledger", async (
     HttpRequest request,
     Guid? accountId,
+    DateOnly? from,
+    DateOnly? to,
     AuthService authService,
     AccountingService accountingService,
     CancellationToken cancellationToken) =>
@@ -713,12 +743,24 @@ accounting.MapGet("/general-ledger", async (
         authService,
         cancellationToken);
 
-    return user is null
-        ? Results.Unauthorized()
-        : Results.Ok(await accountingService.GetGeneralLedgerAsync(
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.GetGeneralLedgerAsync(
             user.CompanyId,
             accountId,
+            from,
+            to,
             cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.Run();
