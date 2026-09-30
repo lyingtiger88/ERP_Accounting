@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
 import 'cached_accounts_page.dart';
+import 'detail_accounts_page.dart';
+import 'fiscal_years_page.dart';
 import 'local_documents_page.dart';
 import 'new_journal_page.dart';
 
@@ -9,10 +11,12 @@ class AccountingHomePage extends StatelessWidget {
   const AccountingHomePage({
     super.key,
     required this.companyId,
+    required this.accessToken,
     required this.localDatabase,
   });
 
   final String companyId;
+  final String accessToken;
   final LocalDatabase localDatabase;
 
   Future<void> _open(
@@ -82,6 +86,32 @@ class AccountingHomePage extends StatelessWidget {
                     context,
                     CachedAccountsPage(
                       companyId: companyId,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'سال‌های مالی',
+                  subtitle: 'ایجاد و مشاهده سال مالی شمسی',
+                  icon: Icons.calendar_month_outlined,
+                  onTap: () => _open(
+                    context,
+                    FiscalYearsPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'تفصیلی‌های شناور',
+                  subtitle: 'مشتری، فروشنده، شخص، بانک و ...',
+                  icon: Icons.badge_outlined,
+                  onTap: () => _open(
+                    context,
+                    DetailAccountsPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
                       localDatabase: localDatabase,
                     ),
                   ),
