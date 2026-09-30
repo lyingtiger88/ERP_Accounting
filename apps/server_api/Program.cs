@@ -76,6 +76,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.EnsureCreatedAsync();
+    await AccountingSchemaBootstrapper.EnsureExtensionsAsync(db);
 }
 
 app.MapGet("/", () => Results.Ok(new
@@ -119,6 +120,9 @@ auth.MapPost("/bootstrap", async (
         await accountingService.SeedDefaultAccountsAsync(
             created.Company.Id,
             cancellationToken);
+        await accountingService.EnsureDefaultFiscalYearAsync(
+            created.Company.Id,
+            cancellationToken);
 
         return Results.Created($"/api/companies/{created.Company.Id}", new
         {
@@ -154,6 +158,9 @@ auth.MapPost("/login", async (
     }
 
     await accountingService.SeedDefaultAccountsAsync(
+        result.CompanyId,
+        cancellationToken);
+    await accountingService.EnsureDefaultFiscalYearAsync(
         result.CompanyId,
         cancellationToken);
 
@@ -235,6 +242,128 @@ accounting.MapPost("/accounts", async (
         return Results.Created(
             $"/api/accounting/accounts/{account.Id}",
             account);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/fiscal-years", async (
+    HttpRequest request,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await accountingService.GetFiscalYearsAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+accounting.MapPost("/fiscal-years", async (
+    HttpRequest request,
+    CreateFiscalYearRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        var fiscalYear = await accountingService.CreateFiscalYearAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken);
+
+        return Results.Created(
+            $"/api/accounting/fiscal-years/{fiscalYear.Id}",
+            fiscalYear);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/detail-accounts", async (
+    HttpRequest request,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await accountingService.GetDetailAccountsAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+accounting.MapPost("/detail-accounts", async (
+    HttpRequest request,
+    CreateDetailAccountRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        var detail = await accountingService.CreateDetailAccountAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken);
+
+        return Results.Created(
+            $"/api/accounting/detail-accounts/{detail.Id}",
+            detail);
     }
     catch (ArgumentException ex)
     {
