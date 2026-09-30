@@ -19,7 +19,8 @@ public sealed record AccountView(
     AccountLevel Level,
     AccountNature Nature,
     string LevelTitle,
-    string NatureTitle);
+    string NatureTitle,
+    bool IsPostable);
 
 public sealed record CreateJournalLineRequest(
     Guid AccountId,
