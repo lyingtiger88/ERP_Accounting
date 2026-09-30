@@ -67,3 +67,27 @@ public sealed record SyncJournalResponse(
     JournalStatus Status,
     DateTimeOffset? PostedAt,
     bool Duplicate);
+
+
+public sealed record ServerJournalLineView(
+    Guid AccountId,
+    Guid? DetailAccountId,
+    string? Description,
+    decimal Debit,
+    decimal Credit);
+
+public sealed record ServerJournalChangeView(
+    long Cursor,
+    Guid JournalEntryId,
+    string Number,
+    Guid FiscalYearId,
+    DateOnly DocumentDate,
+    string? Description,
+    JournalStatus Status,
+    DateTimeOffset? PostedAt,
+    IReadOnlyList<ServerJournalLineView> Lines);
+
+public sealed record ServerJournalPullResponse(
+    long NextCursor,
+    bool HasMore,
+    IReadOnlyList<ServerJournalChangeView> Changes);
