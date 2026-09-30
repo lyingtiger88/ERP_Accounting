@@ -91,3 +91,43 @@ public sealed record ServerJournalPullResponse(
     long NextCursor,
     bool HasMore,
     IReadOnlyList<ServerJournalChangeView> Changes);
+
+
+public sealed record DetailAccountView(
+    Guid Id,
+    Guid CompanyId,
+    string Code,
+    string Name,
+    DetailAccountType Type,
+    string? NationalId,
+    bool IsActive,
+    long Revision,
+    DateTimeOffset UpdatedAt);
+
+public sealed record UpdateDetailAccountRequest(
+    string Code,
+    string Name,
+    DetailAccountType Type,
+    string? NationalId,
+    bool IsActive,
+    long BaseRevision);
+
+public sealed record SyncDetailAccountRequest(
+    string ChangeId,
+    Guid EntityId,
+    string Code,
+    string Name,
+    DetailAccountType Type,
+    string? NationalId,
+    bool IsActive,
+    long BaseRevision);
+
+public sealed record DetailAccountSyncConflict(
+    DetailAccountView Server,
+    long BaseRevision);
+
+public sealed record SyncDetailAccountResponse(
+    string Outcome,
+    DetailAccountView? Entity,
+    DetailAccountSyncConflict? Conflict,
+    bool Duplicate);
