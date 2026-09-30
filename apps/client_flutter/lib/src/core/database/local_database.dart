@@ -528,26 +528,41 @@ class LocalDatabase {
     required List<Map<String, dynamic>> details,
   }) async {
     await _db.transaction((txn) async {
-      await txn.delete(
-        'cached_detail_accounts',
-        where: 'company_id = ?',
-        whereArgs: [companyId],
-      );
-
       final now = DateTime.now().toUtc().toIso8601String();
 
       for (final detail in details) {
+        final id = detail['id'] as String;
+        final existing = await txn.query(
+          'cached_detail_accounts',
+          columns: ['sync_status'],
+          where: 'id = ? AND company_id = ?',
+          whereArgs: [id, companyId],
+          limit: 1,
+        );
+
+        final localStatus = existing.isEmpty
+            ? null
+            : existing.first['sync_status'] as String?;
+
+        if (localStatus == 'Pending' || localStatus == 'Conflict') {
+          continue;
+        }
+
         await txn.insert(
           'cached_detail_accounts',
           {
-            'id': detail['id'] as String,
+            'id': id,
             'company_id': companyId,
             'code': detail['code'] as String,
             'name': detail['name'] as String,
             'type': detail['type'].toString(),
             'national_id': detail['nationalId'] as String?,
             'is_active': (detail['isActive'] as bool? ?? true) ? 1 : 0,
-            'updated_at': now,
+            'revision': (detail['revision'] as num?)?.toInt() ?? 1,
+            'sync_status': 'Synced',
+            'sync_error': null,
+            'updated_at':
+                detail['updatedAt']?.toString() ?? now,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
@@ -575,9 +590,416 @@ class LocalDatabase {
             type: row['type'] as String,
             nationalId: row['national_id'] as String?,
             isActive: (row['is_active'] as int) == 1,
+            revision: (row['revision'] as num).toInt(),
+            syncStatus: row['sync_status'] as String,
+            syncError: row['sync_error'] as String?,
           ),
         )
         .toList(growable: false);
+  }
+
+  Future<String> saveLocalDetailAccount({
+    required String companyId,
+    required String code,
+    required String name,
+    required String type,
+    String? nationalId,
+  }) async {
+    final trimmedCode = code.trim();
+    final trimmedName = name.trim();
+
+    if (trimmedCode.isEmpty || trimmedName.isEmpty) {
+      throw ArgumentError('کد و نام تفصیلی الزامی است.');
+    }
+
+    final entityId = _newId();
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.insert(
+        'cached_detail_accounts',
+        {
+          'id': entityId,
+          'company_id': companyId,
+          'code': trimmedCode,
+          'name': trimmedName,
+          'type': type,
+          'national_id': _nullIfBlank(nationalId),
+          'is_active': 1,
+          'revision': 0,
+          'sync_status': 'Pending',
+          'sync_error': null,
+          'updated_at': now,
+        },
+      );
+
+      await _queueDetailAccountUpsert(
+        txn,
+        companyId: companyId,
+        entityId: entityId,
+        code: trimmedCode,
+        name: trimmedName,
+        type: type,
+        nationalId: _nullIfBlank(nationalId),
+        isActive: true,
+        baseRevision: 0,
+        now: now,
+      );
+    });
+
+    return entityId;
+  }
+
+  Future<void> updateLocalDetailAccount({
+    required CachedDetailAccount detail,
+    required String code,
+    required String name,
+    required String type,
+    String? nationalId,
+    required bool isActive,
+  }) async {
+    final trimmedCode = code.trim();
+    final trimmedName = name.trim();
+
+    if (trimmedCode.isEmpty || trimmedName.isEmpty) {
+      throw ArgumentError('کد و نام تفصیلی الزامی است.');
+    }
+
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      var baseRevision = detail.revision;
+
+      final pendingRows = await txn.query(
+        'sync_outbox',
+        columns: ['payload_json'],
+        where:
+            'entity_type = ? AND entity_id = ? AND sent_at IS NULL',
+        whereArgs: ['DetailAccount', detail.id],
+        orderBy: 'id DESC',
+        limit: 1,
+      );
+
+      if (pendingRows.isNotEmpty) {
+        final existingPayload = Map<String, dynamic>.from(
+          jsonDecode(
+            pendingRows.first['payload_json'] as String,
+          ) as Map,
+        );
+        baseRevision =
+            (existingPayload['baseRevision'] as num?)?.toInt() ??
+                baseRevision;
+      }
+
+      await txn.update(
+        'cached_detail_accounts',
+        {
+          'code': trimmedCode,
+          'name': trimmedName,
+          'type': type,
+          'national_id': _nullIfBlank(nationalId),
+          'is_active': isActive ? 1 : 0,
+          'sync_status': 'Pending',
+          'sync_error': null,
+          'updated_at': now,
+        },
+        where: 'id = ? AND company_id = ?',
+        whereArgs: [detail.id, detail.companyId],
+      );
+
+      await _queueDetailAccountUpsert(
+        txn,
+        companyId: detail.companyId,
+        entityId: detail.id,
+        code: trimmedCode,
+        name: trimmedName,
+        type: type,
+        nationalId: _nullIfBlank(nationalId),
+        isActive: isActive,
+        baseRevision: baseRevision,
+        now: now,
+      );
+    });
+  }
+
+  Future<void> _queueDetailAccountUpsert(
+    Transaction txn, {
+    required String companyId,
+    required String entityId,
+    required String code,
+    required String name,
+    required String type,
+    required String? nationalId,
+    required bool isActive,
+    required int baseRevision,
+    required String now,
+  }) async {
+    final payload = <String, dynamic>{
+      'entityId': entityId,
+      'code': code,
+      'name': name,
+      'type': type,
+      'nationalId': nationalId,
+      'isActive': isActive,
+      'baseRevision': baseRevision,
+    };
+
+    final existing = await txn.query(
+      'sync_outbox',
+      columns: ['id', 'change_id'],
+      where:
+          'entity_type = ? AND entity_id = ? AND sent_at IS NULL',
+      whereArgs: ['DetailAccount', entityId],
+      orderBy: 'id DESC',
+      limit: 1,
+    );
+
+    if (existing.isNotEmpty) {
+      await txn.update(
+        'sync_outbox',
+        {
+          'operation': 'Upsert',
+          'payload_json': jsonEncode(payload),
+          'attempt_count': 0,
+          'last_error': null,
+        },
+        where: 'id = ?',
+        whereArgs: [existing.first['id']],
+      );
+      return;
+    }
+
+    await txn.insert(
+      'sync_outbox',
+      {
+        'change_id': _newId(),
+        'company_id': companyId,
+        'entity_type': 'DetailAccount',
+        'entity_id': entityId,
+        'operation': 'Upsert',
+        'payload_json': jsonEncode(payload),
+        'created_at': now,
+        'attempt_count': 0,
+      },
+    );
+  }
+
+  Future<void> markDetailAccountOutboxSent({
+    required int outboxId,
+    required Map<String, dynamic> serverEntity,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final entityId = serverEntity['id'] as String;
+
+    await _db.transaction((txn) async {
+      await txn.update(
+        'sync_outbox',
+        {
+          'sent_at': now,
+          'last_error': null,
+        },
+        where: 'id = ?',
+        whereArgs: [outboxId],
+      );
+
+      await txn.update(
+        'cached_detail_accounts',
+        {
+          'code': serverEntity['code'] as String,
+          'name': serverEntity['name'] as String,
+          'type': serverEntity['type'].toString(),
+          'national_id': serverEntity['nationalId'] as String?,
+          'is_active':
+              (serverEntity['isActive'] as bool? ?? true) ? 1 : 0,
+          'revision':
+              (serverEntity['revision'] as num).toInt(),
+          'sync_status': 'Synced',
+          'sync_error': null,
+          'updated_at':
+              serverEntity['updatedAt']?.toString() ?? now,
+        },
+        where: 'id = ?',
+        whereArgs: [entityId],
+      );
+    });
+  }
+
+  Future<void> recordDetailAccountConflict({
+    required PendingOutboxItem item,
+    required Map<String, dynamic>? serverEntity,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final baseRevision =
+        (item.payload['baseRevision'] as num?)?.toInt() ?? 0;
+    final serverRevision =
+        (serverEntity?['revision'] as num?)?.toInt();
+
+    await _db.transaction((txn) async {
+      await txn.update(
+        'sync_outbox',
+        {
+          'sent_at': now,
+          'last_error': 'Revision conflict',
+        },
+        where: 'id = ?',
+        whereArgs: [item.id],
+      );
+
+      await txn.insert(
+        'sync_conflicts',
+        {
+          'conflict_key': item.changeId,
+          'company_id': item.companyId,
+          'entity_type': item.entityType,
+          'entity_id': item.entityId,
+          'local_payload_json': jsonEncode(item.payload),
+          'server_payload_json': serverEntity == null
+              ? null
+              : jsonEncode(serverEntity),
+          'base_revision': baseRevision,
+          'server_revision': serverRevision,
+          'created_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      await txn.update(
+        'cached_detail_accounts',
+        {
+          'sync_status': 'Conflict',
+          'sync_error': serverRevision == null
+              ? 'رکورد متناظر روی سرور پیدا نشد.'
+              : 'نسخه سرور تغییر کرده است. Revision: ' +
+                  serverRevision.toString(),
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [item.entityId],
+      );
+    });
+  }
+
+  Future<SyncConflictItem?> getDetailAccountConflict(
+    String entityId,
+  ) async {
+    final rows = await _db.query(
+      'sync_conflicts',
+      where:
+          'entity_type = ? AND entity_id = ? AND resolved_at IS NULL',
+      whereArgs: ['DetailAccount', entityId],
+      orderBy: 'id DESC',
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return null;
+    return SyncConflictItem.fromRow(rows.first);
+  }
+
+  Future<int> unresolvedConflictCount(String companyId) async {
+    final rows = await _db.rawQuery(
+      '''
+      SELECT COUNT(*) AS count
+      FROM sync_conflicts
+      WHERE company_id = ? AND resolved_at IS NULL
+      ''',
+      [companyId],
+    );
+
+    return (rows.first['count'] as int?) ?? 0;
+  }
+
+  Future<void> resolveDetailConflictKeepServer(
+    SyncConflictItem conflict,
+  ) async {
+    final server = conflict.serverPayload;
+
+    if (server == null) {
+      throw StateError('نسخه سرور برای این تعارض موجود نیست.');
+    }
+
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.update(
+        'cached_detail_accounts',
+        {
+          'code': server['code'] as String,
+          'name': server['name'] as String,
+          'type': server['type'].toString(),
+          'national_id': server['nationalId'] as String?,
+          'is_active':
+              (server['isActive'] as bool? ?? true) ? 1 : 0,
+          'revision': (server['revision'] as num).toInt(),
+          'sync_status': 'Synced',
+          'sync_error': null,
+          'updated_at': server['updatedAt']?.toString() ?? now,
+        },
+        where: 'id = ?',
+        whereArgs: [conflict.entityId],
+      );
+
+      await txn.update(
+        'sync_conflicts',
+        {
+          'resolved_at': now,
+          'resolution': 'KeepServer',
+        },
+        where: 'id = ?',
+        whereArgs: [conflict.id],
+      );
+    });
+  }
+
+  Future<void> resolveDetailConflictKeepLocal(
+    SyncConflictItem conflict,
+  ) async {
+    final serverRevision = conflict.serverRevision;
+
+    if (serverRevision == null) {
+      throw StateError(
+        'Revision سرور برای تلاش مجدد موجود نیست.',
+      );
+    }
+
+    final local = conflict.localPayload;
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.update(
+        'cached_detail_accounts',
+        {
+          'revision': serverRevision,
+          'sync_status': 'Pending',
+          'sync_error': null,
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [conflict.entityId],
+      );
+
+      await _queueDetailAccountUpsert(
+        txn,
+        companyId: conflict.companyId,
+        entityId: conflict.entityId,
+        code: local['code'] as String,
+        name: local['name'] as String,
+        type: local['type'].toString(),
+        nationalId: local['nationalId'] as String?,
+        isActive: local['isActive'] as bool? ?? true,
+        baseRevision: serverRevision,
+        now: now,
+      );
+
+      await txn.update(
+        'sync_conflicts',
+        {
+          'resolved_at': now,
+          'resolution': 'RetryLocal',
+        },
+        where: 'id = ?',
+        whereArgs: [conflict.id],
+      );
+    });
   }
 
   Future<int> cachedAccountCount(String companyId) async {
@@ -1036,6 +1458,11 @@ class LocalDatabase {
     return rows.first['value'] as String?;
   }
 
+  static String? _nullIfBlank(String? value) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
+
   static String _dateOnly(DateTime value) {
     final year = value.year.toString().padLeft(4, '0');
     final month = value.month.toString().padLeft(2, '0');
@@ -1209,6 +1636,9 @@ class CachedDetailAccount {
     required this.type,
     required this.nationalId,
     required this.isActive,
+    required this.revision,
+    required this.syncStatus,
+    required this.syncError,
   });
 
   final String id;
@@ -1218,6 +1648,56 @@ class CachedDetailAccount {
   final String type;
   final String? nationalId;
   final bool isActive;
+  final int revision;
+  final String syncStatus;
+  final String? syncError;
+}
+
+class SyncConflictItem {
+  const SyncConflictItem({
+    required this.id,
+    required this.conflictKey,
+    required this.companyId,
+    required this.entityType,
+    required this.entityId,
+    required this.localPayload,
+    required this.serverPayload,
+    required this.baseRevision,
+    required this.serverRevision,
+  });
+
+  final int id;
+  final String conflictKey;
+  final String companyId;
+  final String entityType;
+  final String entityId;
+  final Map<String, dynamic> localPayload;
+  final Map<String, dynamic>? serverPayload;
+  final int baseRevision;
+  final int? serverRevision;
+
+  factory SyncConflictItem.fromRow(Map<String, Object?> row) {
+    final serverJson = row['server_payload_json'] as String?;
+
+    return SyncConflictItem(
+      id: row['id'] as int,
+      conflictKey: row['conflict_key'] as String,
+      companyId: row['company_id'] as String,
+      entityType: row['entity_type'] as String,
+      entityId: row['entity_id'] as String,
+      localPayload: Map<String, dynamic>.from(
+        jsonDecode(row['local_payload_json'] as String) as Map,
+      ),
+      serverPayload: serverJson == null
+          ? null
+          : Map<String, dynamic>.from(
+              jsonDecode(serverJson) as Map,
+            ),
+      baseRevision: (row['base_revision'] as num).toInt(),
+      serverRevision:
+          (row['server_revision'] as num?)?.toInt(),
+    );
+  }
 }
 
 
