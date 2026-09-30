@@ -47,3 +47,14 @@ public sealed class JournalLineDimension
     public required Guid JournalLineId { get; set; }
     public Guid? DetailAccountId { get; set; }
 }
+
+
+public sealed class JournalSyncReceipt
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string ChangeId { get; set; }
+    public required string LocalDocumentId { get; set; }
+    public required Guid JournalEntryId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
