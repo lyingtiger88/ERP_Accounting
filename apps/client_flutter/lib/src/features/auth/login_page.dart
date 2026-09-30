@@ -92,6 +92,10 @@ class _LoginPageState extends State<LoginPage> {
           details: detailAccounts,
         );
 
+        await widget.localDatabase.backfillLegacyJournalFiscalYears(
+          result.companyId,
+        );
+
         await widget.localDatabase.setMeta(
           'last_account_sync_at',
           DateTime.now().toUtc().toIso8601String(),
