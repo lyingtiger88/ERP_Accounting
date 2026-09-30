@@ -22,7 +22,11 @@
 - [ ] Trusted-device management UI/API
 - [ ] Optional QR pairing
 - [x] Chart of accounts
-- [ ] Fiscal years and periods
+- [x] Iranian Persian base chart + hierarchy metadata
+- [x] Account nature and control/postable rules
+- [x] Solar Hijri journal numbering
+- [ ] Configurable fiscal years and periods
+- [ ] Floating detail accounts
 - [x] Journal entries with double-entry validation
 - [x] Offline journal-entry UI
 - [x] Local Draft / Pending Sync journal storage
