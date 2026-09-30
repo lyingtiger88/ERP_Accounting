@@ -36,28 +36,6 @@ class AccountingSyncService {
     required String companyId,
     required String bearerToken,
   }) async {
-    final push = await OutboxSyncService(
-      localDatabase: localDatabase,
-      apiClient: apiClient,
-    ).syncPending(
-      bearerToken: bearerToken,
-    );
-
-    final currentCursor =
-        await localDatabase.getJournalPullCursor(companyId);
-
-    if (push.stoppedByNetwork) {
-      return AccountingSyncRunResult(
-        pushed: push.synced,
-        pushFailed: push.failed,
-        pulled: 0,
-        remainingOutbox: push.remaining,
-        stoppedByNetwork: true,
-        startCursor: currentCursor,
-        endCursor: currentCursor,
-      );
-    }
-
     final accounts = await apiClient.getAccounts(
       bearerToken: bearerToken,
     );
@@ -80,6 +58,31 @@ class AccountingSyncService {
       companyId: companyId,
       details: detailAccounts,
     );
+    await localDatabase.backfillLegacyJournalFiscalYears(
+      companyId,
+    );
+
+    final push = await OutboxSyncService(
+      localDatabase: localDatabase,
+      apiClient: apiClient,
+    ).syncPending(
+      bearerToken: bearerToken,
+    );
+
+    final currentCursor =
+        await localDatabase.getJournalPullCursor(companyId);
+
+    if (push.stoppedByNetwork) {
+      return AccountingSyncRunResult(
+        pushed: push.synced,
+        pushFailed: push.failed,
+        pulled: 0,
+        remainingOutbox: push.remaining,
+        stoppedByNetwork: true,
+        startCursor: currentCursor,
+        endCursor: currentCursor,
+      );
+    }
 
     final pull = await JournalPullSyncService(
       localDatabase: localDatabase,
@@ -87,6 +90,11 @@ class AccountingSyncService {
     ).pullAll(
       companyId: companyId,
       bearerToken: bearerToken,
+    );
+
+    await localDatabase.setMeta(
+      'last_accounting_sync_at',
+      DateTime.now().toUtc().toIso8601String(),
     );
 
     return AccountingSyncRunResult(
@@ -98,5 +106,4 @@ class AccountingSyncService {
       startCursor: pull.startCursor,
       endCursor: pull.endCursor,
     );
-  }
-}
+  }}
