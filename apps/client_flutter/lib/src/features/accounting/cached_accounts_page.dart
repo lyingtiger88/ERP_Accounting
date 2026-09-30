@@ -68,13 +68,22 @@ class CachedAccountsPage extends StatelessWidget {
                     account.code + ' — ' + account.name,
                   ),
                   subtitle: Text(
-                    account.type,
-                    textDirection: TextDirection.ltr,
+                    account.levelTitle +
+                        ' • ' +
+                        account.natureTitle +
+                        ' • ' +
+                        account.type,
                   ),
-                  trailing: Icon(
-                    account.isActive
-                        ? Icons.check_circle_outline
-                        : Icons.block_outlined,
+                  trailing: Chip(
+                    avatar: Icon(
+                      account.isPostable
+                          ? Icons.edit_note_outlined
+                          : Icons.account_tree_outlined,
+                      size: 16,
+                    ),
+                    label: Text(
+                      account.isPostable ? 'قابل ثبت' : 'کنترلی',
+                    ),
                   ),
                 );
               },
