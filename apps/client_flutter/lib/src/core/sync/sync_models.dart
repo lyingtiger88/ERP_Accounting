@@ -110,3 +110,53 @@ int _wholeAmount(dynamic value, String field) {
     'Server journal $field contains a fractional IRR amount.',
   );
 }
+
+
+class DetailAccountPullChange {
+  const DetailAccountPullChange({
+    required this.cursor,
+    required this.entity,
+  });
+
+  final int cursor;
+  final Map<String, dynamic> entity;
+
+  factory DetailAccountPullChange.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return DetailAccountPullChange(
+      cursor: (json['cursor'] as num).toInt(),
+      entity: Map<String, dynamic>.from(
+        json['entity'] as Map,
+      ),
+    );
+  }
+}
+
+class DetailAccountPullPage {
+  const DetailAccountPullPage({
+    required this.nextCursor,
+    required this.hasMore,
+    required this.changes,
+  });
+
+  final int nextCursor;
+  final bool hasMore;
+  final List<DetailAccountPullChange> changes;
+
+  factory DetailAccountPullPage.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return DetailAccountPullPage(
+      nextCursor: (json['nextCursor'] as num).toInt(),
+      hasMore: json['hasMore'] as bool? ?? false,
+      changes: (json['changes'] as List<dynamic>)
+          .map(
+            (item) => DetailAccountPullChange.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
