@@ -4,6 +4,7 @@ using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Xunit;
 
 namespace ERPAccounting.Api.Tests;
 
