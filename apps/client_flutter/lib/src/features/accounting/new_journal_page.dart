@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
+import '../../core/date/jalali_date.dart';
 
 class NewJournalPage extends StatefulWidget {
   const NewJournalPage({
@@ -100,10 +101,7 @@ class _NewJournalPageState extends State<NewJournalPage> {
   }
 
   String _dateText(DateTime value) {
-    final year = value.year.toString().padLeft(4, '0');
-    final month = value.month.toString().padLeft(2, '0');
-    final day = value.day.toString().padLeft(2, '0');
-    return year + '/' + month + '/' + day;
+    return JalaliDate.fromGregorian(value).formatted;
   }
 
   Future<void> _pickDate() async {
@@ -237,6 +235,15 @@ class _NewJournalPageState extends State<NewJournalPage> {
                   runSpacing: 16,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    Chip(
+                      avatar: const Icon(Icons.account_balance_outlined, size: 18),
+                      label: Text(
+                        'سال مالی ' +
+                            JalaliDate.fromGregorian(_documentDate)
+                                .year
+                                .toString(),
+                      ),
+                    ),
                     SizedBox(
                       width: 220,
                       child: OutlinedButton.icon(
