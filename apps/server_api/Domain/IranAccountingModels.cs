@@ -58,3 +58,12 @@ public sealed class JournalSyncReceipt
     public required Guid JournalEntryId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+
+public sealed class JournalServerChange
+{
+    public long Sequence { get; set; }
+    public required Guid CompanyId { get; set; }
+    public required Guid JournalEntryId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
