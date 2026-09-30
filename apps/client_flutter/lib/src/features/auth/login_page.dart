@@ -119,11 +119,6 @@ class _LoginPageState extends State<LoginPage> {
           companyId: result.companyId,
           bearerToken: result.accessToken,
         );
-
-        await widget.localDatabase.setMeta(
-          'last_accounting_sync_at',
-          DateTime.now().toUtc().toIso8601String(),
-        );
       } catch (_) {
         // Sync is best-effort on login. Pending changes remain in Outbox.
       }
