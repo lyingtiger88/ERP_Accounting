@@ -12,7 +12,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 |---|---|---|
 | **Phase 0** | Project foundation, architecture, Windows + Android targets, CI, online/USB sync design | 🟡 Mostly complete |
 | **Phase 1** | Identity, companies, users, roles, accounting foundation, 2FA, QR pairing | 🟡 In progress |
-| **Phase 2** | Offline-first sync engine, online sync, USB delta sync, conflict handling | ⚪ Planned |
+| **Phase 2** | Offline-first sync engine, online sync, USB delta sync, conflict handling | 🟡 In progress |
 | **Phase 3** | Sales, purchasing, customers, suppliers, cash/bank, cheques, tax | ⚪ Planned |
 | **Phase 4** | Inventory, warehouses, resources, assets, barcode/QR, serial/batch tracking | ⚪ Planned |
 | **Phase 5** | CRM, HR, projects, cost centers, management dashboards and workflows | ⚪ Planned |
@@ -90,13 +90,15 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Client sync outbox/change-journal foundation
 - [x] Outbox push processor
 - [ ] Entity revisions
-- [ ] Sync cursors
-- [ ] Delta upload/download
+- [x] Journal sync cursors
+- [x] Journal delta push/pull
+- [ ] General delta upload/download
 - [x] Idempotent accounting journal upload
 - [ ] General idempotent change processing
 - [ ] Conflict detection
 - [ ] Conflict resolution policies
-- [ ] Online synchronization
+- [x] Bidirectional accounting journal synchronization
+- [ ] General online synchronization
 - [ ] LAN synchronization
 - [ ] USB `.erp-sync` export/import
 - [ ] Package encryption
@@ -219,6 +221,8 @@ Implemented so far:
 - Local Draft/Pending Sync documents stored transactionally with Outbox
 - End-to-end Outbox journal upload with retry/error tracking
 - Idempotent server receipts preventing duplicate journal creation
+- Cursor-based server-to-client journal pull and SQLite merge
+- Automatic master-data refresh before bidirectional accounting sync
 - Configurable Solar Hijri fiscal years with close/reopen control
 - Floating detail accounts cached offline and selectable per journal line
 - CI for ASP.NET Core build and Flutter analysis
@@ -227,7 +231,7 @@ Implemented so far:
 ### Immediate next steps
 
 1. Validate fiscal-year/detail-cache upgrade on Windows
-2. Add server-to-client journal pull + sync cursors
+2. Add conflict/version policy for mutable entities
 3. Freeze Phase 1 schema and generate provider-specific EF Core migrations
 4. Verify PostgreSQL provider when Docker/PostgreSQL is available
 5. Persistent sessions and refresh-token rotation
