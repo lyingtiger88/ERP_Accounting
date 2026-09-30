@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
-import '../../core/sync/outbox_sync_service.dart';
+import '../../core/sync/accounting_sync_service.dart';
 
 class LocalDocumentsPage extends StatefulWidget {
   const LocalDocumentsPage({
@@ -40,10 +40,11 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
     setState(() => _syncing = true);
 
     try {
-      final result = await OutboxSyncService(
+      final result = await AccountingSyncService(
         localDatabase: widget.localDatabase,
         apiClient: ApiClient(),
-      ).syncPending(
+      ).syncAll(
+        companyId: widget.companyId,
         bearerToken: widget.accessToken,
       );
 
@@ -52,19 +53,18 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
       setState(_reload);
 
       final message = result.stoppedByNetwork
-          ? 'اتصال قطع شد. ' +
-              result.synced.toString() +
-              ' سند همگام شد و ' +
-              result.remaining.toString() +
-              ' مورد باقی ماند.'
-          : result.failed > 0
-              ? result.synced.toString() +
-                  ' سند همگام شد، ' +
-                  result.failed.toString() +
-                  ' مورد خطا داشت.'
-              : result.synced.toString() +
-                  ' سند همگام شد. باقی‌مانده: ' +
-                  result.remaining.toString();
+          ? 'اتصال قطع شد. Push: ' +
+              result.pushed.toString() +
+              '، باقی‌مانده: ' +
+              result.remainingOutbox.toString()
+          : 'Push: ' +
+              result.pushed.toString() +
+              ' • Pull: ' +
+              result.pulled.toString() +
+              ' • خطای Push: ' +
+              result.pushFailed.toString() +
+              ' • باقی‌مانده: ' +
+              result.remainingOutbox.toString();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
@@ -104,7 +104,7 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
           title: const Text('اسناد حسابداری محلی'),
           actions: [
             IconButton(
-              tooltip: 'همگام‌سازی Pendingها',
+              tooltip: 'همگام‌سازی دوطرفه',
               onPressed: _syncing ? null : _syncPending,
               icon: _syncing
                   ? const SizedBox(
