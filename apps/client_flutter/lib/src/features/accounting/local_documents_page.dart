@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
 import '../../core/sync/accounting_sync_service.dart';
+import 'audit_trail_page.dart';
 
 class LocalDocumentsPage extends StatefulWidget {
   const LocalDocumentsPage({
@@ -391,6 +392,31 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                             leading: Icon(Icons.history_outlined),
                             title: Text(
                               'برای این سند قبلاً سند برگشت ثبت شده است.',
+                            ),
+                          ),
+                        ),
+                      if (synced && document.serverId != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => AuditTrailPage(
+                                      accessToken: widget.accessToken,
+                                      entityId: document.serverId,
+                                      title: 'تاریخچه سند ' +
+                                          (document.serverNumber ?? ''),
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(
+                                Icons.manage_history_outlined,
+                              ),
+                              label: const Text('تاریخچه حسابرسی'),
                             ),
                           ),
                         ),
