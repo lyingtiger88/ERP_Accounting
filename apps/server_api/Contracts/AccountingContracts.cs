@@ -51,3 +51,19 @@ public sealed record CreateJournalRequest(
     string? Description,
     IReadOnlyList<CreateJournalLineRequest> Lines,
     Guid? FiscalYearId = null);
+
+
+public sealed record SyncJournalRequest(
+    string ChangeId,
+    string LocalDocumentId,
+    Guid FiscalYearId,
+    DateOnly DocumentDate,
+    string? Description,
+    IReadOnlyList<CreateJournalLineRequest> Lines);
+
+public sealed record SyncJournalResponse(
+    Guid JournalEntryId,
+    string Number,
+    JournalStatus Status,
+    DateTimeOffset? PostedAt,
+    bool Duplicate);
