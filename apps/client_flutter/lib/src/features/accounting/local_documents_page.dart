@@ -21,6 +21,7 @@ class LocalDocumentsPage extends StatefulWidget {
 }
 
 class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
+  final _apiClient = ApiClient();
   late Future<List<LocalAccountingDocument>> _future;
   bool _syncing = false;
 
@@ -42,7 +43,7 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
     try {
       final result = await AccountingSyncService(
         localDatabase: widget.localDatabase,
-        apiClient: ApiClient(),
+        apiClient: _apiClient,
       ).syncAll(
         companyId: widget.companyId,
         bearerToken: widget.accessToken,
@@ -63,6 +64,8 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
               result.pulled.toString() +
               ' • خطای Push: ' +
               result.pushFailed.toString() +
+              ' • تعارض: ' +
+              result.conflicts.toString() +
               ' • باقی‌مانده: ' +
               result.remainingOutbox.toString();
 
@@ -80,6 +83,153 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
       if (mounted) {
         setState(() => _syncing = false);
       }
+    }
+  }
+
+  Future<void> _reverseJournal(
+    LocalAccountingDocument document,
+  ) async {
+    final serverId = document.serverId;
+
+    if (serverId == null ||
+        document.reversalOfServerId != null ||
+        document.reversedByServerId != null) {
+      return;
+    }
+
+    final reasonController = TextEditingController();
+    var reversalDate = DateTime.now();
+
+    final draft = await showDialog<_ReversalDraft>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                'برگشت سند ' +
+                    (document.serverNumber ?? ''),
+              ),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: reasonController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'علت برگشت',
+                        hintText:
+                            'علت اصلاح/برگشت سند را ثبت کنید',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: reversalDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+
+                        if (picked != null) {
+                          setDialogState(
+                            () => reversalDate = picked,
+                          );
+                        }
+                      },
+                      icon: const Icon(
+                        Icons.calendar_month_outlined,
+                      ),
+                      label: Text(
+                        reversalDate.year.toString() +
+                            '/' +
+                            reversalDate.month
+                                .toString()
+                                .padLeft(2, '0') +
+                            '/' +
+                            reversalDate.day
+                                .toString()
+                                .padLeft(2, '0'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'سند اصلی دست‌نخورده می‌ماند و یک سند معکوس جدید با شماره رسمی ساخته می‌شود.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('انصراف'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final reason = reasonController.text.trim();
+                    if (reason.isEmpty) return;
+
+                    Navigator.pop(
+                      context,
+                      _ReversalDraft(
+                        date: reversalDate,
+                        reason: reason,
+                      ),
+                    );
+                  },
+                  child: const Text('ثبت برگشت'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    reasonController.dispose();
+    if (draft == null) return;
+
+    setState(() => _syncing = true);
+
+    try {
+      final response = await _apiClient.reverseJournal(
+        bearerToken: widget.accessToken,
+        journalEntryId: serverId,
+        documentDate: draft.date,
+        reason: draft.reason,
+      );
+
+      await AccountingSyncService(
+        localDatabase: widget.localDatabase,
+        apiClient: _apiClient,
+      ).syncAll(
+        companyId: widget.companyId,
+        bearerToken: widget.accessToken,
+      );
+
+      if (!mounted) return;
+      setState(_reload);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'سند معکوس با شماره ' +
+                response['reversalNumber'].toString() +
+                ' ثبت شد.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _syncing = false);
     }
   }
 
@@ -180,7 +330,13 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                           (document.serverNumber == null
                               ? ''
                               : '  •  شماره قطعی: ' +
-                                  document.serverNumber!),
+                                  document.serverNumber!) +
+                          (document.reversalOfServerId == null
+                              ? ''
+                              : '  •  سند معکوس') +
+                          (document.reversedByServerId == null
+                              ? ''
+                              : '  •  برگشت‌شده'),
                     ),
                     trailing: Chip(
                       avatar: Icon(
@@ -214,6 +370,45 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                                   document.syncAttempts.toString(),
                             ),
                             subtitle: Text(document.syncError!),
+                          ),
+                        ),
+                      if (document.reversalOfServerId != null)
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.undo_outlined),
+                            title: Text(
+                              'این رکورد یک سند معکوس (Reversal) است.',
+                            ),
+                          ),
+                        ),
+                      if (document.reversedByServerId != null)
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.history_outlined),
+                            title: Text(
+                              'برای این سند قبلاً سند برگشت ثبت شده است.',
+                            ),
+                          ),
+                        ),
+                      if (synced &&
+                          document.serverId != null &&
+                          document.reversalOfServerId == null &&
+                          document.reversedByServerId == null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: _syncing
+                                  ? null
+                                  : () => _reverseJournal(document),
+                              icon: const Icon(Icons.undo_outlined),
+                              label: const Text('برگشت سند'),
+                            ),
                           ),
                         ),
                       Padding(
@@ -299,4 +494,15 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
       ),
     );
   }
+}
+
+
+class _ReversalDraft {
+  const _ReversalDraft({
+    required this.date,
+    required this.reason,
+  });
+
+  final DateTime date;
+  final String reason;
 }
