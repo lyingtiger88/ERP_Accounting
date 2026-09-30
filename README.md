@@ -88,11 +88,12 @@ This roadmap is intentionally kept on the repository home page so the current pl
 
 - [ ] Device identity
 - [x] Client sync outbox/change-journal foundation
-- [ ] Outbox push processor
+- [x] Outbox push processor
 - [ ] Entity revisions
 - [ ] Sync cursors
 - [ ] Delta upload/download
-- [ ] Idempotent change processing
+- [x] Idempotent accounting journal upload
+- [ ] General idempotent change processing
 - [ ] Conflict detection
 - [ ] Conflict resolution policies
 - [ ] Online synchronization
@@ -216,6 +217,8 @@ Implemented so far:
 - Initial general ledger and trial balance reports
 - Offline journal-entry UI with Rial amounts
 - Local Draft/Pending Sync documents stored transactionally with Outbox
+- End-to-end Outbox journal upload with retry/error tracking
+- Idempotent server receipts preventing duplicate journal creation
 - Configurable Solar Hijri fiscal years with close/reopen control
 - Floating detail accounts cached offline and selectable per journal line
 - CI for ASP.NET Core build and Flutter analysis
@@ -224,7 +227,7 @@ Implemented so far:
 ### Immediate next steps
 
 1. Validate fiscal-year/detail-cache upgrade on Windows
-2. Implement Outbox push: local accounting document → API journal
+2. Add server-to-client journal pull + sync cursors
 3. Freeze Phase 1 schema and generate provider-specific EF Core migrations
 4. Verify PostgreSQL provider when Docker/PostgreSQL is available
 5. Persistent sessions and refresh-token rotation
