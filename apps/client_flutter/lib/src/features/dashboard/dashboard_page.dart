@@ -165,6 +165,8 @@ class _DashboardBody extends StatelessWidget {
           await localDatabase.cachedAccountCount(companyId),
       pendingChanges:
           await localDatabase.pendingOutboxCount(),
+      unresolvedConflicts:
+          await localDatabase.unresolvedConflictCount(companyId),
       databasePath: localDatabase.databasePath ?? 'unknown',
     );
   }
@@ -239,6 +241,11 @@ class _DashboardBody extends StatelessWidget {
                     status?.pendingChanges.toString() ?? '…',
                     Icons.sync_outlined,
                   ),
+                  _MetricCard(
+                    'تعارض‌های حل‌نشده',
+                    status?.unresolvedConflicts.toString() ?? '…',
+                    Icons.sync_problem_outlined,
+                  ),
                 ],
               );
             },
@@ -306,6 +313,9 @@ class _DashboardBody extends StatelessWidget {
                   const _StatusRow('Offline journal entry', true),
                   const _StatusRow('Fiscal years / Jalali dates', true),
                   const _StatusRow('Floating detail accounts', true),
+                  const _StatusRow('Detail entity revisions', true),
+                  const _StatusRow('Conflict detection / resolution', true),
+                  const _StatusRow('Master-data delta cursor', true),
                   const _StatusRow('TOTP / QR Pairing', false),
                   const _StatusRow('Full Sync Engine', false),
                 ],
@@ -322,11 +332,13 @@ class _LocalStatus {
   const _LocalStatus({
     required this.cachedAccounts,
     required this.pendingChanges,
+    required this.unresolvedConflicts,
     required this.databasePath,
   });
 
   final int cachedAccounts;
   final int pendingChanges;
+  final int unresolvedConflicts;
   final String databasePath;
 }
 
