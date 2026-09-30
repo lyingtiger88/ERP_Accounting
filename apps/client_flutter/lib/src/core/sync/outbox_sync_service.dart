@@ -6,6 +6,7 @@ class SyncRunResult {
     required this.processed,
     required this.synced,
     required this.failed,
+    required this.conflicts,
     required this.remaining,
     required this.stoppedByNetwork,
   });
@@ -13,10 +14,12 @@ class SyncRunResult {
   final int processed;
   final int synced;
   final int failed;
+  final int conflicts;
   final int remaining;
   final bool stoppedByNetwork;
 
-  bool get hasErrors => failed > 0 || stoppedByNetwork;
+  bool get hasErrors =>
+      failed > 0 || conflicts > 0 || stoppedByNetwork;
 }
 
 class OutboxSyncService {
@@ -39,11 +42,65 @@ class OutboxSyncService {
     var processed = 0;
     var synced = 0;
     var failed = 0;
+    var conflicts = 0;
     var stoppedByNetwork = false;
 
     for (final item in pending) {
-      if (item.entityType != 'AccountingDocument' ||
-          item.operation != 'Create') {
+      try {
+        if (item.entityType == 'AccountingDocument' &&
+            item.operation == 'Create') {
+          final result = await apiClient.syncJournal(
+            bearerToken: bearerToken,
+            changeId: item.changeId,
+            payload: item.payload,
+          );
+
+          await localDatabase.markOutboxSent(
+            outboxId: item.id,
+            localDocumentId: item.entityId,
+            serverId: result.journalEntryId,
+            serverNumber: result.number,
+          );
+
+          processed++;
+          synced++;
+          continue;
+        }
+
+        if (item.entityType == 'DetailAccount' &&
+            item.operation == 'Upsert') {
+          final result = await apiClient.syncDetailAccount(
+            bearerToken: bearerToken,
+            changeId: item.changeId,
+            payload: item.payload,
+          );
+
+          if (result.applied && result.entity != null) {
+            await localDatabase.markDetailAccountOutboxSent(
+              outboxId: item.id,
+              serverEntity: result.entity!,
+            );
+            processed++;
+            synced++;
+            continue;
+          }
+
+          if (result.conflict) {
+            await localDatabase.recordDetailAccountConflict(
+              item: item,
+              serverEntity: result.serverConflict,
+            );
+            processed++;
+            conflicts++;
+            continue;
+          }
+
+          throw StateError(
+            'Unexpected detail-account sync outcome: ' +
+                result.outcome,
+          );
+        }
+
         await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error:
@@ -54,25 +111,6 @@ class OutboxSyncService {
         );
         processed++;
         failed++;
-        continue;
-      }
-
-      try {
-        final result = await apiClient.syncJournal(
-          bearerToken: bearerToken,
-          changeId: item.changeId,
-          payload: item.payload,
-        );
-
-        await localDatabase.markOutboxSent(
-          outboxId: item.id,
-          localDocumentId: item.entityId,
-          serverId: result.journalEntryId,
-          serverNumber: result.number,
-        );
-
-        processed++;
-        synced++;
       } on ApiException catch (error) {
         await localDatabase.markOutboxFailed(
           outboxId: item.id,
@@ -105,6 +143,7 @@ class OutboxSyncService {
       processed: processed,
       synced: synced,
       failed: failed,
+      conflicts: conflicts,
       remaining: remaining,
       stoppedByNetwork: stoppedByNetwork,
     );
