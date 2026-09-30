@@ -1164,6 +1164,76 @@ class LocalDatabase {
     return documentId;
   }
 
+  Future<int> getDetailAccountPullCursor(
+    String companyId,
+  ) async {
+    final value = await getMeta(
+      'detail_account_pull_cursor:' + companyId,
+    );
+    return int.tryParse(value ?? '') ?? 0;
+  }
+
+  Future<void> applyServerDetailAccountPage({
+    required String companyId,
+    required DetailAccountPullPage page,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      for (final change in page.changes) {
+        final entity = change.entity;
+        final id = entity['id'] as String;
+
+        final existing = await txn.query(
+          'cached_detail_accounts',
+          columns: ['sync_status'],
+          where: 'id = ? AND company_id = ?',
+          whereArgs: [id, companyId],
+          limit: 1,
+        );
+
+        final localStatus = existing.isEmpty
+            ? null
+            : existing.first['sync_status'] as String?;
+
+        if (localStatus == 'Pending' ||
+            localStatus == 'Conflict') {
+          continue;
+        }
+
+        await txn.insert(
+          'cached_detail_accounts',
+          {
+            'id': id,
+            'company_id': companyId,
+            'code': entity['code'] as String,
+            'name': entity['name'] as String,
+            'type': entity['type'].toString(),
+            'national_id': entity['nationalId'] as String?,
+            'is_active':
+                (entity['isActive'] as bool? ?? true) ? 1 : 0,
+            'revision': (entity['revision'] as num).toInt(),
+            'sync_status': 'Synced',
+            'sync_error': null,
+            'updated_at':
+                entity['updatedAt']?.toString() ?? now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      await txn.insert(
+        'local_meta',
+        {
+          'key': 'detail_account_pull_cursor:' + companyId,
+          'value': page.nextCursor.toString(),
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
   Future<int> getJournalPullCursor(String companyId) async {
     final value = await getMeta('journal_pull_cursor:' + companyId);
     return int.tryParse(value ?? '') ?? 0;
