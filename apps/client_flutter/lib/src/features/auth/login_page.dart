@@ -102,7 +102,12 @@ class _LoginPageState extends State<LoginPage> {
         );
 
         accountsSynced = true;
+      } on ApiException {
+        // Successful authentication should not be discarded just because
+        // the first cache refresh failed. Existing local data stays intact.
+      }
 
+      try {
         await OutboxSyncService(
           localDatabase: widget.localDatabase,
           apiClient: _apiClient,
@@ -114,9 +119,8 @@ class _LoginPageState extends State<LoginPage> {
           'last_outbox_sync_at',
           DateTime.now().toUtc().toIso8601String(),
         );
-      } on ApiException {
-        // Successful authentication should not be discarded just because
-        // the first cache refresh failed. Existing local data stays intact.
+      } catch (_) {
+        // Sync is best-effort on login. Pending changes remain in Outbox.
       }
 
       if (!mounted) return;
