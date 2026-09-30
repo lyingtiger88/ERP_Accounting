@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/sync/outbox_sync_service.dart';
 
 class LocalDocumentsPage extends StatefulWidget {
   const LocalDocumentsPage({
     super.key,
     required this.companyId,
+    required this.accessToken,
     required this.localDatabase,
   });
 
   final String companyId;
+  final String accessToken;
   final LocalDatabase localDatabase;
 
   @override
@@ -18,6 +22,7 @@ class LocalDocumentsPage extends StatefulWidget {
 
 class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
   late Future<List<LocalAccountingDocument>> _future;
+  bool _syncing = false;
 
   @override
   void initState() {
@@ -27,6 +32,55 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
 
   void _reload() {
     _future = widget.localDatabase.getLocalDocuments(widget.companyId);
+  }
+
+  Future<void> _syncPending() async {
+    if (_syncing) return;
+
+    setState(() => _syncing = true);
+
+    try {
+      final result = await OutboxSyncService(
+        localDatabase: widget.localDatabase,
+        apiClient: ApiClient(),
+      ).syncPending(
+        bearerToken: widget.accessToken,
+      );
+
+      if (!mounted) return;
+
+      setState(_reload);
+
+      final message = result.stoppedByNetwork
+          ? 'اتصال قطع شد. ' +
+              result.synced.toString() +
+              ' سند همگام شد و ' +
+              result.remaining.toString() +
+              ' مورد باقی ماند.'
+          : result.failed > 0
+              ? result.synced.toString() +
+                  ' سند همگام شد، ' +
+                  result.failed.toString() +
+                  ' مورد خطا داشت.'
+              : result.synced.toString() +
+                  ' سند همگام شد. باقی‌مانده: ' +
+                  result.remaining.toString();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('همگام‌سازی ناموفق بود: ' + error.toString()),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _syncing = false);
+      }
+    }
   }
 
   String _money(int value) {
@@ -49,6 +103,17 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
         appBar: AppBar(
           title: const Text('اسناد حسابداری محلی'),
           actions: [
+            IconButton(
+              tooltip: 'همگام‌سازی Pendingها',
+              onPressed: _syncing ? null : _syncPending,
+              icon: _syncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.sync),
+            ),
             IconButton(
               tooltip: 'بازخوانی',
               onPressed: () => setState(_reload),
@@ -87,14 +152,17 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
               itemBuilder: (context, index) {
                 final document = documents[index];
                 final pending = document.syncStatus == 'Pending';
+                final synced = document.syncStatus == 'Synced';
 
                 return Card(
                   child: ExpansionTile(
                     leading: CircleAvatar(
                       child: Icon(
-                        pending
-                            ? Icons.cloud_upload_outlined
-                            : Icons.edit_note_outlined,
+                        synced
+                            ? Icons.cloud_done_outlined
+                            : pending
+                                ? Icons.cloud_upload_outlined
+                                : Icons.edit_note_outlined,
                       ),
                     ),
                     title: Text(
@@ -108,17 +176,27 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                           document.status +
                           '  •  ' +
                           document.lineCount.toString() +
-                          ' ردیف',
+                          ' ردیف' +
+                          (document.serverNumber == null
+                              ? ''
+                              : '  •  شماره قطعی: ' +
+                                  document.serverNumber!),
                     ),
                     trailing: Chip(
                       avatar: Icon(
-                        pending
-                            ? Icons.schedule_send_outlined
-                            : Icons.save_outlined,
+                        synced
+                            ? Icons.cloud_done_outlined
+                            : pending
+                                ? Icons.schedule_send_outlined
+                                : Icons.save_outlined,
                         size: 16,
                       ),
                       label: Text(
-                        pending ? 'Pending Sync' : 'Draft',
+                        synced
+                            ? 'Synced'
+                            : pending
+                                ? 'Pending Sync'
+                                : 'Draft',
                       ),
                     ),
                     children: [
