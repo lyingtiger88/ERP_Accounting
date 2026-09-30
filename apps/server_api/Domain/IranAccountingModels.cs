@@ -96,3 +96,26 @@ public sealed class DetailAccountServerChange
     public required string Operation { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+
+public sealed class JournalReversalLink
+{
+    public required Guid OriginalJournalEntryId { get; set; }
+    public required Guid ReversalJournalEntryId { get; set; }
+    public required Guid CreatedByUserId { get; set; }
+    public required string Reason { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AccountingAuditLog
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required Guid UserId { get; set; }
+    public required string EntityType { get; set; }
+    public required Guid EntityId { get; set; }
+    public required string Action { get; set; }
+    public string? Reason { get; set; }
+    public string? PayloadJson { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
