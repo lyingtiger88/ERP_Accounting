@@ -32,7 +32,8 @@ class CachedAccountsPage extends StatelessWidget {
             if (snapshot.hasError) {
               return Center(
                 child: Text(
-                  'خطا در خواندن دیتابیس محلی: \${snapshot.error}',
+                  'خطا در خواندن دیتابیس محلی: ' +
+                      snapshot.error.toString(),
                 ),
               );
             }
@@ -63,9 +64,11 @@ class CachedAccountsPage extends StatelessWidget {
                       ),
                     ),
                   ),
-                  title: Text(account.name),
+                  title: Text(
+                    account.code + ' — ' + account.name,
+                  ),
                   subtitle: Text(
-                    '\${account.code} • \${account.type}',
+                    account.type,
                     textDirection: TextDirection.ltr,
                   ),
                   trailing: Icon(
