@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
-import '../accounting/cached_accounts_page.dart';
+import '../accounting/accounting_home_page.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
@@ -121,7 +121,7 @@ class _Navigation extends StatelessWidget {
                 if (item.label == 'حسابداری') {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => CachedAccountsPage(
+                      builder: (_) => AccountingHomePage(
                         companyId: companyId,
                         localDatabase: localDatabase,
                       ),
@@ -293,6 +293,7 @@ class _DashboardBody extends StatelessWidget {
                   const _StatusRow('Server persistence', true),
                   const _StatusRow('Client SQLite / Offline cache', true),
                   const _StatusRow('Outbox foundation', true),
+                  const _StatusRow('Offline journal entry', true),
                   const _StatusRow('TOTP / QR Pairing', false),
                   const _StatusRow('Full Sync Engine', false),
                 ],
