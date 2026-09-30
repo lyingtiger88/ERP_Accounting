@@ -151,6 +151,27 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
     }
   }
 
+  Future<void> _setClosed(
+    CachedFiscalYear fiscalYear,
+    bool isClosed,
+  ) async {
+    setState(() => _busy = true);
+
+    try {
+      await _apiClient.setFiscalYearClosed(
+        bearerToken: widget.accessToken,
+        fiscalYearId: fiscalYear.id,
+        isClosed: isClosed,
+      );
+
+      await _refreshOnline();
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _message(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -222,11 +243,30 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
                     ),
                     trailing: Wrap(
                       spacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (item.isDefault)
                           const Chip(label: Text('پیش‌فرض')),
                         Chip(
                           label: Text(item.isClosed ? 'بسته' : 'باز'),
+                        ),
+                        PopupMenuButton<String>(
+                          enabled: !_busy,
+                          onSelected: (value) {
+                            if (value == 'toggle') {
+                              _setClosed(item, !item.isClosed);
+                            }
+                          },
+                          itemBuilder: (_) => [
+                            PopupMenuItem(
+                              value: 'toggle',
+                              child: Text(
+                                item.isClosed
+                                    ? 'بازگشایی سال مالی'
+                                    : 'بستن سال مالی',
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
