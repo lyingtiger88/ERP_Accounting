@@ -74,6 +74,7 @@ class AccountingHomePage extends StatelessWidget {
                     context,
                     LocalDocumentsPage(
                       companyId: companyId,
+                      accessToken: accessToken,
                       localDatabase: localDatabase,
                     ),
                   ),
