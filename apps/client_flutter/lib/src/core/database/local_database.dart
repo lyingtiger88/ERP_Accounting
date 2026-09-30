@@ -8,6 +8,8 @@ import 'package:sqflite/sqflite.dart' as mobile;
 import 'package:sqflite_common/sqlite_api.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../sync/sync_models.dart';
+
 class LocalDatabase {
   LocalDatabase._();
 
@@ -673,6 +675,107 @@ class LocalDatabase {
     });
 
     return documentId;
+  }
+
+  Future<int> getJournalPullCursor(String companyId) async {
+    final value = await getMeta('journal_pull_cursor:' + companyId);
+    return int.tryParse(value ?? '') ?? 0;
+  }
+
+  Future<void> applyServerJournalPage({
+    required String companyId,
+    required JournalPullPage page,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      for (final change in page.changes) {
+        final existingRows = await txn.query(
+          'local_accounting_documents',
+          columns: ['id', 'created_at'],
+          where: 'company_id = ? AND server_id = ?',
+          whereArgs: [companyId, change.journalEntryId],
+          limit: 1,
+        );
+
+        final String localDocumentId;
+        final String createdAt;
+
+        if (existingRows.isNotEmpty) {
+          localDocumentId = existingRows.first['id'] as String;
+          createdAt = existingRows.first['created_at'] as String;
+        } else {
+          localDocumentId = 'server:' + change.journalEntryId;
+          createdAt =
+              change.postedAt?.toUtc().toIso8601String() ?? now;
+        }
+
+        final values = <String, Object?>{
+          'company_id': companyId,
+          'fiscal_year_id': change.fiscalYearId,
+          'server_id': change.journalEntryId,
+          'server_number': change.number,
+          'document_date': change.documentDate,
+          'description': change.description ?? '',
+          'status': change.status,
+          'sync_status': 'Synced',
+          'currency': 'IRR',
+          'created_at': createdAt,
+          'updated_at': now,
+        };
+
+        if (existingRows.isEmpty) {
+          await txn.insert(
+            'local_accounting_documents',
+            {
+              'id': localDocumentId,
+              ...values,
+            },
+          );
+        } else {
+          await txn.update(
+            'local_accounting_documents',
+            values,
+            where: 'id = ?',
+            whereArgs: [localDocumentId],
+          );
+        }
+
+        await txn.delete(
+          'local_document_lines',
+          where: 'document_id = ?',
+          whereArgs: [localDocumentId],
+        );
+
+        var sortOrder = 0;
+
+        for (final line in change.lines) {
+          await txn.insert(
+            'local_document_lines',
+            {
+              'id': _newId(),
+              'document_id': localDocumentId,
+              'account_id': line.accountId,
+              'detail_account_id': line.detailAccountId,
+              'description': line.description ?? '',
+              'debit': line.debit,
+              'credit': line.credit,
+              'sort_order': sortOrder++,
+            },
+          );
+        }
+      }
+
+      await txn.insert(
+        'local_meta',
+        {
+          'key': 'journal_pull_cursor:' + companyId,
+          'value': page.nextCursor.toString(),
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
   }
 
   Future<List<LocalAccountingDocument>> getLocalDocuments(
