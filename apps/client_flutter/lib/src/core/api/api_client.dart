@@ -73,6 +73,46 @@ class JournalSyncResult {
   }
 }
 
+class DetailAccountSyncResult {
+  const DetailAccountSyncResult({
+    required this.outcome,
+    required this.entity,
+    required this.serverConflict,
+    required this.baseRevision,
+    required this.duplicate,
+  });
+
+  final String outcome;
+  final Map<String, dynamic>? entity;
+  final Map<String, dynamic>? serverConflict;
+  final int? baseRevision;
+  final bool duplicate;
+
+  bool get applied => outcome == 'Applied';
+  bool get conflict => outcome == 'Conflict';
+
+  factory DetailAccountSyncResult.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final conflict = json['conflict'] as Map?;
+
+    return DetailAccountSyncResult(
+      outcome: json['outcome'].toString(),
+      entity: json['entity'] == null
+          ? null
+          : Map<String, dynamic>.from(json['entity'] as Map),
+      serverConflict: conflict?['server'] == null
+          ? null
+          : Map<String, dynamic>.from(
+              conflict!['server'] as Map,
+            ),
+      baseRevision:
+          (conflict?['baseRevision'] as num?)?.toInt(),
+      duplicate: json['duplicate'] as bool? ?? false,
+    );
+  }
+}
+
 class ApiClient {
   ApiClient({String? baseUrl}) : baseUrl = baseUrl ?? _defaultBaseUrl();
 
@@ -240,6 +280,32 @@ class ApiClient {
     final month = value.month.toString().padLeft(2, '0');
     final day = value.day.toString().padLeft(2, '0');
     return year + '-' + month + '-' + day;
+  }
+
+  Future<DetailAccountSyncResult> syncDetailAccount({
+    required String bearerToken,
+    required String changeId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/accounting/sync/detail-account',
+      bearerToken: bearerToken,
+      body: {
+        'changeId': changeId,
+        'entityId': payload['entityId'],
+        'code': payload['code'],
+        'name': payload['name'],
+        'type': payload['type'],
+        'nationalId': payload['nationalId'],
+        'isActive': payload['isActive'],
+        'baseRevision': payload['baseRevision'],
+      },
+    );
+
+    return DetailAccountSyncResult.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   Future<JournalSyncResult> syncJournal({
