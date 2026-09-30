@@ -532,6 +532,85 @@ public sealed class AccountingService(AppDbContext db)
             false);
     }
 
+    public async Task<DetailAccountPullResponse> PullDetailAccountChangesAsync(
+        Guid companyId,
+        long afterCursor,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (afterCursor < 0)
+        {
+            throw new ArgumentException("Cursor cannot be negative.");
+        }
+
+        var pageSize = Math.Clamp(limit, 1, 200);
+
+        var changeRows = await db.DetailAccountServerChanges
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Sequence > afterCursor)
+            .OrderBy(x => x.Sequence)
+            .Take(pageSize + 1)
+            .ToArrayAsync(cancellationToken);
+
+        var hasMore = changeRows.Length > pageSize;
+        var page = changeRows.Take(pageSize).ToArray();
+
+        if (page.Length == 0)
+        {
+            return new DetailAccountPullResponse(
+                afterCursor,
+                false,
+                []);
+        }
+
+        var ids = page
+            .Select(x => x.DetailAccountId)
+            .Distinct()
+            .ToArray();
+
+        var details = await db.DetailAccounts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                ids.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var states = await db.DetailAccountSyncStates
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                ids.Contains(x.DetailAccountId))
+            .ToDictionaryAsync(
+                x => x.DetailAccountId,
+                cancellationToken);
+
+        var changes = new List<DetailAccountServerChangeView>();
+
+        foreach (var change in page)
+        {
+            if (!details.TryGetValue(change.DetailAccountId, out var detail))
+            {
+                continue;
+            }
+
+            states.TryGetValue(detail.Id, out var state);
+
+            changes.Add(new DetailAccountServerChangeView(
+                change.Sequence,
+                ToDetailAccountView(
+                    detail,
+                    state?.Revision ?? change.Revision,
+                    state?.UpdatedAt ?? change.CreatedAt)));
+        }
+
+        return new DetailAccountPullResponse(
+            page[^1].Sequence,
+            hasMore,
+            changes);
+    }
+
     public async Task<LedgerAccount> CreateAccountAsync(
         Guid companyId,
         CreateAccountRequest request,
