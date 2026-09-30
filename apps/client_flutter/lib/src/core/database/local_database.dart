@@ -507,6 +507,12 @@ class LocalDatabase {
         effectiveLines.fold<int>(0, (sum, line) => sum + line.credit);
 
     if (queueForSync) {
+      if (fiscalYearId == null || fiscalYearId.isEmpty) {
+        throw ArgumentError(
+          'سال مالی برای سند آماده همگام‌سازی الزامی است.',
+        );
+      }
+
       if (effectiveLines.length < 2) {
         throw ArgumentError('سند آماده همگام‌سازی حداقل دو ردیف نیاز دارد.');
       }
