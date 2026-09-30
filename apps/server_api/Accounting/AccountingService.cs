@@ -1241,6 +1241,14 @@ public sealed class AccountingService(AppDbContext db)
                     x => x.DetailAccountId,
                     cancellationToken);
 
+        var reversalOf = await db.JournalReversalLinks
+            .AsNoTracking()
+            .Where(x => journalIds.Contains(x.ReversalJournalEntryId))
+            .ToDictionaryAsync(
+                x => x.ReversalJournalEntryId,
+                x => x.OriginalJournalEntryId,
+                cancellationToken);
+
         var changes = new List<ServerJournalChangeView>(page.Length);
 
         foreach (var change in page)
@@ -1266,6 +1274,10 @@ public sealed class AccountingService(AppDbContext db)
                 })
                 .ToArray();
 
+            reversalOf.TryGetValue(
+                journal.Id,
+                out var originalJournalEntryId);
+
             changes.Add(new ServerJournalChangeView(
                 change.Sequence,
                 journal.Id,
@@ -1275,6 +1287,9 @@ public sealed class AccountingService(AppDbContext db)
                 journal.Description,
                 journal.Status,
                 journal.PostedAt,
+                originalJournalEntryId == Guid.Empty
+                    ? null
+                    : originalJournalEntryId,
                 lines));
         }
 
