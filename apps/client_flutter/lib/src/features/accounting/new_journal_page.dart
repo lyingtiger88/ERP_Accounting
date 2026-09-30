@@ -217,13 +217,14 @@ class _NewJournalPageState extends State<NewJournalPage> {
               );
             }
 
-            final accounts =
-                snapshot.data ?? const <CachedAccount>[];
+            final accounts = (snapshot.data ?? const <CachedAccount>[])
+                .where((account) => account.isActive && account.isPostable)
+                .toList(growable: false);
 
             if (accounts.isEmpty) {
               return const Center(
                 child: Text(
-                  'ابتدا کدینگ حساب‌ها را در حالت Online دریافت کنید.',
+                  'حساب قابل ثبت پیدا نشد. ابتدا کدینگ حساب‌ها را در حالت Online دریافت کنید.',
                 ),
               );
             }
