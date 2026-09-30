@@ -89,14 +89,16 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Device identity
 - [x] Client sync outbox/change-journal foundation
 - [x] Outbox push processor
-- [ ] Entity revisions
+- [x] Detail-account optimistic revisions
+- [ ] General entity revisions
 - [x] Journal sync cursors
 - [x] Journal delta push/pull
 - [ ] General delta upload/download
 - [x] Idempotent accounting journal upload
 - [ ] General idempotent change processing
-- [ ] Conflict detection
-- [ ] Conflict resolution policies
+- [x] Detail-account conflict detection
+- [x] Interactive detail-account conflict resolution
+- [ ] General conflict resolution policies
 - [x] Bidirectional accounting journal synchronization
 - [ ] General online synchronization
 - [ ] LAN synchronization
@@ -106,7 +108,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Replay protection
 - [ ] Attachment synchronization
 - [ ] Sync diagnostics and history
-- [ ] Manual conflict-resolution UI
+- [x] Detail-account conflict-resolution UI
+- [ ] General conflict-resolution UI
 
 ### Phase 3 — Commercial & Treasury
 
@@ -171,7 +174,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 
 ### Phase 6 — Production, Distribution & Hardening
 
-- [ ] Automated unit tests
+- [x] Initial automated sync/revision tests
+- [ ] Broader unit-test coverage
 - [ ] Integration tests
 - [ ] End-to-end tests
 - [ ] Backup / restore
@@ -222,16 +226,19 @@ Implemented so far:
 - End-to-end Outbox journal upload with retry/error tracking
 - Idempotent server receipts preventing duplicate journal creation
 - Cursor-based server-to-client journal pull and SQLite merge
+- Cursor-based floating-detail delta pull
+- Optimistic Revision/BaseRevision control for mutable detail accounts
+- Explicit conflict storage with Keep Server / Retry Local resolution
 - Automatic master-data refresh before bidirectional accounting sync
 - Configurable Solar Hijri fiscal years with close/reopen control
 - Floating detail accounts cached offline and selectable per journal line
-- CI for ASP.NET Core build and Flutter analysis
+- CI for ASP.NET Core build, sync/revision tests and Flutter analysis
 - Architecture for online sync, USB sync, QR pairing and MFA
 
 ### Immediate next steps
 
 1. Validate fiscal-year/detail-cache upgrade on Windows
-2. Add conflict/version policy for mutable entities
+2. Extend revision/conflict policy to the next mutable business entities
 3. Freeze Phase 1 schema and generate provider-specific EF Core migrations
 4. Verify PostgreSQL provider when Docker/PostgreSQL is available
 5. Persistent sessions and refresh-token rotation
