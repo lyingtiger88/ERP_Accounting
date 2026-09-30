@@ -11,6 +11,8 @@ EF Core tooling generates migrations for the active provider. Because provider-s
 
 The first runnable milestone still uses EF Core `EnsureCreated` so existing development databases continue to work without destructive reset.
 
+Fiscal-year and floating-detail tables are currently added through `AccountingSchemaBootstrapper` using provider-specific `CREATE TABLE/INDEX IF NOT EXISTS` statements. This is a temporary non-destructive compatibility bridge for existing SQLite/PostgreSQL development databases; it does **not** replace the planned reviewed EF Core migration history.
+
 ## Planned migration layout
 
 ```text
@@ -24,7 +26,7 @@ Each model change will receive equivalent migrations for both providers.
 
 ## Transition plan
 
-1. Freeze the Phase 1 base schema.
+1. Freeze the Phase 1 base schema, including fiscal years and floating detail dimensions.
 2. Generate the initial SQLite migration set.
 3. Generate the initial PostgreSQL migration set.
 4. Validate both against fresh databases.
