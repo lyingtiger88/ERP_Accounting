@@ -149,8 +149,7 @@ public static class AccountingSchemaBootstrapper
             CREATE UNIQUE INDEX IF NOT EXISTS
                 "IX_journal_sync_receipts_JournalEntryId"
             ON journal_sync_receipts ("JournalEntryId");
-            """
-,
+            """,
             """
             CREATE TABLE IF NOT EXISTS journal_server_changes (
                 "Sequence" INTEGER NOT NULL
@@ -194,6 +193,127 @@ public static class AccountingSchemaBootstrapper
                 WHERE c."JournalEntryId" = j."Id"
             )
             ORDER BY j."CreatedAt", j."Id";
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS detail_account_sync_states (
+                "DetailAccountId" TEXT NOT NULL
+                    CONSTRAINT "PK_detail_account_sync_states" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "Revision" INTEGER NOT NULL DEFAULT 1,
+                "UpdatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_detail_account_sync_states_detail_accounts"
+                    FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_detail_account_sync_states_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_detail_account_sync_states_CompanyId_Revision"
+            ON detail_account_sync_states ("CompanyId", "Revision");
+            """,
+            """
+            INSERT INTO detail_account_sync_states (
+                "DetailAccountId",
+                "CompanyId",
+                "Revision",
+                "UpdatedAt"
+            )
+            SELECT
+                d."Id",
+                d."CompanyId",
+                1,
+                d."CreatedAt"
+            FROM detail_accounts d
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM detail_account_sync_states s
+                WHERE s."DetailAccountId" = d."Id"
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS detail_account_sync_receipts (
+                "Id" TEXT NOT NULL
+                    CONSTRAINT "PK_detail_account_sync_receipts" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "ChangeId" TEXT NOT NULL,
+                "DetailAccountId" TEXT NOT NULL,
+                "AppliedRevision" INTEGER NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_detail_account_sync_receipts_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_detail_account_sync_receipts_detail_accounts"
+                    FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_detail_account_sync_receipts_CompanyId_ChangeId"
+            ON detail_account_sync_receipts ("CompanyId", "ChangeId");
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_detail_account_sync_receipts_EntityRevision"
+            ON detail_account_sync_receipts (
+                "CompanyId",
+                "DetailAccountId",
+                "AppliedRevision"
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS detail_account_server_changes (
+                "Sequence" INTEGER NOT NULL
+                    CONSTRAINT "PK_detail_account_server_changes"
+                    PRIMARY KEY AUTOINCREMENT,
+                "CompanyId" TEXT NOT NULL,
+                "DetailAccountId" TEXT NOT NULL,
+                "Revision" INTEGER NOT NULL,
+                "Operation" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_detail_account_server_changes_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_detail_account_server_changes_detail_accounts"
+                    FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_detail_account_server_changes_CompanyId_Sequence"
+            ON detail_account_server_changes ("CompanyId", "Sequence");
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_detail_account_server_changes_EntityRevision"
+            ON detail_account_server_changes ("DetailAccountId", "Revision");
+            """,
+            """
+            INSERT INTO detail_account_server_changes (
+                "CompanyId",
+                "DetailAccountId",
+                "Revision",
+                "Operation",
+                "CreatedAt"
+            )
+            SELECT
+                s."CompanyId",
+                s."DetailAccountId",
+                s."Revision",
+                'Upsert',
+                s."UpdatedAt"
+            FROM detail_account_sync_states s
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM detail_account_server_changes c
+                WHERE c."DetailAccountId" = s."DetailAccountId"
+                  AND c."Revision" = s."Revision"
+            )
+            ORDER BY s."UpdatedAt", s."DetailAccountId";
             """
         };
 
@@ -326,8 +446,7 @@ public static class AccountingSchemaBootstrapper
             CREATE UNIQUE INDEX IF NOT EXISTS
                 "IX_journal_sync_receipts_JournalEntryId"
             ON journal_sync_receipts ("JournalEntryId");
-            """
-,
+            """,
             """
             CREATE TABLE IF NOT EXISTS journal_server_changes (
                 "Sequence" bigint GENERATED BY DEFAULT AS IDENTITY
@@ -370,6 +489,126 @@ public static class AccountingSchemaBootstrapper
                 WHERE c."JournalEntryId" = j."Id"
             )
             ORDER BY j."CreatedAt", j."Id";
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS detail_account_sync_states (
+                "DetailAccountId" uuid NOT NULL
+                    CONSTRAINT "PK_detail_account_sync_states" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "Revision" bigint NOT NULL DEFAULT 1,
+                "UpdatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_detail_account_sync_states_detail_accounts"
+                    FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_detail_account_sync_states_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_detail_account_sync_states_CompanyId_Revision"
+            ON detail_account_sync_states ("CompanyId", "Revision");
+            """,
+            """
+            INSERT INTO detail_account_sync_states (
+                "DetailAccountId",
+                "CompanyId",
+                "Revision",
+                "UpdatedAt"
+            )
+            SELECT
+                d."Id",
+                d."CompanyId",
+                1,
+                d."CreatedAt"
+            FROM detail_accounts d
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM detail_account_sync_states s
+                WHERE s."DetailAccountId" = d."Id"
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS detail_account_sync_receipts (
+                "Id" uuid NOT NULL
+                    CONSTRAINT "PK_detail_account_sync_receipts" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "ChangeId" character varying(100) NOT NULL,
+                "DetailAccountId" uuid NOT NULL,
+                "AppliedRevision" bigint NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_detail_account_sync_receipts_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_detail_account_sync_receipts_detail_accounts"
+                    FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_detail_account_sync_receipts_CompanyId_ChangeId"
+            ON detail_account_sync_receipts ("CompanyId", "ChangeId");
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_detail_account_sync_receipts_EntityRevision"
+            ON detail_account_sync_receipts (
+                "CompanyId",
+                "DetailAccountId",
+                "AppliedRevision"
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS detail_account_server_changes (
+                "Sequence" bigint GENERATED BY DEFAULT AS IDENTITY
+                    CONSTRAINT "PK_detail_account_server_changes" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "DetailAccountId" uuid NOT NULL,
+                "Revision" bigint NOT NULL,
+                "Operation" character varying(30) NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_detail_account_server_changes_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_detail_account_server_changes_detail_accounts"
+                    FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_detail_account_server_changes_CompanyId_Sequence"
+            ON detail_account_server_changes ("CompanyId", "Sequence");
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_detail_account_server_changes_EntityRevision"
+            ON detail_account_server_changes ("DetailAccountId", "Revision");
+            """,
+            """
+            INSERT INTO detail_account_server_changes (
+                "CompanyId",
+                "DetailAccountId",
+                "Revision",
+                "Operation",
+                "CreatedAt"
+            )
+            SELECT
+                s."CompanyId",
+                s."DetailAccountId",
+                s."Revision",
+                'Upsert',
+                s."UpdatedAt"
+            FROM detail_account_sync_states s
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM detail_account_server_changes c
+                WHERE c."DetailAccountId" = s."DetailAccountId"
+                  AND c."Revision" = s."Revision"
+            )
+            ORDER BY s."UpdatedAt", s."DetailAccountId";
             """
         };
 
