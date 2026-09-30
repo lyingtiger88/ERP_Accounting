@@ -18,6 +18,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<JournalLineDimension> JournalLineDimensions => Set<JournalLineDimension>();
     public DbSet<JournalSyncReceipt> JournalSyncReceipts => Set<JournalSyncReceipt>();
     public DbSet<JournalServerChange> JournalServerChanges => Set<JournalServerChange>();
+    public DbSet<DetailAccountSyncState> DetailAccountSyncStates => Set<DetailAccountSyncState>();
+    public DbSet<DetailAccountSyncReceipt> DetailAccountSyncReceipts => Set<DetailAccountSyncReceipt>();
+    public DbSet<DetailAccountServerChange> DetailAccountServerChanges => Set<DetailAccountServerChange>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -212,6 +215,56 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<JournalEntry>()
                 .WithOne()
                 .HasForeignKey<JournalServerChange>(x => x.JournalEntryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DetailAccountSyncState>(entity =>
+        {
+            entity.ToTable("detail_account_sync_states");
+            entity.HasKey(x => x.DetailAccountId);
+            entity.HasIndex(x => new { x.CompanyId, x.Revision });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<DetailAccount>()
+                .WithOne()
+                .HasForeignKey<DetailAccountSyncState>(x => x.DetailAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DetailAccountSyncReceipt>(entity =>
+        {
+            entity.ToTable("detail_account_sync_receipts");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ChangeId).HasMaxLength(100).IsRequired();
+            entity.HasIndex(x => new { x.CompanyId, x.ChangeId }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.DetailAccountId, x.AppliedRevision });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<DetailAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.DetailAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DetailAccountServerChange>(entity =>
+        {
+            entity.ToTable("detail_account_server_changes");
+            entity.HasKey(x => x.Sequence);
+            entity.Property(x => x.Sequence).ValueGeneratedOnAdd();
+            entity.Property(x => x.Operation).HasMaxLength(30).IsRequired();
+            entity.HasIndex(x => new { x.CompanyId, x.Sequence });
+            entity.HasIndex(x => new { x.DetailAccountId, x.Revision }).IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<DetailAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.DetailAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
