@@ -104,3 +104,19 @@ A client must be able to rebuild its local state from:
 - server change history after the snapshot
 
 USB packages are transport artifacts, not primary backups.
+
+
+## Implemented optimistic revision flow
+
+Floating detail accounts are the first mutable entity using the revision protocol end to end.
+
+- New offline entity: `BaseRevision = 0`.
+- Existing entity edit: the client sends its cached `BaseRevision`.
+- The server applies the mutation only when `BaseRevision` equals the current server revision.
+- An accepted mutation increments Revision and appends an ordered server change.
+- Repeated `ChangeId` values are idempotent through server receipts.
+- A stale mutation returns an explicit Conflict with the current server entity/revision.
+- The client stores conflicts separately from Outbox retries so they do not loop forever.
+- Resolution can keep the server state or requeue the local state against the latest server revision.
+
+Detail-account server changes also have an independent sequence cursor, so clients can pull only changed master-data rows instead of downloading the full detail list on every sync.
