@@ -12,7 +12,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 2;
+  static const _databaseVersion = 3;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -85,6 +85,11 @@ class LocalDatabase {
         type TEXT NOT NULL,
         parent_id TEXT,
         is_active INTEGER NOT NULL DEFAULT 1,
+        account_level TEXT NOT NULL DEFAULT 'Group',
+        level_title TEXT NOT NULL DEFAULT '',
+        nature TEXT NOT NULL DEFAULT 'Debit',
+        nature_title TEXT NOT NULL DEFAULT '',
+        is_postable INTEGER NOT NULL DEFAULT 1,
         updated_at TEXT NOT NULL
       )
     ''');
@@ -125,6 +130,24 @@ class LocalDatabase {
   ) async {
     if (oldVersion < 2) {
       await _createAccountingSchema(db);
+    }
+
+    if (oldVersion < 3) {
+      await db.execute(
+        "ALTER TABLE cached_accounts ADD COLUMN account_level TEXT NOT NULL DEFAULT 'Group'",
+      );
+      await db.execute(
+        "ALTER TABLE cached_accounts ADD COLUMN level_title TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE cached_accounts ADD COLUMN nature TEXT NOT NULL DEFAULT 'Debit'",
+      );
+      await db.execute(
+        "ALTER TABLE cached_accounts ADD COLUMN nature_title TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE cached_accounts ADD COLUMN is_postable INTEGER NOT NULL DEFAULT 1",
+      );
     }
   }
 
@@ -227,6 +250,11 @@ class LocalDatabase {
             'type': account['type'].toString(),
             'parent_id': account['parentId'] as String?,
             'is_active': (account['isActive'] as bool? ?? true) ? 1 : 0,
+            'account_level': account['level']?.toString() ?? 'Group',
+            'level_title': account['levelTitle']?.toString() ?? '',
+            'nature': account['nature']?.toString() ?? 'Debit',
+            'nature_title': account['natureTitle']?.toString() ?? '',
+            'is_postable': (account['isPostable'] as bool? ?? true) ? 1 : 0,
             'updated_at': now,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
@@ -253,6 +281,11 @@ class LocalDatabase {
             type: row['type'] as String,
             parentId: row['parent_id'] as String?,
             isActive: (row['is_active'] as int) == 1,
+            level: row['account_level'] as String,
+            levelTitle: row['level_title'] as String,
+            nature: row['nature'] as String,
+            natureTitle: row['nature_title'] as String,
+            isPostable: (row['is_postable'] as int) == 1,
           ),
         )
         .toList(growable: false);
@@ -540,6 +573,11 @@ class CachedAccount {
     required this.type,
     required this.parentId,
     required this.isActive,
+    required this.level,
+    required this.levelTitle,
+    required this.nature,
+    required this.natureTitle,
+    required this.isPostable,
   });
 
   final String id;
@@ -549,6 +587,11 @@ class CachedAccount {
   final String type;
   final String? parentId;
   final bool isActive;
+  final String level;
+  final String levelTitle;
+  final String nature;
+  final String natureTitle;
+  final bool isPostable;
 }
 
 class LocalJournalLineInput {
