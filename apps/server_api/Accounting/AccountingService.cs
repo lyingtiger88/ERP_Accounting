@@ -1,3 +1,5 @@
+using System.Data;
+using System.Globalization;
 using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
@@ -7,15 +9,38 @@ namespace ERPAccounting.Api.Accounting;
 
 public sealed class AccountingService(AppDbContext db)
 {
-    public async Task<IReadOnlyList<LedgerAccount>> GetAccountsAsync(
+    public async Task<IReadOnlyList<AccountView>> GetAccountsAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        return await db.Accounts
+        var accounts = await db.Accounts
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
             .OrderBy(x => x.Code)
             .ToArrayAsync(cancellationToken);
+
+        var lookup = accounts.ToDictionary(x => x.Id);
+
+        return accounts
+            .Select(account =>
+            {
+                var level = ResolveLevel(account, lookup);
+                var nature = ResolveNature(account.Type);
+
+                return new AccountView(
+                    account.Id,
+                    account.CompanyId,
+                    account.Code,
+                    account.Name,
+                    account.Type,
+                    account.ParentId,
+                    account.IsActive,
+                    level,
+                    nature,
+                    GetLevelTitle(level),
+                    nature == AccountNature.Debit ? "بدهکار" : "بستانکار");
+            })
+            .ToArray();
     }
 
     public async Task<LedgerAccount> CreateAccountAsync(
@@ -87,11 +112,6 @@ public sealed class AccountingService(AppDbContext db)
         CreateJournalRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Number))
-        {
-            throw new ArgumentException("Journal number is required.");
-        }
-
         if (request.Lines.Count < 2)
         {
             throw new ArgumentException(
@@ -116,17 +136,6 @@ public sealed class AccountingService(AppDbContext db)
             throw new ArgumentException("Journal entry is not balanced.");
         }
 
-        var number = request.Number.Trim();
-
-        var numberExists = await db.JournalEntries.AnyAsync(
-            x => x.CompanyId == companyId && x.Number == number,
-            cancellationToken);
-
-        if (numberExists)
-        {
-            throw new InvalidOperationException("Journal number already exists.");
-        }
-
         var accountIds = request.Lines
             .Select(x => x.AccountId)
             .Distinct()
@@ -144,6 +153,32 @@ public sealed class AccountingService(AppDbContext db)
         {
             throw new ArgumentException(
                 "One or more accounts are unavailable.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var number = request.Number?.Trim();
+
+        if (string.IsNullOrWhiteSpace(number))
+        {
+            number = await GenerateJournalNumberAsync(
+                companyId,
+                request.DocumentDate,
+                cancellationToken);
+        }
+        else
+        {
+            var numberExists = await db.JournalEntries.AnyAsync(
+                x => x.CompanyId == companyId && x.Number == number,
+                cancellationToken);
+
+            if (numberExists)
+            {
+                throw new InvalidOperationException(
+                    "Journal number already exists.");
+            }
         }
 
         var entry = new JournalEntry
@@ -167,6 +202,7 @@ public sealed class AccountingService(AppDbContext db)
 
         db.JournalEntries.Add(entry);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return entry;
     }
@@ -275,36 +311,161 @@ public sealed class AccountingService(AppDbContext db)
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        if (await db.Accounts.AnyAsync(
-                x => x.CompanyId == companyId,
-                cancellationToken))
+        var seeds = new[]
         {
-            return;
-        }
+            new SeedAccount("1000", "دارایی‌ها", AccountType.Asset, null),
+            new SeedAccount("1100", "نقد و بانک", AccountType.Asset, "1000"),
+            new SeedAccount("1110", "صندوق", AccountType.Asset, "1100"),
+            new SeedAccount("1120", "بانک‌ها", AccountType.Asset, "1100"),
+            new SeedAccount("1200", "حساب‌ها و اسناد دریافتنی", AccountType.Asset, "1000"),
+            new SeedAccount("1300", "موجودی مواد و کالا", AccountType.Asset, "1000"),
+            new SeedAccount("1400", "پیش‌پرداخت‌ها", AccountType.Asset, "1000"),
+            new SeedAccount("1500", "دارایی‌های ثابت مشهود", AccountType.Asset, "1000"),
 
-        var defaults = new[]
-        {
-            ("1000", "Assets", AccountType.Asset),
-            ("2000", "Liabilities", AccountType.Liability),
-            ("3000", "Equity", AccountType.Equity),
-            ("4000", "Revenue", AccountType.Revenue),
-            ("5000", "Expenses", AccountType.Expense),
-            ("1100", "Cash and Bank", AccountType.Asset),
-            ("1200", "Accounts Receivable", AccountType.Asset),
-            ("2100", "Accounts Payable", AccountType.Liability)
+            new SeedAccount("2000", "بدهی‌ها", AccountType.Liability, null),
+            new SeedAccount("2100", "حساب‌ها و اسناد پرداختنی", AccountType.Liability, "2000"),
+            new SeedAccount("2200", "مالیات و عوارض پرداختنی", AccountType.Liability, "2000"),
+            new SeedAccount("2300", "حقوق و دستمزد پرداختنی", AccountType.Liability, "2000"),
+
+            new SeedAccount("3000", "حقوق مالکانه", AccountType.Equity, null),
+            new SeedAccount("3100", "سرمایه", AccountType.Equity, "3000"),
+            new SeedAccount("3200", "سود و زیان انباشته", AccountType.Equity, "3000"),
+
+            new SeedAccount("4000", "درآمدها", AccountType.Revenue, null),
+            new SeedAccount("4100", "فروش کالا و خدمات", AccountType.Revenue, "4000"),
+            new SeedAccount("4200", "سایر درآمدها", AccountType.Revenue, "4000"),
+
+            new SeedAccount("5000", "بهای تمام‌شده و هزینه‌ها", AccountType.Expense, null),
+            new SeedAccount("5100", "بهای تمام‌شده فروش", AccountType.Expense, "5000"),
+            new SeedAccount("5200", "هزینه‌های اداری و عمومی", AccountType.Expense, "5000"),
+            new SeedAccount("5300", "هزینه‌های فروش و توزیع", AccountType.Expense, "5000"),
+            new SeedAccount("5400", "هزینه‌های مالی", AccountType.Expense, "5000")
         };
 
-        foreach (var item in defaults)
+        var seedCodes = seeds.Select(x => x.Code).ToArray();
+
+        var existing = await db.Accounts
+            .Where(x =>
+                x.CompanyId == companyId &&
+                seedCodes.Contains(x.Code))
+            .ToArrayAsync(cancellationToken);
+
+        var byCode = existing.ToDictionary(x => x.Code);
+
+        foreach (var seed in seeds)
         {
-            db.Accounts.Add(new LedgerAccount
+            if (!byCode.TryGetValue(seed.Code, out var account))
             {
-                CompanyId = companyId,
-                Code = item.Item1,
-                Name = item.Item2,
-                Type = item.Item3
-            });
+                account = new LedgerAccount
+                {
+                    CompanyId = companyId,
+                    Code = seed.Code,
+                    Name = seed.Name,
+                    Type = seed.Type
+                };
+
+                db.Accounts.Add(account);
+                byCode[seed.Code] = account;
+            }
+
+            account.Name = seed.Name;
+            account.Type = seed.Type;
+            account.IsActive = true;
+            account.ParentId = seed.ParentCode is null
+                ? null
+                : byCode[seed.ParentCode].Id;
         }
 
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    private async Task<string> GenerateJournalNumberAsync(
+        Guid companyId,
+        DateOnly documentDate,
+        CancellationToken cancellationToken)
+    {
+        var persianCalendar = new PersianCalendar();
+        var dateTime = documentDate.ToDateTime(TimeOnly.MinValue);
+        var fiscalYear = persianCalendar.GetYear(dateTime);
+        var prefix = fiscalYear.ToString(CultureInfo.InvariantCulture) + "/";
+
+        var existingNumbers = await db.JournalEntries
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Number.StartsWith(prefix))
+            .Select(x => x.Number)
+            .ToArrayAsync(cancellationToken);
+
+        var maxSequence = 0;
+
+        foreach (var existingNumber in existingNumbers)
+        {
+            var suffix = existingNumber[prefix.Length..];
+
+            if (int.TryParse(
+                    suffix,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var sequence))
+            {
+                maxSequence = Math.Max(maxSequence, sequence);
+            }
+        }
+
+        return prefix +
+            (maxSequence + 1).ToString("000000", CultureInfo.InvariantCulture);
+    }
+
+    private static AccountNature ResolveNature(AccountType type)
+    {
+        return type is AccountType.Asset or AccountType.Expense
+            ? AccountNature.Debit
+            : AccountNature.Credit;
+    }
+
+    private static AccountLevel ResolveLevel(
+        LedgerAccount account,
+        IReadOnlyDictionary<Guid, LedgerAccount> lookup)
+    {
+        var depth = 1;
+        var current = account;
+        var visited = new HashSet<Guid> { current.Id };
+
+        while (current.ParentId is Guid parentId &&
+               lookup.TryGetValue(parentId, out var parent) &&
+               visited.Add(parent.Id))
+        {
+            depth++;
+            current = parent;
+
+            if (depth >= (int)AccountLevel.Detail)
+            {
+                break;
+            }
+        }
+
+        return (AccountLevel)Math.Clamp(
+            depth,
+            (int)AccountLevel.Group,
+            (int)AccountLevel.Detail);
+    }
+
+    private static string GetLevelTitle(AccountLevel level)
+    {
+        return level switch
+        {
+            AccountLevel.Group => "گروه",
+            AccountLevel.General => "کل",
+            AccountLevel.Subsidiary => "معین",
+            AccountLevel.Detail => "تفصیلی",
+            _ => "نامشخص"
+        };
+    }
+
+    private sealed record SeedAccount(
+        string Code,
+        string Name,
+        AccountType Type,
+        string? ParentCode);
 }
