@@ -141,3 +141,24 @@ public sealed record DetailAccountPullResponse(
     long NextCursor,
     bool HasMore,
     IReadOnlyList<DetailAccountServerChangeView> Changes);
+
+
+public sealed record ReverseJournalRequest(
+    DateOnly DocumentDate,
+    string Reason,
+    Guid? FiscalYearId = null);
+
+public sealed record ReverseJournalResponse(
+    Guid OriginalJournalEntryId,
+    Guid ReversalJournalEntryId,
+    string ReversalNumber,
+    DateTimeOffset? PostedAt);
+
+public sealed record AccountingAuditView(
+    Guid Id,
+    string EntityType,
+    Guid EntityId,
+    string Action,
+    string? Reason,
+    Guid UserId,
+    DateTimeOffset CreatedAt);
