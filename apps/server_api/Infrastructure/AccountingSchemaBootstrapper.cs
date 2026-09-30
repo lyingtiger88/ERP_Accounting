@@ -118,6 +118,37 @@ public static class AccountingSchemaBootstrapper
             CREATE INDEX IF NOT EXISTS
                 "IX_journal_line_dimensions_DetailAccountId"
             ON journal_line_dimensions ("DetailAccountId");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS journal_sync_receipts (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_journal_sync_receipts" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "ChangeId" TEXT NOT NULL,
+                "LocalDocumentId" TEXT NOT NULL,
+                "JournalEntryId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_journal_sync_receipts_companies_CompanyId"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_journal_sync_receipts_journal_entries_JournalEntryId"
+                    FOREIGN KEY ("JournalEntryId") REFERENCES journal_entries ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_sync_receipts_CompanyId_ChangeId"
+            ON journal_sync_receipts ("CompanyId", "ChangeId");
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_sync_receipts_CompanyId_LocalDocumentId"
+            ON journal_sync_receipts ("CompanyId", "LocalDocumentId");
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_sync_receipts_JournalEntryId"
+            ON journal_sync_receipts ("JournalEntryId");
             """
         };
 
@@ -219,6 +250,37 @@ public static class AccountingSchemaBootstrapper
             CREATE INDEX IF NOT EXISTS
                 "IX_journal_line_dimensions_DetailAccountId"
             ON journal_line_dimensions ("DetailAccountId");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS journal_sync_receipts (
+                "Id" uuid NOT NULL CONSTRAINT "PK_journal_sync_receipts" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "ChangeId" character varying(100) NOT NULL,
+                "LocalDocumentId" character varying(100) NOT NULL,
+                "JournalEntryId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_journal_sync_receipts_companies_CompanyId"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_journal_sync_receipts_journal_entries_JournalEntryId"
+                    FOREIGN KEY ("JournalEntryId") REFERENCES journal_entries ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_sync_receipts_CompanyId_ChangeId"
+            ON journal_sync_receipts ("CompanyId", "ChangeId");
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_sync_receipts_CompanyId_LocalDocumentId"
+            ON journal_sync_receipts ("CompanyId", "LocalDocumentId");
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_journal_sync_receipts_JournalEntryId"
+            ON journal_sync_receipts ("JournalEntryId");
             """
         };
 
