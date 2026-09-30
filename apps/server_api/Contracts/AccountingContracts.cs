@@ -8,6 +8,19 @@ public sealed record CreateAccountRequest(
     AccountType Type,
     Guid? ParentId);
 
+public sealed record AccountView(
+    Guid Id,
+    Guid CompanyId,
+    string Code,
+    string Name,
+    AccountType Type,
+    Guid? ParentId,
+    bool IsActive,
+    AccountLevel Level,
+    AccountNature Nature,
+    string LevelTitle,
+    string NatureTitle);
+
 public sealed record CreateJournalLineRequest(
     Guid AccountId,
     string? Description,
@@ -15,7 +28,7 @@ public sealed record CreateJournalLineRequest(
     decimal Credit);
 
 public sealed record CreateJournalRequest(
-    string Number,
+    string? Number,
     DateOnly DocumentDate,
     string? Description,
     IReadOnlyList<CreateJournalLineRequest> Lines);
