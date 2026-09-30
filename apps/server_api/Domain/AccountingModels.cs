@@ -9,6 +9,20 @@ public enum AccountType
     Expense
 }
 
+public enum AccountNature
+{
+    Debit,
+    Credit
+}
+
+public enum AccountLevel
+{
+    Group = 1,
+    General = 2,
+    Subsidiary = 3,
+    Detail = 4
+}
+
 public enum JournalStatus
 {
     Draft,
