@@ -382,6 +382,78 @@ class LocalDatabase {
     });
   }
 
+  Future<void> backfillLegacyJournalFiscalYears(
+    String companyId,
+  ) async {
+    final fiscalYears = await getCachedFiscalYears(companyId);
+
+    if (fiscalYears.isEmpty) return;
+
+    final documents = await _db.query(
+      'local_accounting_documents',
+      columns: ['id', 'document_date', 'fiscal_year_id'],
+      where: 'company_id = ? AND fiscal_year_id IS NULL',
+      whereArgs: [companyId],
+    );
+
+    if (documents.isEmpty) return;
+
+    await _db.transaction((txn) async {
+      for (final document in documents) {
+        final documentId = document['id'] as String;
+        final documentDate = document['document_date'] as String;
+
+        CachedFiscalYear? match;
+
+        for (final fiscalYear in fiscalYears) {
+          if (documentDate.compareTo(fiscalYear.startDate) >= 0 &&
+              documentDate.compareTo(fiscalYear.endDate) <= 0) {
+            match = fiscalYear;
+            break;
+          }
+        }
+
+        if (match == null) continue;
+
+        await txn.update(
+          'local_accounting_documents',
+          {
+            'fiscal_year_id': match.id,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [documentId],
+        );
+
+        final outboxRows = await txn.query(
+          'sync_outbox',
+          columns: ['id', 'payload_json'],
+          where: 'entity_id = ? AND sent_at IS NULL',
+          whereArgs: [documentId],
+        );
+
+        for (final outbox in outboxRows) {
+          final payload = Map<String, dynamic>.from(
+            jsonDecode(outbox['payload_json'] as String) as Map,
+          );
+
+          if (payload['fiscalYearId'] == null) {
+            payload['fiscalYearId'] = match.id;
+
+            await txn.update(
+              'sync_outbox',
+              {
+                'payload_json': jsonEncode(payload),
+              },
+              where: 'id = ?',
+              whereArgs: [outbox['id']],
+            );
+          }
+        }
+      }
+    });
+  }
+
   Future<List<CachedFiscalYear>> getCachedFiscalYears(
     String companyId,
   ) async {
