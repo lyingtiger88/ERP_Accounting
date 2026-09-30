@@ -366,6 +366,13 @@ public sealed class AccountingService(AppDbContext db)
 
         if (existingReceipt is not null)
         {
+            if (existingReceipt.ChangeId == changeId &&
+                existingReceipt.LocalDocumentId != localDocumentId)
+            {
+                throw new InvalidOperationException(
+                    "ChangeId is already associated with a different local document.");
+            }
+
             var existingJournal = await db.JournalEntries
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
