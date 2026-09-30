@@ -58,6 +58,29 @@ class AccountingSyncService {
       );
     }
 
+    final accounts = await apiClient.getAccounts(
+      bearerToken: bearerToken,
+    );
+    final fiscalYears = await apiClient.getFiscalYears(
+      bearerToken: bearerToken,
+    );
+    final detailAccounts = await apiClient.getDetailAccounts(
+      bearerToken: bearerToken,
+    );
+
+    await localDatabase.replaceAccounts(
+      companyId: companyId,
+      accounts: accounts,
+    );
+    await localDatabase.replaceFiscalYears(
+      companyId: companyId,
+      fiscalYears: fiscalYears,
+    );
+    await localDatabase.replaceDetailAccounts(
+      companyId: companyId,
+      details: detailAccounts,
+    );
+
     final pull = await JournalPullSyncService(
       localDatabase: localDatabase,
       apiClient: apiClient,
