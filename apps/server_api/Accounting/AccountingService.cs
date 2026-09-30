@@ -730,12 +730,28 @@ public sealed class AccountingService(AppDbContext db)
 
     public async Task<IReadOnlyList<JournalEntry>> GetJournalEntriesAsync(
         Guid companyId,
+        DateOnly? from = null,
+        DateOnly? to = null,
         CancellationToken cancellationToken = default)
     {
-        return await db.JournalEntries
+        ValidateDateRange(from, to);
+
+        var query = db.JournalEntries
             .AsNoTracking()
             .Include(x => x.Lines)
-            .Where(x => x.CompanyId == companyId)
+            .Where(x => x.CompanyId == companyId);
+
+        if (from is DateOnly fromDate)
+        {
+            query = query.Where(x => x.DocumentDate >= fromDate);
+        }
+
+        if (to is DateOnly toDate)
+        {
+            query = query.Where(x => x.DocumentDate <= toDate);
+        }
+
+        return await query
             .OrderByDescending(x => x.DocumentDate)
             .ThenByDescending(x => x.CreatedAt)
             .ToArrayAsync(cancellationToken);
@@ -1392,20 +1408,38 @@ public sealed class AccountingService(AppDbContext db)
 
     public async Task<IReadOnlyList<TrialBalanceRow>> GetTrialBalanceAsync(
         Guid companyId,
+        DateOnly? from = null,
+        DateOnly? to = null,
         CancellationToken cancellationToken = default)
     {
+        ValidateDateRange(from, to);
+
         var accounts = await db.Accounts
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
             .OrderBy(x => x.Code)
             .ToArrayAsync(cancellationToken);
 
-        var journals = await db.JournalEntries
+        var journalQuery = db.JournalEntries
             .AsNoTracking()
             .Include(x => x.Lines)
             .Where(x =>
                 x.CompanyId == companyId &&
-                x.Status == JournalStatus.Posted)
+                x.Status == JournalStatus.Posted);
+
+        if (from is DateOnly fromDate)
+        {
+            journalQuery = journalQuery.Where(
+                x => x.DocumentDate >= fromDate);
+        }
+
+        if (to is DateOnly toDate)
+        {
+            journalQuery = journalQuery.Where(
+                x => x.DocumentDate <= toDate);
+        }
+
+        var journals = await journalQuery
             .ToArrayAsync(cancellationToken);
 
         var rows = new List<TrialBalanceRow>();
@@ -1435,19 +1469,37 @@ public sealed class AccountingService(AppDbContext db)
     public async Task<IReadOnlyList<GeneralLedgerRow>> GetGeneralLedgerAsync(
         Guid companyId,
         Guid? accountId = null,
+        DateOnly? from = null,
+        DateOnly? to = null,
         CancellationToken cancellationToken = default)
     {
+        ValidateDateRange(from, to);
+
         var accountLookup = await db.Accounts
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
-        var ordered = await db.JournalEntries
+        var journalQuery = db.JournalEntries
             .AsNoTracking()
             .Include(x => x.Lines)
             .Where(x =>
                 x.CompanyId == companyId &&
-                x.Status == JournalStatus.Posted)
+                x.Status == JournalStatus.Posted);
+
+        if (from is DateOnly fromDate)
+        {
+            journalQuery = journalQuery.Where(
+                x => x.DocumentDate >= fromDate);
+        }
+
+        if (to is DateOnly toDate)
+        {
+            journalQuery = journalQuery.Where(
+                x => x.DocumentDate <= toDate);
+        }
+
+        var ordered = await journalQuery
             .OrderBy(x => x.DocumentDate)
             .ThenBy(x => x.CreatedAt)
             .ToArrayAsync(cancellationToken);
@@ -1459,7 +1511,9 @@ public sealed class AccountingService(AppDbContext db)
         {
             foreach (var line in journal.Lines)
             {
-                if (!accountLookup.TryGetValue(line.AccountId, out var account))
+                if (!accountLookup.TryGetValue(
+                        line.AccountId,
+                        out var account))
                 {
                     continue;
                 }
@@ -1468,7 +1522,8 @@ public sealed class AccountingService(AppDbContext db)
                 current += line.Debit - line.Credit;
                 balances[account.Id] = current;
 
-                if (accountId is not null && account.Id != accountId.Value)
+                if (accountId is not null &&
+                    account.Id != accountId.Value)
                 {
                     continue;
                 }
@@ -1560,6 +1615,19 @@ public sealed class AccountingService(AppDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void ValidateDateRange(
+        DateOnly? from,
+        DateOnly? to)
+    {
+        if (from is DateOnly fromDate &&
+            to is DateOnly toDate &&
+            fromDate > toDate)
+        {
+            throw new ArgumentException(
+                "Report start date cannot be after end date.");
+        }
     }
 
     private static void ValidateDetailAccountFields(
