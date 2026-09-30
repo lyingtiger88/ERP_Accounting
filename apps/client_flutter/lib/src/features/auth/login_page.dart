@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/sync/outbox_sync_service.dart';
 import '../dashboard/dashboard_page.dart';
 import 'bootstrap_page.dart';
 
@@ -101,6 +102,18 @@ class _LoginPageState extends State<LoginPage> {
         );
 
         accountsSynced = true;
+
+        await OutboxSyncService(
+          localDatabase: widget.localDatabase,
+          apiClient: _apiClient,
+        ).syncPending(
+          bearerToken: result.accessToken,
+        );
+
+        await widget.localDatabase.setMeta(
+          'last_outbox_sync_at',
+          DateTime.now().toUtc().toIso8601String(),
+        );
       } on ApiException {
         // Successful authentication should not be discarded just because
         // the first cache refresh failed. Existing local data stays intact.
