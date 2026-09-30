@@ -85,6 +85,7 @@ public sealed record ServerJournalChangeView(
     string? Description,
     JournalStatus Status,
     DateTimeOffset? PostedAt,
+    Guid? ReversalOfJournalEntryId,
     IReadOnlyList<ServerJournalLineView> Lines);
 
 public sealed record ServerJournalPullResponse(
