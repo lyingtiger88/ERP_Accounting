@@ -408,6 +408,30 @@ class ApiClient {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getAccountingAudit({
+    required String bearerToken,
+    String? entityId,
+    int limit = 100,
+  }) async {
+    final query = <String>[
+      'limit=' + limit.toString(),
+      if (entityId != null && entityId.isNotEmpty)
+        'entityId=' + Uri.encodeQueryComponent(entityId),
+    ].join('&');
+
+    final response = await _request(
+      'GET',
+      '/api/accounting/audit?' + query,
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
   Future<dynamic> _request(
     String method,
     String path, {
