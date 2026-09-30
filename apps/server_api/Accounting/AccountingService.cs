@@ -125,6 +125,7 @@ public sealed class AccountingService(AppDbContext db)
 
     public async Task<FiscalYear> SetFiscalYearClosedAsync(
         Guid companyId,
+        Guid userId,
         Guid fiscalYearId,
         bool isClosed,
         CancellationToken cancellationToken = default)
@@ -140,6 +141,22 @@ public sealed class AccountingService(AppDbContext db)
         }
 
         fiscalYear.IsClosed = isClosed;
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "FiscalYear",
+            fiscalYear.Id,
+            isClosed ? "FISCAL_YEAR_CLOSE" : "FISCAL_YEAR_REOPEN",
+            null,
+            new
+            {
+                fiscalYear.Name,
+                fiscalYear.PersianYear,
+                fiscalYear.StartDate,
+                fiscalYear.EndDate
+            });
+
         await db.SaveChangesAsync(cancellationToken);
 
         return fiscalYear;
@@ -294,8 +311,21 @@ public sealed class AccountingService(AppDbContext db)
         return ToDetailAccountView(detail, 1, now);
     }
 
+    public Task<SyncDetailAccountResponse> SyncDetailAccountAsync(
+        Guid companyId,
+        SyncDetailAccountRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return SyncDetailAccountAsync(
+            companyId,
+            null,
+            request,
+            cancellationToken);
+    }
+
     public async Task<SyncDetailAccountResponse> SyncDetailAccountAsync(
         Guid companyId,
+        Guid? userId,
         SyncDetailAccountRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -435,6 +465,24 @@ public sealed class AccountingService(AppDbContext db)
                 CreatedAt = now
             });
 
+            if (userId is Guid actorId)
+            {
+                AddAuditLog(
+                    companyId,
+                    actorId,
+                    "DetailAccount",
+                    detail.Id,
+                    "DETAIL_CREATE_SYNC",
+                    null,
+                    new
+                    {
+                        detail.Code,
+                        detail.Name,
+                        Type = detail.Type.ToString(),
+                        Revision = 1
+                    });
+            }
+
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
@@ -519,6 +567,24 @@ public sealed class AccountingService(AppDbContext db)
             AppliedRevision = state.Revision,
             CreatedAt = state.UpdatedAt
         });
+
+        if (userId is Guid actorId)
+        {
+            AddAuditLog(
+                companyId,
+                actorId,
+                "DetailAccount",
+                detail.Id,
+                "DETAIL_UPDATE_SYNC",
+                null,
+                new
+                {
+                    detail.Code,
+                    detail.Name,
+                    Type = detail.Type.ToString(),
+                    Revision = state.Revision
+                });
+        }
 
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
