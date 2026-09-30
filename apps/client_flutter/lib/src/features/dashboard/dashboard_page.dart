@@ -9,6 +9,7 @@ class DashboardPage extends StatelessWidget {
     required this.displayName,
     required this.role,
     required this.companyId,
+    required this.accessToken,
     required this.localDatabase,
     required this.accountsSynced,
   });
@@ -16,6 +17,7 @@ class DashboardPage extends StatelessWidget {
   final String displayName;
   final String role;
   final String companyId;
+  final String accessToken;
   final LocalDatabase localDatabase;
   final bool accountsSynced;
 
@@ -51,6 +53,7 @@ class DashboardPage extends StatelessWidget {
                     displayName: displayName,
                     role: role,
                     companyId: companyId,
+                    accessToken: accessToken,
                     localDatabase: localDatabase,
                   ),
                 ),
@@ -66,6 +69,7 @@ class DashboardPage extends StatelessWidget {
                   displayName: displayName,
                   role: role,
                   companyId: companyId,
+                  accessToken: accessToken,
                   localDatabase: localDatabase,
                 ),
               ),
@@ -90,6 +94,7 @@ class _Navigation extends StatelessWidget {
     required this.displayName,
     required this.role,
     required this.companyId,
+    required this.accessToken,
     required this.localDatabase,
   });
 
@@ -97,6 +102,7 @@ class _Navigation extends StatelessWidget {
   final String displayName;
   final String role;
   final String companyId;
+  final String accessToken;
   final LocalDatabase localDatabase;
 
   @override
@@ -123,6 +129,7 @@ class _Navigation extends StatelessWidget {
                     MaterialPageRoute<void>(
                       builder: (_) => AccountingHomePage(
                         companyId: companyId,
+                        accessToken: accessToken,
                         localDatabase: localDatabase,
                       ),
                     ),
