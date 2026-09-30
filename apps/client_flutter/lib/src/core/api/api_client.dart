@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../sync/sync_models.dart';
+
 class ApiException implements Exception {
   const ApiException(this.message, [this.statusCode]);
 
@@ -275,6 +277,25 @@ class ApiClient {
     );
 
     return JournalSyncResult.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+  }
+
+  Future<JournalPullPage> pullJournalChanges({
+    required String bearerToken,
+    required int afterCursor,
+    int limit = 100,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/accounting/sync/journals?after=' +
+          afterCursor.toString() +
+          '&limit=' +
+          limit.toString(),
+      bearerToken: bearerToken,
+    );
+
+    return JournalPullPage.fromJson(
       Map<String, dynamic>.from(response as Map),
     );
   }
