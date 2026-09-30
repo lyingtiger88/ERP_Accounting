@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -10,7 +12,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 1;
+  static const _databaseVersion = 2;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -50,6 +52,7 @@ class LocalDatabase {
           await db.execute('PRAGMA foreign_keys = ON');
         },
         onCreate: _createSchema,
+        onUpgrade: _upgradeSchema,
       ),
     );
   }
@@ -111,6 +114,66 @@ class LocalDatabase {
       CREATE INDEX idx_sync_outbox_pending
       ON sync_outbox(sent_at, created_at)
     ''');
+
+    await _createAccountingSchema(db);
+  }
+
+  Future<void> _upgradeSchema(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion < 2) {
+      await _createAccountingSchema(db);
+    }
+  }
+
+  Future<void> _createAccountingSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_accounting_documents (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        server_id TEXT,
+        server_number TEXT,
+        document_date TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        sync_status TEXT NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'IRR',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_local_documents_company_date
+      ON local_accounting_documents(company_id, document_date)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_local_documents_sync
+      ON local_accounting_documents(company_id, sync_status)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_document_lines (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        description TEXT,
+        debit INTEGER NOT NULL DEFAULT 0,
+        credit INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL,
+        FOREIGN KEY(document_id)
+          REFERENCES local_accounting_documents(id)
+          ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_local_document_lines_document
+      ON local_document_lines(document_id, sort_order)
+    ''');
   }
 
   Database get _db {
@@ -161,7 +224,7 @@ class LocalDatabase {
             'company_id': companyId,
             'code': account['code'] as String,
             'name': account['name'] as String,
-            'type': account['type'] as String,
+            'type': account['type'].toString(),
             'parent_id': account['parentId'] as String?,
             'is_active': (account['isActive'] as bool? ?? true) ? 1 : 0,
             'updated_at': now,
@@ -204,6 +267,208 @@ class LocalDatabase {
     return (rows.first['count'] as int?) ?? 0;
   }
 
+  Future<String> saveLocalJournal({
+    required String companyId,
+    required DateTime documentDate,
+    required String description,
+    required List<LocalJournalLineInput> lines,
+    required bool queueForSync,
+  }) async {
+    final effectiveLines = lines
+        .where((line) => line.debit > 0 || line.credit > 0)
+        .toList(growable: false);
+
+    if (effectiveLines.isEmpty) {
+      throw ArgumentError('حداقل یک ردیف دارای مبلغ برای سند لازم است.');
+    }
+
+    for (final line in effectiveLines) {
+      if (line.debit < 0 || line.credit < 0) {
+        throw ArgumentError('مبلغ بدهکار و بستانکار نمی‌تواند منفی باشد.');
+      }
+      if (line.debit > 0 && line.credit > 0) {
+        throw ArgumentError(
+          'در هر ردیف فقط یکی از بدهکار یا بستانکار می‌تواند مبلغ داشته باشد.',
+        );
+      }
+    }
+
+    final debitTotal =
+        effectiveLines.fold<int>(0, (sum, line) => sum + line.debit);
+    final creditTotal =
+        effectiveLines.fold<int>(0, (sum, line) => sum + line.credit);
+
+    if (queueForSync) {
+      if (effectiveLines.length < 2) {
+        throw ArgumentError('سند آماده همگام‌سازی حداقل دو ردیف نیاز دارد.');
+      }
+      if (debitTotal <= 0 || debitTotal != creditTotal) {
+        throw ArgumentError(
+          'برای ثبت، جمع بدهکار و بستانکار باید برابر و بزرگ‌تر از صفر باشد.',
+        );
+      }
+    }
+
+    final documentId = _newId();
+    final now = DateTime.now().toUtc().toIso8601String();
+    final dateOnly = _dateOnly(documentDate);
+
+    await _db.transaction((txn) async {
+      await txn.insert(
+        'local_accounting_documents',
+        {
+          'id': documentId,
+          'company_id': companyId,
+          'document_date': dateOnly,
+          'description': description.trim(),
+          'status': queueForSync ? 'PendingSync' : 'Draft',
+          'sync_status': queueForSync ? 'Pending' : 'LocalOnly',
+          'currency': 'IRR',
+          'created_at': now,
+          'updated_at': now,
+        },
+      );
+
+      var sortOrder = 0;
+      for (final line in effectiveLines) {
+        await txn.insert(
+          'local_document_lines',
+          {
+            'id': _newId(),
+            'document_id': documentId,
+            'account_id': line.accountId,
+            'description': line.description.trim(),
+            'debit': line.debit,
+            'credit': line.credit,
+            'sort_order': sortOrder++,
+          },
+        );
+      }
+
+      if (queueForSync) {
+        final payload = <String, dynamic>{
+          'localDocumentId': documentId,
+          'companyId': companyId,
+          'documentDate': dateOnly,
+          'description': description.trim(),
+          'currency': 'IRR',
+          'debitTotal': debitTotal,
+          'creditTotal': creditTotal,
+          'lines': effectiveLines
+              .map(
+                (line) => {
+                  'accountId': line.accountId,
+                  'description': line.description.trim(),
+                  'debit': line.debit,
+                  'credit': line.credit,
+                },
+              )
+              .toList(growable: false),
+        };
+
+        await txn.insert(
+          'sync_outbox',
+          {
+            'change_id': _newId(),
+            'company_id': companyId,
+            'entity_type': 'AccountingDocument',
+            'entity_id': documentId,
+            'operation': 'Create',
+            'payload_json': jsonEncode(payload),
+            'created_at': now,
+            'attempt_count': 0,
+          },
+        );
+      }
+    });
+
+    return documentId;
+  }
+
+  Future<List<LocalAccountingDocument>> getLocalDocuments(
+    String companyId,
+  ) async {
+    final documents = await _db.query(
+      'local_accounting_documents',
+      where: 'company_id = ?',
+      whereArgs: [companyId],
+      orderBy: 'document_date DESC, created_at DESC',
+    );
+
+    final result = <LocalAccountingDocument>[];
+
+    for (final document in documents) {
+      final totals = await _db.rawQuery(
+        '''
+        SELECT
+          COALESCE(SUM(debit), 0) AS debit_total,
+          COALESCE(SUM(credit), 0) AS credit_total,
+          COUNT(*) AS line_count
+        FROM local_document_lines
+        WHERE document_id = ?
+        ''',
+        [document['id']],
+      );
+
+      final summary = totals.first;
+
+      result.add(
+        LocalAccountingDocument(
+          id: document['id'] as String,
+          companyId: document['company_id'] as String,
+          documentDate: document['document_date'] as String,
+          description: document['description'] as String? ?? '',
+          status: document['status'] as String,
+          syncStatus: document['sync_status'] as String,
+          debitTotal: (summary['debit_total'] as num).toInt(),
+          creditTotal: (summary['credit_total'] as num).toInt(),
+          lineCount: (summary['line_count'] as num).toInt(),
+          serverNumber: document['server_number'] as String?,
+        ),
+      );
+    }
+
+    return result;
+  }
+
+  Future<List<LocalJournalLine>> getLocalDocumentLines(
+    String documentId,
+  ) async {
+    final rows = await _db.rawQuery(
+      '''
+      SELECT
+        l.id,
+        l.document_id,
+        l.account_id,
+        l.description,
+        l.debit,
+        l.credit,
+        a.code AS account_code,
+        a.name AS account_name
+      FROM local_document_lines l
+      LEFT JOIN cached_accounts a ON a.id = l.account_id
+      WHERE l.document_id = ?
+      ORDER BY l.sort_order ASC
+      ''',
+      [documentId],
+    );
+
+    return rows
+        .map(
+          (row) => LocalJournalLine(
+            id: row['id'] as String,
+            documentId: row['document_id'] as String,
+            accountId: row['account_id'] as String,
+            accountCode: row['account_code'] as String? ?? '',
+            accountName: row['account_name'] as String? ?? 'حساب نامشخص',
+            description: row['description'] as String? ?? '',
+            debit: (row['debit'] as num).toInt(),
+            credit: (row['credit'] as num).toInt(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<int> pendingOutboxCount() async {
     final rows = await _db.rawQuery(
       'SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL',
@@ -236,8 +501,35 @@ class LocalDatabase {
     if (rows.isEmpty) return null;
     return rows.first['value'] as String?;
   }
-}
 
+  static String _dateOnly(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  static String _newId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    String hex(int value) => value.toRadixString(16).padLeft(2, '0');
+
+    final value = bytes.map(hex).join();
+    return value.substring(0, 8) +
+        '-' +
+        value.substring(8, 12) +
+        '-' +
+        value.substring(12, 16) +
+        '-' +
+        value.substring(16, 20) +
+        '-' +
+        value.substring(20);
+  }
+}
 
 class CachedAccount {
   const CachedAccount({
@@ -257,4 +549,68 @@ class CachedAccount {
   final String type;
   final String? parentId;
   final bool isActive;
+}
+
+class LocalJournalLineInput {
+  const LocalJournalLineInput({
+    required this.accountId,
+    required this.description,
+    required this.debit,
+    required this.credit,
+  });
+
+  final String accountId;
+  final String description;
+  final int debit;
+  final int credit;
+}
+
+class LocalAccountingDocument {
+  const LocalAccountingDocument({
+    required this.id,
+    required this.companyId,
+    required this.documentDate,
+    required this.description,
+    required this.status,
+    required this.syncStatus,
+    required this.debitTotal,
+    required this.creditTotal,
+    required this.lineCount,
+    required this.serverNumber,
+  });
+
+  final String id;
+  final String companyId;
+  final String documentDate;
+  final String description;
+  final String status;
+  final String syncStatus;
+  final int debitTotal;
+  final int creditTotal;
+  final int lineCount;
+  final String? serverNumber;
+
+  bool get isBalanced => debitTotal == creditTotal && debitTotal > 0;
+}
+
+class LocalJournalLine {
+  const LocalJournalLine({
+    required this.id,
+    required this.documentId,
+    required this.accountId,
+    required this.accountCode,
+    required this.accountName,
+    required this.description,
+    required this.debit,
+    required this.credit,
+  });
+
+  final String id;
+  final String documentId;
+  final String accountId;
+  final String accountCode;
+  final String accountName;
+  final String description;
+  final int debit;
+  final int credit;
 }
