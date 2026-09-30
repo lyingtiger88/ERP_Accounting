@@ -514,6 +514,38 @@ accounting.MapPost("/sync-journal", async (
     }
 });
 
+accounting.MapGet("/sync/journals", async (
+    HttpRequest request,
+    long? after,
+    int? limit,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.PullJournalChangesAsync(
+            user.CompanyId,
+            after ?? 0,
+            limit ?? 100,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 accounting.MapGet("/trial-balance", async (
     HttpRequest request,
     AuthService authService,
