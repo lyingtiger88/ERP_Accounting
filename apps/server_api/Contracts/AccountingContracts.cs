@@ -123,7 +123,7 @@ public sealed record SyncDetailAccountRequest(
     long BaseRevision);
 
 public sealed record DetailAccountSyncConflict(
-    DetailAccountView Server,
+    DetailAccountView? Server,
     long BaseRevision);
 
 public sealed record SyncDetailAccountResponse(
