@@ -321,6 +321,109 @@ public sealed class AccountingService(AppDbContext db)
         CreateJournalRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var entry = await CreatePostedJournalCoreAsync(
+            companyId,
+            userId,
+            request,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return entry;
+    }
+
+    public async Task<SyncJournalResponse> SyncJournalAsync(
+        Guid companyId,
+        Guid userId,
+        SyncJournalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var changeId = request.ChangeId.Trim();
+        var localDocumentId = request.LocalDocumentId.Trim();
+
+        if (string.IsNullOrWhiteSpace(changeId) ||
+            string.IsNullOrWhiteSpace(localDocumentId))
+        {
+            throw new ArgumentException(
+                "ChangeId and LocalDocumentId are required.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var existingReceipt = await db.JournalSyncReceipts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    (x.ChangeId == changeId ||
+                     x.LocalDocumentId == localDocumentId),
+                cancellationToken);
+
+        if (existingReceipt is not null)
+        {
+            var existingJournal = await db.JournalEntries
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x =>
+                        x.Id == existingReceipt.JournalEntryId &&
+                        x.CompanyId == companyId,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "Sync receipt references a missing journal.");
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return new SyncJournalResponse(
+                existingJournal.Id,
+                existingJournal.Number,
+                existingJournal.Status,
+                existingJournal.PostedAt,
+                true);
+        }
+
+        var journalRequest = new CreateJournalRequest(
+            Number: null,
+            DocumentDate: request.DocumentDate,
+            Description: request.Description,
+            Lines: request.Lines,
+            FiscalYearId: request.FiscalYearId);
+
+        var entry = await CreatePostedJournalCoreAsync(
+            companyId,
+            userId,
+            journalRequest,
+            cancellationToken);
+
+        db.JournalSyncReceipts.Add(new JournalSyncReceipt
+        {
+            CompanyId = companyId,
+            ChangeId = changeId,
+            LocalDocumentId = localDocumentId,
+            JournalEntryId = entry.Id
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new SyncJournalResponse(
+            entry.Id,
+            entry.Number,
+            entry.Status,
+            entry.PostedAt,
+            false);
+    }
+
+    private async Task<JournalEntry> CreatePostedJournalCoreAsync(
+        Guid companyId,
+        Guid userId,
+        CreateJournalRequest request,
+        CancellationToken cancellationToken)
+    {
         if (request.Lines.Count < 2)
         {
             throw new ArgumentException(
@@ -411,10 +514,6 @@ public sealed class AccountingService(AppDbContext db)
                 "Journal lines can only use postable leaf accounts.");
         }
 
-        await using var transaction = await db.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-
         var number = request.Number?.Trim();
 
         if (string.IsNullOrWhiteSpace(number))
@@ -480,8 +579,6 @@ public sealed class AccountingService(AppDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
         return entry;
     }
 
