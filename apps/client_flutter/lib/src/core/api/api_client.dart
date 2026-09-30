@@ -347,6 +347,25 @@ class ApiClient {
     );
   }
 
+  Future<DetailAccountPullPage> pullDetailAccountChanges({
+    required String bearerToken,
+    required int afterCursor,
+    int limit = 100,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/accounting/sync/detail-accounts?after=' +
+          afterCursor.toString() +
+          '&limit=' +
+          limit.toString(),
+      bearerToken: bearerToken,
+    );
+
+    return DetailAccountPullPage.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+  }
+
   Future<JournalPullPage> pullJournalChanges({
     required String bearerToken,
     required int afterCursor,
