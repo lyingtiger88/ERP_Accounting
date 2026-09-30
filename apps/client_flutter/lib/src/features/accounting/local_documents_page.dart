@@ -200,6 +200,22 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                       ),
                     ),
                     children: [
+                      if (document.syncError != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.error_outline,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                            title: Text(
+                              'خطای همگام‌سازی — تلاش ' +
+                                  document.syncAttempts.toString(),
+                            ),
+                            subtitle: Text(document.syncError!),
+                          ),
+                        ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                         child: Row(
