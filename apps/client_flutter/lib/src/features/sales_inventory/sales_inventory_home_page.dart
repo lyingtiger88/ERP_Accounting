@@ -42,53 +42,116 @@ class _SalesInventoryHomePageState
   }
 
   Future<_StoreOverview> _loadOverview() async {
-    await _apiClient.ensureSalesInventoryDefaults(
-      bearerToken: widget.accessToken,
+    List<Map<String, dynamic>> products;
+    List<Map<String, dynamic>> warehouses;
+    List<Map<String, dynamic>> stock;
+    List<Map<String, dynamic>> invoices;
+    List<Map<String, dynamic>> purchases;
+    List<Map<String, dynamic>> returns;
+    List<Map<String, dynamic>> lowStock;
+    List<Map<String, dynamic>> transfers;
+    var online = true;
+
+    try {
+      await _apiClient.ensureSalesInventoryDefaults(
+        bearerToken: widget.accessToken,
+      );
+
+      final results = await Future.wait([
+        _apiClient.getStoreProducts(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getWarehouses(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getStockBalances(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getSalesInvoices(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getPurchaseReceipts(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getSalesReturns(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getLowStockAlerts(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getWarehouseTransfers(
+          bearerToken: widget.accessToken,
+        ),
+      ]);
+
+      products = results[0];
+      warehouses = results[1];
+      stock = results[2];
+      invoices = results[3];
+      purchases = results[4];
+      returns = results[5];
+      lowStock = results[6];
+      transfers = results[7];
+
+      const types = [
+        'StoreProduct',
+        'Warehouse',
+        'StockBalance',
+        'SalesInvoice',
+        'PurchaseReceipt',
+        'SalesReturn',
+        'LowStockAlert',
+        'WarehouseTransfer',
+      ];
+
+      for (var index = 0; index < types.length; index++) {
+        await widget.localDatabase.replaceStoreEntities(
+          companyId: widget.companyId,
+          entityType: types[index],
+          items: results[index],
+        );
+      }
+    } on ApiException catch (error) {
+      if (error.statusCode != null) rethrow;
+      online = false;
+
+      products = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'StoreProduct',
+      );
+      warehouses = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'Warehouse',
+      );
+      stock = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'StockBalance',
+      );
+      invoices = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'SalesInvoice',
+      );
+      purchases = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'PurchaseReceipt',
+      );
+      returns = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'SalesReturn',
+      );
+      lowStock = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'LowStockAlert',
+      );
+      transfers = await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'WarehouseTransfer',
+      );
+    }
+
+    final localDrafts = await widget.localDatabase.getLocalStoreDrafts(
+      companyId: widget.companyId,
     );
-
-    final results = await Future.wait([
-      _apiClient.getStoreProducts(
-        bearerToken: widget.accessToken,
-      ),
-      _apiClient.getWarehouses(
-        bearerToken: widget.accessToken,
-      ),
-      _apiClient.getStockBalances(
-        bearerToken: widget.accessToken,
-      ),
-      _apiClient.getSalesInvoices(
-        bearerToken: widget.accessToken,
-      ),
-      _apiClient.getPurchaseReceipts(
-        bearerToken: widget.accessToken,
-      ),
-      _apiClient.getSalesReturns(
-        bearerToken: widget.accessToken,
-      ),
-      _apiClient.getLowStockAlerts(
-        bearerToken: widget.accessToken,
-      ),
-      _apiClient.getWarehouseTransfers(
-        bearerToken: widget.accessToken,
-      ),
-    ]);
-
-    final products =
-        results[0] as List<Map<String, dynamic>>;
-    final warehouses =
-        results[1] as List<Map<String, dynamic>>;
-    final stock =
-        results[2] as List<Map<String, dynamic>>;
-    final invoices =
-        results[3] as List<Map<String, dynamic>>;
-    final purchases =
-        results[4] as List<Map<String, dynamic>>;
-    final returns =
-        results[5] as List<Map<String, dynamic>>;
-    final lowStock =
-        results[6] as List<Map<String, dynamic>>;
-    final transfers =
-        results[7] as List<Map<String, dynamic>>;
 
     final inventoryValue = stock.fold<num>(
       0,
@@ -152,6 +215,10 @@ class _SalesInventoryHomePageState
       returnedSales: returnedSales,
       lowStockCount: lowStock.length,
       transferCount: transfers.length,
+      pendingLocalDrafts: localDrafts
+          .where((draft) => draft.syncStatus != 'Synced')
+          .length,
+      online: online,
     );
   }
 
@@ -290,6 +357,18 @@ class _SalesInventoryHomePageState
                       title: 'هشدار کمبود',
                       value: overview.lowStockCount.toString(),
                       icon: Icons.warning_amber_outlined,
+                    ),
+                    _MetricCard(
+                      title: 'Draft آفلاین',
+                      value: overview.pendingLocalDrafts.toString(),
+                      icon: Icons.cloud_upload_outlined,
+                    ),
+                    _MetricCard(
+                      title: 'وضعیت داده',
+                      value: overview.online ? 'Online' : 'Local Cache',
+                      icon: overview.online
+                          ? Icons.cloud_done_outlined
+                          : Icons.offline_bolt_outlined,
                     ),
                   ],
                 ),
@@ -467,6 +546,8 @@ class _StoreOverview {
     required this.returnedSales,
     required this.lowStockCount,
     required this.transferCount,
+    required this.pendingLocalDrafts,
+    required this.online,
   });
 
   final int productCount;
@@ -479,6 +560,8 @@ class _StoreOverview {
   final num returnedSales;
   final int lowStockCount;
   final int transferCount;
+  final int pendingLocalDrafts;
+  final bool online;
 }
 
 class _MetricCard extends StatelessWidget {
