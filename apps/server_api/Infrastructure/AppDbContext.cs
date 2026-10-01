@@ -32,6 +32,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SalesInventorySettings> SalesInventorySettings => Set<SalesInventorySettings>();
     public DbSet<SalesInvoice> SalesInvoices => Set<SalesInvoice>();
     public DbSet<SalesInvoiceLine> SalesInvoiceLines => Set<SalesInvoiceLine>();
+    public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
+    public DbSet<PurchaseReceiptLine> PurchaseReceiptLines => Set<PurchaseReceiptLine>();
+    public DbSet<WarehouseTransfer> WarehouseTransfers => Set<WarehouseTransfer>();
+    public DbSet<WarehouseTransferLine> WarehouseTransferLines => Set<WarehouseTransferLine>();
+    public DbSet<SalesReturn> SalesReturns => Set<SalesReturn>();
+    public DbSet<SalesReturnLine> SalesReturnLines => Set<SalesReturnLine>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -390,6 +396,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.Barcode).HasMaxLength(120);
             entity.Property(x => x.UnitName).HasMaxLength(60).IsRequired();
             entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.TrackingMode).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.MinimumStock).HasPrecision(20, 4);
             entity.Property(x => x.SalesPrice).HasPrecision(20, 4);
             entity.Property(x => x.DefaultPurchasePrice).HasPrecision(20, 4);
             entity.HasIndex(x => new { x.CompanyId, x.Sku }).IsUnique();
@@ -427,6 +435,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<LedgerAccount>()
                 .WithMany()
+                .HasForeignKey(x => x.PayablesAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
                 .HasForeignKey(x => x.CashAccountId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<LedgerAccount>()
@@ -444,6 +456,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<LedgerAccount>()
                 .WithMany()
                 .HasForeignKey(x => x.SalesTaxPayableAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.PurchaseTaxReceivableAccountId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -507,11 +523,118 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.NetAmount).HasPrecision(20, 4);
             entity.Property(x => x.UnitCost).HasPrecision(20, 4);
             entity.Property(x => x.CostAmount).HasPrecision(20, 4);
+            entity.Property(x => x.LotNumber).HasMaxLength(120);
+            entity.Property(x => x.SerialNumber).HasMaxLength(180);
             entity.HasIndex(x => x.ProductId);
+            entity.HasIndex(x => x.SerialNumber);
             entity.HasOne<StoreProduct>()
                 .WithMany()
                 .HasForeignKey(x => x.ProductId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PurchaseReceipt>(entity =>
+        {
+            entity.ToTable("purchase_receipts");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Number).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.PaymentType).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.Property(x => x.Subtotal).HasPrecision(20, 4);
+            entity.Property(x => x.DiscountTotal).HasPrecision(20, 4);
+            entity.Property(x => x.TaxTotal).HasPrecision(20, 4);
+            entity.Property(x => x.GrandTotal).HasPrecision(20, 4);
+            entity.HasIndex(x => new { x.CompanyId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.DocumentDate });
+            entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<DetailAccount>().WithMany().HasForeignKey(x => x.SupplierDetailAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntry>().WithMany().HasForeignKey(x => x.AccountingJournalEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntry>().WithMany().HasForeignKey(x => x.ReversalJournalEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseReceiptId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PurchaseReceiptLine>(entity =>
+        {
+            entity.ToTable("purchase_receipt_lines");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Quantity).HasPrecision(20, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(20, 4);
+            entity.Property(x => x.DiscountAmount).HasPrecision(20, 4);
+            entity.Property(x => x.TaxAmount).HasPrecision(20, 4);
+            entity.Property(x => x.NetAmount).HasPrecision(20, 4);
+            entity.Property(x => x.LotNumber).HasMaxLength(120);
+            entity.Property(x => x.SerialNumber).HasMaxLength(180);
+            entity.HasIndex(x => x.ProductId);
+            entity.HasIndex(x => x.SerialNumber);
+            entity.HasOne<StoreProduct>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<WarehouseTransfer>(entity =>
+        {
+            entity.ToTable("warehouse_transfers");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Number).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.HasIndex(x => new { x.CompanyId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.DocumentDate });
+            entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.FromWarehouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.ToWarehouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.WarehouseTransferId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WarehouseTransferLine>(entity =>
+        {
+            entity.ToTable("warehouse_transfer_lines");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Quantity).HasPrecision(20, 4);
+            entity.Property(x => x.LotNumber).HasMaxLength(120);
+            entity.Property(x => x.SerialNumber).HasMaxLength(180);
+            entity.HasIndex(x => x.ProductId);
+            entity.HasOne<StoreProduct>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SalesReturn>(entity =>
+        {
+            entity.ToTable("sales_returns");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Number).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.Reason).HasMaxLength(500);
+            entity.Property(x => x.GrandTotal).HasPrecision(20, 4);
+            entity.Property(x => x.TaxTotal).HasPrecision(20, 4);
+            entity.Property(x => x.CostTotal).HasPrecision(20, 4);
+            entity.HasIndex(x => new { x.CompanyId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.DocumentDate });
+            entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SalesInvoice>().WithMany().HasForeignKey(x => x.SalesInvoiceId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntry>().WithMany().HasForeignKey(x => x.AccountingJournalEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntry>().WithMany().HasForeignKey(x => x.ReversalJournalEntryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SalesReturnId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SalesReturnLine>(entity =>
+        {
+            entity.ToTable("sales_return_lines");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Quantity).HasPrecision(20, 4);
+            entity.Property(x => x.NetAmount).HasPrecision(20, 4);
+            entity.Property(x => x.TaxAmount).HasPrecision(20, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(20, 4);
+            entity.Property(x => x.CostAmount).HasPrecision(20, 4);
+            entity.HasIndex(x => x.SalesInvoiceLineId);
+            entity.HasIndex(x => x.ProductId);
+            entity.HasOne<SalesInvoiceLine>().WithMany().HasForeignKey(x => x.SalesInvoiceLineId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<StoreProduct>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<StockMovement>(entity =>
@@ -521,10 +644,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(30);
             entity.Property(x => x.Quantity).HasPrecision(20, 4);
             entity.Property(x => x.UnitCost).HasPrecision(20, 4);
+            entity.Property(x => x.LotNumber).HasMaxLength(120);
+            entity.Property(x => x.SerialNumber).HasMaxLength(180);
             entity.Property(x => x.ReferenceType).HasMaxLength(80);
             entity.Property(x => x.Description).HasMaxLength(500);
             entity.HasIndex(x => new { x.CompanyId, x.WarehouseId, x.ProductId, x.DocumentDate });
             entity.HasIndex(x => new { x.ReferenceType, x.ReferenceId });
+            entity.HasIndex(x => new { x.CompanyId, x.ProductId, x.LotNumber });
+            entity.HasIndex(x => new { x.CompanyId, x.SerialNumber });
             entity.HasOne<Company>()
                 .WithMany()
                 .HasForeignKey(x => x.CompanyId)
