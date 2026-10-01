@@ -463,7 +463,16 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
                           ' تا ' +
                           JalaliDate.fromGregorian(
                             DateTime.parse(item.endDate),
-                          ).formatted,
+                          ).formatted +
+                          (item.closingJournalNumber == null
+                              ? ''
+                              : ' • سند اختتام: ' +
+                                  item.closingJournalNumber!) +
+                          (item.netResult == null
+                              ? ''
+                              : ' • نتیجه: ' +
+                                  item.netResult!.toStringAsFixed(0) +
+                                  ' ریال'),
                     ),
                     trailing: Wrap(
                       spacing: 6,
@@ -471,6 +480,14 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
                       children: [
                         if (item.isDefault)
                           const Chip(label: Text('پیش‌فرض')),
+                        if (item.isFinalized)
+                          const Chip(
+                            avatar: Icon(
+                              Icons.verified_outlined,
+                              size: 16,
+                            ),
+                            label: Text('اختتام نهایی'),
+                          ),
                         Chip(
                           label: Text(item.isClosed ? 'بسته' : 'باز'),
                         ),
@@ -501,26 +518,28 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
                               value: 'periods',
                               child: Text('دوره‌های مالی'),
                             ),
-                            if (!item.isClosed)
+                            if (!item.isClosed &&
+                                !item.isFinalized)
                               const PopupMenuItem(
                                 value: 'finalize',
                                 child: Text('بستن نهایی سال مالی'),
                               ),
-                            if (item.isClosed)
+                            if (item.isFinalized)
                               const PopupMenuItem(
                                 value: 'reopenFinalized',
                                 child: Text(
                                   'بازگشایی بستن نهایی',
                                 ),
                               ),
-                            PopupMenuItem(
-                              value: 'toggle',
-                              child: Text(
-                                item.isClosed
-                                    ? 'بازگشایی سال مالی'
-                                    : 'بستن سال مالی',
+                            if (!item.isFinalized)
+                              PopupMenuItem(
+                                value: 'toggle',
+                                child: Text(
+                                  item.isClosed
+                                      ? 'بازگشایی سال مالی'
+                                      : 'بستن سال مالی',
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ],
