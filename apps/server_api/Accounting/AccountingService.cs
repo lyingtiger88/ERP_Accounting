@@ -301,6 +301,414 @@ public sealed class AccountingService(AppDbContext db)
         return fiscalYear;
     }
 
+    public async Task<FinalizeFiscalYearResponse> FinalizeFiscalYearAsync(
+        Guid companyId,
+        Guid userId,
+        Guid fiscalYearId,
+        FinalizeFiscalYearRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var fiscalYear = await db.FiscalYears
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+
+        var existing = await db.FiscalYearClosings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.FiscalYearId == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken);
+
+        if (existing is not null)
+        {
+            string? existingNumber = null;
+
+            if (existing.ClosingJournalEntryId is Guid journalId)
+            {
+                existingNumber = await db.JournalEntries
+                    .AsNoTracking()
+                    .Where(x => x.Id == journalId)
+                    .Select(x => x.Number)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+
+            return new FinalizeFiscalYearResponse(
+                fiscalYear.Id,
+                existing.ClosingJournalEntryId,
+                existingNumber,
+                existing.NetResult,
+                true);
+        }
+
+        if (fiscalYear.IsClosed)
+        {
+            throw new InvalidOperationException(
+                "Closed fiscal year has no finalization record. Reopen it before running finalization.");
+        }
+
+        var retainedAccount = await db.Accounts
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == request.RetainedEarningsAccountId &&
+                    x.CompanyId == companyId &&
+                    x.IsActive,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Retained earnings account does not exist or is inactive.");
+
+        if (retainedAccount.Type != AccountType.Equity)
+        {
+            throw new ArgumentException(
+                "Retained earnings account must be an equity account.");
+        }
+
+        var hasChildren = await db.Accounts.AnyAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.ParentId == retainedAccount.Id,
+            cancellationToken);
+
+        if (hasChildren)
+        {
+            throw new ArgumentException(
+                "Retained earnings account must be a postable leaf account.");
+        }
+
+        var temporaryAccounts = await db.Accounts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                (x.Type == AccountType.Revenue ||
+                 x.Type == AccountType.Expense))
+            .OrderBy(x => x.Code)
+            .ToArrayAsync(cancellationToken);
+
+        var temporaryIds = temporaryAccounts
+            .Select(x => x.Id)
+            .ToHashSet();
+
+        var journals = await db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Status == JournalStatus.Posted &&
+                x.DocumentDate >= fiscalYear.StartDate &&
+                x.DocumentDate <= fiscalYear.EndDate)
+            .ToArrayAsync(cancellationToken);
+
+        var closingLines = new List<CreateJournalLineRequest>();
+        decimal revenueTotal = 0;
+        decimal expenseTotal = 0;
+
+        foreach (var account in temporaryAccounts)
+        {
+            var lines = journals
+                .SelectMany(x => x.Lines)
+                .Where(x => x.AccountId == account.Id)
+                .ToArray();
+
+            var debitTotal = lines.Sum(x => x.Debit);
+            var creditTotal = lines.Sum(x => x.Credit);
+            var balance = debitTotal - creditTotal;
+
+            if (account.Type == AccountType.Revenue)
+            {
+                revenueTotal += creditTotal - debitTotal;
+            }
+            else
+            {
+                expenseTotal += debitTotal - creditTotal;
+            }
+
+            if (balance == 0)
+            {
+                continue;
+            }
+
+            closingLines.Add(
+                balance > 0
+                    ? new CreateJournalLineRequest(
+                        account.Id,
+                        $"بستن حساب {account.Code} - {account.Name}",
+                        0,
+                        balance)
+                    : new CreateJournalLineRequest(
+                        account.Id,
+                        $"بستن حساب {account.Code} - {account.Name}",
+                        -balance,
+                        0));
+        }
+
+        var netResult = revenueTotal - expenseTotal;
+        Guid? closingJournalId = null;
+        string? closingJournalNumber = null;
+
+        if (closingLines.Count > 0)
+        {
+            var debit = closingLines.Sum(x => x.Debit);
+            var credit = closingLines.Sum(x => x.Credit);
+
+            if (debit > credit)
+            {
+                closingLines.Add(new CreateJournalLineRequest(
+                    retainedAccount.Id,
+                    $"انتقال نتیجه عملکرد سال مالی {fiscalYear.Name}",
+                    0,
+                    debit - credit));
+            }
+            else if (credit > debit)
+            {
+                closingLines.Add(new CreateJournalLineRequest(
+                    retainedAccount.Id,
+                    $"انتقال نتیجه عملکرد سال مالی {fiscalYear.Name}",
+                    credit - debit,
+                    0));
+            }
+
+            var closingJournal = await CreatePostedJournalCoreAsync(
+                companyId,
+                userId,
+                new CreateJournalRequest(
+                    null,
+                    fiscalYear.EndDate,
+                    $"سند بستن حساب‌های موقت {fiscalYear.Name}",
+                    closingLines,
+                    fiscalYear.Id),
+                cancellationToken,
+                enforceFiscalControls: false);
+
+            closingJournalId = closingJournal.Id;
+            closingJournalNumber = closingJournal.Number;
+
+            AddAuditLog(
+                companyId,
+                userId,
+                "JournalEntry",
+                closingJournal.Id,
+                "YEAR_END_CLOSING_POST",
+                null,
+                new
+                {
+                    FiscalYearId = fiscalYear.Id,
+                    fiscalYear.Name,
+                    NetResult = netResult,
+                    RetainedEarningsAccountId = retainedAccount.Id
+                });
+        }
+
+        db.FiscalYearClosings.Add(new FiscalYearClosing
+        {
+            FiscalYearId = fiscalYear.Id,
+            CompanyId = companyId,
+            ClosingJournalEntryId = closingJournalId,
+            RetainedEarningsAccountId = retainedAccount.Id,
+            CreatedByUserId = userId,
+            NetResult = netResult
+        });
+
+        var periods = await db.FiscalPeriods
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYear.Id)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var period in periods)
+        {
+            period.IsClosed = true;
+        }
+
+        fiscalYear.IsClosed = true;
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "FiscalYear",
+            fiscalYear.Id,
+            "FISCAL_YEAR_FINALIZE",
+            null,
+            new
+            {
+                fiscalYear.Name,
+                NetResult = netResult,
+                ClosingJournalEntryId = closingJournalId,
+                ClosingJournalNumber = closingJournalNumber,
+                RetainedEarningsAccountId = retainedAccount.Id
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new FinalizeFiscalYearResponse(
+            fiscalYear.Id,
+            closingJournalId,
+            closingJournalNumber,
+            netResult,
+            false);
+    }
+
+    public async Task<ReopenFinalizedFiscalYearResponse> ReopenFinalizedFiscalYearAsync(
+        Guid companyId,
+        Guid userId,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var fiscalYear = await db.FiscalYears
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+
+        var closing = await db.FiscalYearClosings
+            .FirstOrDefaultAsync(
+                x =>
+                    x.FiscalYearId == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Fiscal year has no active finalization to reopen.");
+
+        Guid? reversalJournalId = null;
+        string? reversalNumber = null;
+
+        if (closing.ClosingJournalEntryId is Guid closingJournalId)
+        {
+            var original = await db.JournalEntries
+                .Include(x => x.Lines)
+                .FirstOrDefaultAsync(
+                    x =>
+                        x.Id == closingJournalId &&
+                        x.CompanyId == companyId,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "Fiscal-year closing journal is missing.");
+
+            var alreadyReversed = await db.JournalReversalLinks.AnyAsync(
+                x => x.OriginalJournalEntryId == original.Id,
+                cancellationToken);
+
+            if (alreadyReversed)
+            {
+                throw new InvalidOperationException(
+                    "Fiscal-year closing journal already has a reversal.");
+            }
+
+            var reversalLines = original.Lines
+                .Select(line => new CreateJournalLineRequest(
+                    line.AccountId,
+                    "بازگشایی اختتام سال: " +
+                        (line.Description ?? original.Description ?? string.Empty),
+                    line.Credit,
+                    line.Debit))
+                .ToArray();
+
+            var reversal = await CreatePostedJournalCoreAsync(
+                companyId,
+                userId,
+                new CreateJournalRequest(
+                    null,
+                    fiscalYear.EndDate,
+                    $"بازگشایی سند اختتام {fiscalYear.Name}",
+                    reversalLines,
+                    fiscalYear.Id),
+                cancellationToken,
+                enforceFiscalControls: false);
+
+            reversalJournalId = reversal.Id;
+            reversalNumber = reversal.Number;
+
+            db.JournalReversalLinks.Add(new JournalReversalLink
+            {
+                OriginalJournalEntryId = original.Id,
+                ReversalJournalEntryId = reversal.Id,
+                CreatedByUserId = userId,
+                Reason = $"بازگشایی بستن نهایی {fiscalYear.Name}"
+            });
+
+            AddAuditLog(
+                companyId,
+                userId,
+                "JournalEntry",
+                original.Id,
+                "YEAR_END_CLOSING_REVERSE",
+                $"بازگشایی {fiscalYear.Name}",
+                new
+                {
+                    ReversalJournalEntryId = reversal.Id,
+                    ReversalNumber = reversal.Number
+                });
+
+            AddAuditLog(
+                companyId,
+                userId,
+                "JournalEntry",
+                reversal.Id,
+                "YEAR_END_REOPEN_POST",
+                null,
+                new
+                {
+                    OriginalClosingJournalEntryId = original.Id,
+                    original.Number
+                });
+        }
+
+        db.FiscalYearClosings.Remove(closing);
+        fiscalYear.IsClosed = false;
+
+        var lastPeriod = await db.FiscalPeriods
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYear.Id)
+            .OrderByDescending(x => x.EndDate)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (lastPeriod is not null)
+        {
+            lastPeriod.IsClosed = false;
+        }
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "FiscalYear",
+            fiscalYear.Id,
+            "FISCAL_YEAR_FINALIZATION_REOPEN",
+            null,
+            new
+            {
+                fiscalYear.Name,
+                ReversalJournalEntryId = reversalJournalId,
+                ReversalJournalNumber = reversalNumber
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new ReopenFinalizedFiscalYearResponse(
+            fiscalYear.Id,
+            reversalJournalId,
+            reversalNumber);
+    }
+
     public async Task<FiscalYear> EnsureDefaultFiscalYearAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
@@ -2013,12 +2421,21 @@ public sealed class AccountingService(AppDbContext db)
             .OrderBy(x => x.Code)
             .ToArrayAsync(cancellationToken);
 
+        var activeClosingJournalIds = await db.FiscalYearClosings
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.ClosingJournalEntryId.HasValue)
+            .Select(x => x.ClosingJournalEntryId!.Value)
+            .ToArrayAsync(cancellationToken);
+
         var journalQuery = db.JournalEntries
             .AsNoTracking()
             .Include(x => x.Lines)
             .Where(x =>
                 x.CompanyId == companyId &&
-                x.Status == JournalStatus.Posted);
+                x.Status == JournalStatus.Posted &&
+                !activeClosingJournalIds.Contains(x.Id));
 
         if (from is DateOnly fromDate)
         {
