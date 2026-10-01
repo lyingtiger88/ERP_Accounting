@@ -30,8 +30,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] USB synchronization architecture
 - [x] QR pairing security design
 - [x] MFA / 2FA security design
-- [ ] PostgreSQL migration strategy
-- [ ] SQLite local database strategy
+- [x] PostgreSQL migration strategy
+- [x] SQLite local database strategy
 
 ### Phase 1 — Identity + Accounting Core **← CURRENT**
 
@@ -50,6 +50,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Trusted-device management
 - [ ] Optional QR device pairing
 - [ ] Step-up authentication for sensitive operations
+- [x] Accounting audit log
 - [ ] Security audit log
 - [ ] Passkey / Windows Hello / Android biometrics
 
@@ -65,15 +66,16 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Control vs postable account enforcement
 - [x] Solar Hijri journal numbering
 - [x] Configurable fiscal years
-- [ ] Accounting periods
+- [x] Accounting periods
 - [x] Client-side Draft / Pending Sync journal workflow
-- [ ] Server-side Draft / post / reverse journal workflow
+- [x] Server-side post / reverse journal workflow
+- [ ] Server-side Draft workflow
 - [x] Floating detail accounts (تفصیلی شناور)
 - [ ] Opening balances
 - [x] Fiscal year close/reopen enforcement
-- [ ] Profit & loss
-- [ ] Balance sheet
-- [ ] Account turnover reports
+- [x] Profit & loss
+- [x] Balance sheet
+- [x] Account and floating-detail turnover reports
 
 #### Persistence
 - [x] PostgreSQL server database
@@ -231,16 +233,22 @@ Implemented so far:
 - Explicit conflict storage with Keep Server / Retry Local resolution
 - Automatic master-data refresh before bidirectional accounting sync
 - Configurable Solar Hijri fiscal years with close/reopen control
+- Twelve standard Solar Hijri fiscal periods with close/reopen enforcement
+- Journal reversal workflow with immutable original document and audit trail
+- Fiscal journal, general ledger, trial balance, profit & loss and balance sheet UIs
+- Opening-balance carry-forward in ledger/trial-balance reports
+- Floating-detail ledger with opening/running/closing balances
 - Floating detail accounts cached offline and selectable per journal line
 - CI for ASP.NET Core build, sync/revision tests and Flutter analysis
 - Architecture for online sync, USB sync, QR pairing and MFA
 
 ### Immediate next steps
 
-1. Validate fiscal-year/detail-cache upgrade on Windows
-2. Extend revision/conflict policy to the next mutable business entities
-3. Freeze Phase 1 schema and generate provider-specific EF Core migrations
-4. Verify PostgreSQL provider when Docker/PostgreSQL is available
+1. Validate SQLite v7 fiscal-period/report upgrade on Windows
+2. Implement formal opening/closing journal workflow for fiscal-year turnover
+3. Extend revision/conflict policy to the next mutable business entities
+4. Freeze Phase 1 schema and generate provider-specific EF Core migrations
+5. Verify PostgreSQL provider when Docker/PostgreSQL is available
 5. Persistent sessions and refresh-token rotation
 6. TOTP 2FA + backup codes
 7. QR device pairing
