@@ -49,15 +49,66 @@ public sealed class AccountingService(AppDbContext db)
             .ToArray();
     }
 
-    public async Task<IReadOnlyList<FiscalYear>> GetFiscalYearsAsync(
+    public async Task<IReadOnlyList<FiscalYearView>> GetFiscalYearsAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        return await db.FiscalYears
+        var years = await db.FiscalYears
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
             .OrderByDescending(x => x.StartDate)
             .ToArrayAsync(cancellationToken);
+
+        var closings = await db.FiscalYearClosings
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .ToDictionaryAsync(
+                x => x.FiscalYearId,
+                cancellationToken);
+
+        var closingJournalIds = closings.Values
+            .Where(x => x.ClosingJournalEntryId.HasValue)
+            .Select(x => x.ClosingJournalEntryId!.Value)
+            .ToArray();
+
+        var closingNumbers = closingJournalIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await db.JournalEntries
+                .AsNoTracking()
+                .Where(x => closingJournalIds.Contains(x.Id))
+                .ToDictionaryAsync(
+                    x => x.Id,
+                    x => x.Number,
+                    cancellationToken);
+
+        return years
+            .Select(year =>
+            {
+                closings.TryGetValue(year.Id, out var closing);
+
+                string? closingNumber = null;
+
+                if (closing?.ClosingJournalEntryId is Guid journalId)
+                {
+                    closingNumbers.TryGetValue(
+                        journalId,
+                        out closingNumber);
+                }
+
+                return new FiscalYearView(
+                    year.Id,
+                    year.CompanyId,
+                    year.Name,
+                    year.PersianYear,
+                    year.StartDate,
+                    year.EndDate,
+                    year.IsDefault,
+                    year.IsClosed,
+                    closing is not null,
+                    closingNumber,
+                    closing?.NetResult);
+            })
+            .ToArray();
     }
 
     public async Task<IReadOnlyList<FiscalPeriod>> GetFiscalPeriodsAsync(
