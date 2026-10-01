@@ -275,6 +275,10 @@ public sealed class DetailAccountSyncTests
             x => x.CompanyId == fixture.Company.Id &&
                  x.Code == "1110");
 
+        var assetsGroup = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "1000");
+
         var revenue = await fixture.Db.Accounts.SingleAsync(
             x => x.CompanyId == fixture.Company.Id &&
                  x.Code == "4100");
@@ -364,6 +368,27 @@ public sealed class DetailAccountSyncTests
         Assert.Equal(-1_000m, revenueTrial.OpeningBalance);
         Assert.Equal(2_000m, revenueTrial.CreditTurnover);
         Assert.Equal(-3_000m, revenueTrial.Balance);
+
+        var assetsTrial =
+            trial.Single(x => x.AccountId == assetsGroup.Id);
+
+        Assert.Equal(1_000m, assetsTrial.OpeningBalance);
+        Assert.Equal(2_000m, assetsTrial.DebitTurnover);
+        Assert.Equal(3_000m, assetsTrial.Balance);
+        Assert.False(assetsTrial.IsPostable);
+        Assert.Equal("گروه", assetsTrial.LevelTitle);
+
+        var assetsLedger = await service.GetGeneralLedgerAsync(
+            fixture.Company.Id,
+            assetsGroup.Id,
+            secondDate,
+            secondDate);
+
+        Assert.Equal(1_000m, assetsLedger.OpeningBalance);
+        Assert.Equal(2_000m, assetsLedger.DebitTurnover);
+        Assert.Equal(3_000m, assetsLedger.ClosingBalance);
+        Assert.Single(assetsLedger.Rows);
+        Assert.Equal(cash.Id, assetsLedger.Rows[0].AccountId);
     }
 
     [Fact]
