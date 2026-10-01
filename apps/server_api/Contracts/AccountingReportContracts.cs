@@ -28,3 +28,36 @@ public sealed record GeneralLedgerReportResponse(
     decimal CreditTurnover,
     decimal ClosingBalance,
     IReadOnlyList<GeneralLedgerRow> Rows);
+
+
+public sealed record ProfitLossRow(
+    Guid AccountId,
+    string AccountCode,
+    string AccountName,
+    string Section,
+    decimal Amount);
+
+public sealed record ProfitLossReportResponse(
+    DateOnly? From,
+    DateOnly? To,
+    decimal RevenueTotal,
+    decimal ExpenseTotal,
+    decimal NetProfit,
+    IReadOnlyList<ProfitLossRow> Rows);
+
+public sealed record BalanceSheetRow(
+    Guid AccountId,
+    string AccountCode,
+    string AccountName,
+    string Section,
+    decimal Amount);
+
+public sealed record BalanceSheetReportResponse(
+    DateOnly AsOf,
+    decimal AssetTotal,
+    decimal LiabilityTotal,
+    decimal EquityTotal,
+    decimal AccumulatedResult,
+    decimal RightSideTotal,
+    decimal Difference,
+    IReadOnlyList<BalanceSheetRow> Rows);
