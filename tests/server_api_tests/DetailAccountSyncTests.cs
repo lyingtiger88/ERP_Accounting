@@ -1080,6 +1080,445 @@ public sealed class DetailAccountSyncTests
                 x.Action == "SALES_INVOICE_POST");
     }
 
+    [Fact]
+    public async Task PostedPurchase_ReceivesStock_AndCreatesBalancedAccountingJournal()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var supplier = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "SUP-001",
+                "تامین‌کننده تست",
+                DetailAccountType.Supplier,
+                null));
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "PUR-001",
+                "کالای خرید تست",
+                "626000000101",
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                15_000m,
+                10_000m));
+
+        var date = fiscalYear.StartDate.AddDays(7);
+
+        var receipt = await store.CreatePurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseReceiptRequest(
+                fiscalYear.Id,
+                date,
+                warehouse.Id,
+                supplier.Id,
+                PurchasePaymentType.Credit,
+                "خرید تست",
+                new[]
+                {
+                    new PurchaseReceiptLineRequest(
+                        product.Id,
+                        5m,
+                        10_000m,
+                        0m,
+                        5_000m)
+                }));
+
+        Assert.Equal(PurchaseReceiptStatus.Draft, receipt.Status);
+        Assert.Equal(55_000m, receipt.GrandTotal);
+
+        var posted = await store.PostPurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            receipt.Id);
+
+        Assert.Equal(55_000m, posted.GrandTotal);
+
+        var stock = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(5m, stock.Quantity);
+        Assert.Equal(10_000m, stock.AverageCost);
+        Assert.Equal(50_000m, stock.InventoryValue);
+
+        var journal = await fixture.Db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .SingleAsync(
+                x => x.Id == posted.AccountingJournalEntryId);
+
+        Assert.Equal(
+            journal.Lines.Sum(x => x.Debit),
+            journal.Lines.Sum(x => x.Credit));
+
+        var settings = await fixture.Db.SalesInventorySettings
+            .AsNoTracking()
+            .SingleAsync(
+                x => x.CompanyId == fixture.Company.Id);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.InventoryAccountId &&
+                x.Debit == 50_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId ==
+                    settings.PurchaseTaxReceivableAccountId &&
+                x.Debit == 5_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.PayablesAccountId &&
+                x.Credit == 55_000m);
+
+        var payableLine = journal.Lines.Single(
+            x => x.AccountId == settings.PayablesAccountId);
+
+        var dimension = await fixture.Db.JournalLineDimensions
+            .AsNoTracking()
+            .SingleAsync(
+                x => x.JournalLineId == payableLine.Id);
+
+        Assert.Equal(supplier.Id, dimension.DetailAccountId);
+    }
+
+    [Fact]
+    public async Task WarehouseTransfer_PreservesTotalQuantityAndValue()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+        await accounting.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var source = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var destination = await store.CreateWarehouseAsync(
+            fixture.Company.Id,
+            new CreateWarehouseRequest(
+                "SECOND",
+                "انبار دوم"));
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "TRF-001",
+                "کالای انتقال تست",
+                null,
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                0m,
+                2_500m));
+
+        var fiscalYear = await accounting.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+        var date = fiscalYear.StartDate.AddDays(8);
+
+        await store.AdjustStockAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateStockAdjustmentRequest(
+                source.Id,
+                product.Id,
+                date,
+                10m,
+                2_500m,
+                "موجودی انتقال تست"));
+
+        var transfer = await store.CreateWarehouseTransferAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateWarehouseTransferRequest(
+                date,
+                source.Id,
+                destination.Id,
+                "انتقال تست",
+                new[]
+                {
+                    new WarehouseTransferLineRequest(
+                        product.Id,
+                        4m)
+                }));
+
+        await store.PostWarehouseTransferAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            transfer.Id);
+
+        var balances = await store.GetStockBalancesAsync(
+            fixture.Company.Id);
+
+        var sourceBalance = balances.Single(
+            x =>
+                x.ProductId == product.Id &&
+                x.WarehouseId == source.Id);
+        var destinationBalance = balances.Single(
+            x =>
+                x.ProductId == product.Id &&
+                x.WarehouseId == destination.Id);
+
+        Assert.Equal(6m, sourceBalance.Quantity);
+        Assert.Equal(4m, destinationBalance.Quantity);
+        Assert.Equal(
+            10m,
+            sourceBalance.Quantity +
+                destinationBalance.Quantity);
+        Assert.Equal(
+            25_000m,
+            sourceBalance.InventoryValue +
+                destinationBalance.InventoryValue);
+    }
+
+    [Fact]
+    public async Task PartialSalesReturn_RestoresStock_AndCreatesBalancedAccountingJournal()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "RET-001",
+                "کالای برگشت تست",
+                null,
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                20_000m,
+                12_000m));
+
+        var date = fiscalYear.StartDate.AddDays(9);
+
+        await store.AdjustStockAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateStockAdjustmentRequest(
+                warehouse.Id,
+                product.Id,
+                date,
+                5m,
+                12_000m,
+                "موجودی برگشت تست"));
+
+        var invoice = await store.CreateSalesInvoiceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateSalesInvoiceRequest(
+                fiscalYear.Id,
+                date,
+                warehouse.Id,
+                null,
+                SalesPaymentType.Cash,
+                null,
+                new[]
+                {
+                    new SalesInvoiceLineRequest(
+                        product.Id,
+                        2m,
+                        20_000m,
+                        0m,
+                        4_000m)
+                }));
+
+        await store.PostSalesInvoiceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            invoice.Id);
+
+        var postedInvoice =
+            (await store.GetSalesInvoicesAsync(
+                fixture.Company.Id))
+            .Single(x => x.Id == invoice.Id);
+
+        var originalLine = postedInvoice.Lines.Single();
+
+        var salesReturn = await store.CreateSalesReturnAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            invoice.Id,
+            new CreateSalesReturnRequest(
+                date.AddDays(1),
+                "برگشت یک عدد",
+                new[]
+                {
+                    new SalesReturnLineRequest(
+                        originalLine.Id,
+                        1m)
+                }));
+
+        Assert.Equal(22_000m, salesReturn.GrandTotal);
+        Assert.Equal(12_000m, salesReturn.CostTotal);
+
+        var stock = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(4m, stock.Quantity);
+
+        var journal = await fixture.Db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .SingleAsync(
+                x => x.Id ==
+                    salesReturn.AccountingJournalEntryId);
+
+        Assert.Equal(
+            journal.Lines.Sum(x => x.Debit),
+            journal.Lines.Sum(x => x.Credit));
+
+        var refreshedInvoice =
+            (await store.GetSalesInvoicesAsync(
+                fixture.Company.Id))
+            .Single(x => x.Id == invoice.Id);
+
+        Assert.Equal(
+            SalesInvoiceStatus.Posted,
+            refreshedInvoice.Status);
+    }
+
+    [Fact]
+    public async Task LotAndSerialTracking_AndLowStockAlerts_AreEnforced()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "SER-001",
+                "کالای سریالی تست",
+                "626000000999",
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                30_000m,
+                20_000m,
+                InventoryTrackingMode.Serial,
+                1m));
+
+        var date = fiscalYear.StartDate.AddDays(10);
+
+        var purchase = await store.CreatePurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseReceiptRequest(
+                fiscalYear.Id,
+                date,
+                warehouse.Id,
+                null,
+                PurchasePaymentType.Cash,
+                null,
+                new[]
+                {
+                    new PurchaseReceiptLineRequest(
+                        product.Id,
+                        1m,
+                        20_000m,
+                        0m,
+                        0m,
+                        null,
+                        "SN-0001")
+                }));
+
+        await store.PostPurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            purchase.Id);
+
+        var trace = await store.GetStockTraceBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id,
+            product.Id);
+
+        Assert.Single(trace);
+        Assert.Equal("SN-0001", trace[0].SerialNumber);
+        Assert.Equal(1m, trace[0].Quantity);
+
+        var low = await store.GetLowStockAlertsAsync(
+            fixture.Company.Id);
+
+        Assert.Contains(
+            low,
+            x =>
+                x.ProductId == product.Id &&
+                x.WarehouseId == warehouse.Id);
+
+        var found = await store.FindProductAsync(
+            fixture.Company.Id,
+            "626000000999");
+
+        Assert.NotNull(found);
+        Assert.Equal(product.Id, found!.Id);
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
