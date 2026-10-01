@@ -4,6 +4,8 @@ public sealed record TrialBalanceRow(
     Guid AccountId,
     string AccountCode,
     string AccountName,
+    string LevelTitle,
+    bool IsPostable,
     decimal OpeningBalance,
     decimal DebitTurnover,
     decimal CreditTurnover,
