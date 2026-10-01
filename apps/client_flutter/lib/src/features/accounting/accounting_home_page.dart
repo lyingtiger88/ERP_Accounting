@@ -5,8 +5,11 @@ import 'audit_trail_page.dart';
 import 'cached_accounts_page.dart';
 import 'detail_accounts_page.dart';
 import 'fiscal_years_page.dart';
+import 'general_ledger_page.dart';
+import 'journal_report_page.dart';
 import 'local_documents_page.dart';
 import 'new_journal_page.dart';
+import 'trial_balance_page.dart';
 
 class AccountingHomePage extends StatelessWidget {
   const AccountingHomePage({
@@ -129,20 +132,44 @@ class AccountingHomePage extends StatelessWidget {
                     ),
                   ),
                 ),
-                const _ActionCard(
+                _ActionCard(
                   title: 'دفتر روزنامه',
-                  subtitle: 'مرحله بعد',
+                  subtitle: 'گزارش رسمی اسناد بر اساس بازه مالی',
                   icon: Icons.menu_book_outlined,
+                  onTap: () => _open(
+                    context,
+                    JournalReportPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
                 ),
-                const _ActionCard(
+                _ActionCard(
                   title: 'دفتر کل و معین',
-                  subtitle: 'مرحله بعد',
+                  subtitle: 'گردش و مانده حساب‌ها',
                   icon: Icons.library_books_outlined,
+                  onTap: () => _open(
+                    context,
+                    GeneralLedgerPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
                 ),
-                const _ActionCard(
+                _ActionCard(
                   title: 'تراز آزمایشی',
-                  subtitle: 'مرحله بعد',
+                  subtitle: 'گردش بدهکار/بستانکار و کنترل تراز',
                   icon: Icons.balance_outlined,
+                  onTap: () => _open(
+                    context,
+                    TrialBalancePage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
                 ),
               ],
             ),
