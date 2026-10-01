@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
 import 'audit_trail_page.dart';
+import 'balance_sheet_page.dart';
 import 'cached_accounts_page.dart';
 import 'detail_accounts_page.dart';
 import 'fiscal_years_page.dart';
@@ -9,6 +10,7 @@ import 'general_ledger_page.dart';
 import 'journal_report_page.dart';
 import 'local_documents_page.dart';
 import 'new_journal_page.dart';
+import 'profit_loss_page.dart';
 import 'trial_balance_page.dart';
 
 class AccountingHomePage extends StatelessWidget {
@@ -152,6 +154,32 @@ class AccountingHomePage extends StatelessWidget {
                   onTap: () => _open(
                     context,
                     GeneralLedgerPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'صورت سود و زیان',
+                  subtitle: 'درآمد، هزینه و سود/زیان خالص',
+                  icon: Icons.show_chart_outlined,
+                  onTap: () => _open(
+                    context,
+                    ProfitLossPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'ترازنامه',
+                  subtitle: 'دارایی، بدهی و حقوق مالکانه',
+                  icon: Icons.account_balance_outlined,
+                  onTap: () => _open(
+                    context,
+                    BalanceSheetPage(
                       companyId: companyId,
                       accessToken: accessToken,
                       localDatabase: localDatabase,
