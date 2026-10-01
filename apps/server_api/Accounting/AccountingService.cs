@@ -240,6 +240,45 @@ public sealed class AccountingService(AppDbContext db)
                 "Fiscal year does not exist in this company.");
         }
 
+        var finalization = await db.FiscalYearClosings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.FiscalYearId == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken);
+
+        if (isClosed)
+        {
+            var hasOpenPeriod = await db.FiscalPeriods.AnyAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.FiscalYearId == fiscalYearId &&
+                    !x.IsClosed,
+                cancellationToken);
+
+            if (hasOpenPeriod)
+            {
+                throw new InvalidOperationException(
+                    "All fiscal periods must be closed before closing the fiscal year.");
+            }
+
+            if (finalization is null &&
+                await TemporaryAccountsHaveBalanceAsync(
+                    companyId,
+                    fiscalYear,
+                    cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "Revenue or expense accounts still have balances. Run fiscal-year finalization first.");
+            }
+        }
+        else if (finalization is not null)
+        {
+            throw new InvalidOperationException(
+                "A finalized fiscal year must be reopened through the finalization-reopen workflow.");
+        }
+
         fiscalYear.IsClosed = isClosed;
 
         AddAuditLog(
@@ -1031,6 +1070,16 @@ public sealed class AccountingService(AppDbContext db)
                 "Only posted journal entries can be reversed.");
         }
 
+        var isFiscalYearClosing = await db.FiscalYearClosings.AnyAsync(
+            x => x.ClosingJournalEntryId == original.Id,
+            cancellationToken);
+
+        if (isFiscalYearClosing)
+        {
+            throw new InvalidOperationException(
+                "Fiscal-year closing journals must be reversed through the fiscal-year reopen workflow.");
+        }
+
         var alreadyReversed = await db.JournalReversalLinks.AnyAsync(
             x => x.OriginalJournalEntryId == original.Id,
             cancellationToken);
@@ -1222,7 +1271,8 @@ public sealed class AccountingService(AppDbContext db)
         Guid companyId,
         Guid userId,
         CreateJournalRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enforceFiscalControls = true)
     {
         if (request.Lines.Count < 2)
         {
@@ -1254,17 +1304,20 @@ public sealed class AccountingService(AppDbContext db)
             request.DocumentDate,
             cancellationToken);
 
-        if (fiscalYear.IsClosed)
+        if (enforceFiscalControls)
         {
-            throw new InvalidOperationException(
-                "The selected fiscal year is closed.");
-        }
+            if (fiscalYear.IsClosed)
+            {
+                throw new InvalidOperationException(
+                    "The selected fiscal year is closed.");
+            }
 
-        await EnsurePostingPeriodIsOpenAsync(
-            companyId,
-            fiscalYear.Id,
-            request.DocumentDate,
-            cancellationToken);
+            await EnsurePostingPeriodIsOpenAsync(
+                companyId,
+                fiscalYear.Id,
+                request.DocumentDate,
+                cancellationToken);
+        }
 
         var detailIds = request.Lines
             .Where(x => x.DetailAccountId.HasValue)
