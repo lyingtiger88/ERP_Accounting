@@ -22,6 +22,19 @@ public sealed record AccountView(
     string NatureTitle,
     bool IsPostable);
 
+public sealed record FiscalYearView(
+    Guid Id,
+    Guid CompanyId,
+    string Name,
+    int PersianYear,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    bool IsDefault,
+    bool IsClosed,
+    bool IsFinalized,
+    string? ClosingJournalNumber,
+    decimal? NetResult);
+
 public sealed record CreateFiscalYearRequest(
     string Name,
     int PersianYear,
