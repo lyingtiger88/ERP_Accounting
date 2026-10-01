@@ -509,6 +509,29 @@ class ApiClient {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<Map<String, dynamic>> getDetailLedger({
+    required String bearerToken,
+    required String detailAccountId,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final parts = <String>[
+      'detailAccountId=' +
+          Uri.encodeQueryComponent(detailAccountId),
+      if (from != null) 'from=' + _dateOnly(from),
+      if (to != null) 'to=' + _dateOnly(to),
+    ];
+
+    final response = await _request(
+      'GET',
+      '/api/accounting/detail-ledger?' +
+          parts.join('&'),
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<Map<String, dynamic>> getProfitLoss({
     required String bearerToken,
     DateTime? from,
