@@ -35,9 +35,131 @@ class _SalesInvoicesPageState
   }
 
   void _reload() {
-    _future = _apiClient.getSalesInvoices(
-      bearerToken: widget.accessToken,
+    _future = _loadInvoices();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadInvoices() async {
+    List<Map<String, dynamic>> serverItems;
+
+    try {
+      serverItems = await _apiClient.getSalesInvoices(
+        bearerToken: widget.accessToken,
+      );
+
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'SalesInvoice',
+        items: serverItems,
+      );
+    } on ApiException catch (error) {
+      if (error.statusCode != null) rethrow;
+
+      serverItems =
+          await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'SalesInvoice',
+      );
+    }
+
+    final drafts = await widget.localDatabase.getLocalStoreDrafts(
+      companyId: widget.companyId,
+      entityType: 'StoreSalesInvoiceDraft',
     );
+
+    final products =
+        await widget.localDatabase.getCachedStoreEntities(
+      companyId: widget.companyId,
+      entityType: 'StoreProduct',
+    );
+    final warehouses =
+        await widget.localDatabase.getCachedStoreEntities(
+      companyId: widget.companyId,
+      entityType: 'Warehouse',
+    );
+
+    final productMap = {
+      for (final product in products)
+        product['id'].toString(): product,
+    };
+    final warehouseMap = {
+      for (final warehouse in warehouses)
+        warehouse['id'].toString(): warehouse,
+    };
+
+    final localItems = drafts
+        .where((draft) => draft.syncStatus != 'Synced')
+        .map((draft) {
+          final payload = draft.payload;
+          final lines =
+              (payload['lines'] as List<dynamic>? ?? const [])
+                  .map((raw) {
+            final line = Map<String, dynamic>.from(raw as Map);
+            final product =
+                productMap[line['productId']?.toString()];
+
+            return <String, dynamic>{
+              ...line,
+              'id': draft.id + ':' +
+                  line['productId'].toString(),
+              'sku': product?['sku']?.toString() ?? '?',
+              'productName':
+                  product?['name']?.toString() ?? 'کالای محلی',
+              'unitName':
+                  product?['unitName']?.toString() ?? 'عدد',
+              'netAmount':
+                  reportNumber(line['quantity']) *
+                          reportNumber(line['unitPrice']) -
+                      reportNumber(line['discountAmount']),
+              'unitCost': 0,
+              'costAmount': 0,
+            };
+          }).toList(growable: false);
+
+          final subtotal = lines.fold<num>(
+            0,
+            (sum, line) =>
+                sum +
+                reportNumber(line['quantity']) *
+                    reportNumber(line['unitPrice']),
+          );
+          final discount = lines.fold<num>(
+            0,
+            (sum, line) =>
+                sum + reportNumber(line['discountAmount']),
+          );
+          final tax = lines.fold<num>(
+            0,
+            (sum, line) =>
+                sum + reportNumber(line['taxAmount']),
+          );
+
+          final warehouse =
+              warehouseMap[payload['warehouseId']?.toString()];
+
+          return <String, dynamic>{
+            'id': draft.id,
+            'number': 'LOCAL-' +
+                draft.id.substring(0, 8).toUpperCase(),
+            'documentDate': payload['documentDate'],
+            'warehouseName':
+                warehouse?['name']?.toString() ?? 'انبار محلی',
+            'paymentType': payload['paymentType'],
+            'customerName': null,
+            'status': 'LocalPending',
+            'description': payload['description'],
+            'subtotal': subtotal,
+            'discountTotal': discount,
+            'taxTotal': tax,
+            'grandTotal': subtotal - discount + tax,
+            'costTotal': 0,
+            'accountingJournalNumber': null,
+            'syncError': draft.lastError,
+            'lines': lines,
+          };
+        })
+        .toList(growable: false);
+
+    return [...localItems, ...serverItems];
   }
 
   Future<void> _create() async {
@@ -339,6 +461,8 @@ class _SalesInvoicesPageState
         return 'قطعی';
       case 'Reversed':
         return 'برگشت‌شده';
+      case 'LocalPending':
+        return 'منتظر Sync';
       default:
         return status;
     }
@@ -563,6 +687,18 @@ class _InvoiceCard extends StatelessWidget {
               ],
             ),
           ),
+          if (invoice['syncError'] != null)
+            Padding(
+              padding:
+                  const EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'خطای Sync: ' +
+                      invoice['syncError'].toString(),
+                ),
+              ),
+            ),
           if (invoice['description'] != null)
             Padding(
               padding:
