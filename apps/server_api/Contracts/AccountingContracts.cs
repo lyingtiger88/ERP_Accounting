@@ -32,6 +32,9 @@ public sealed record CreateFiscalYearRequest(
 public sealed record SetFiscalYearStateRequest(
     bool IsClosed);
 
+public sealed record SetFiscalPeriodStateRequest(
+    bool IsClosed);
+
 public sealed record CreateDetailAccountRequest(
     string Code,
     string Name,
