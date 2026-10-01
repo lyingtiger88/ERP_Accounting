@@ -1069,7 +1069,7 @@ public sealed class SalesInventoryService(
 
         return balances
             .Where(x => x.IsLowStock)
-            .OrderByDescending(x => x.Shortage())
+            .OrderByDescending(x => Math.Max(0, x.MinimumStock - x.Quantity))
             .Select(x => new LowStockAlertView(
                 x.ProductId,
                 x.Sku,
@@ -2358,6 +2358,417 @@ public sealed class SalesInventoryService(
             journalNumber,
             invoice.CreatedAt,
             invoice.PostedAt,
+            lines);
+    }
+
+    private static void ValidateTraceFields(
+        StoreProduct product,
+        decimal quantity,
+        string? lotNumber,
+        string? serialNumber)
+    {
+        if (!product.TrackInventory ||
+            product.TrackingMode == InventoryTrackingMode.None)
+        {
+            return;
+        }
+
+        if (product.TrackingMode == InventoryTrackingMode.Lot &&
+            string.IsNullOrWhiteSpace(lotNumber))
+        {
+            throw new ArgumentException(
+                $"Lot number is required for product '{product.Name}'.");
+        }
+
+        if (product.TrackingMode == InventoryTrackingMode.Serial)
+        {
+            if (string.IsNullOrWhiteSpace(serialNumber))
+            {
+                throw new ArgumentException(
+                    $"Serial number is required for product '{product.Name}'.");
+            }
+
+            if (quantity != 1)
+            {
+                throw new ArgumentException(
+                    $"Serial-tracked product '{product.Name}' must have quantity 1 per line.");
+            }
+        }
+    }
+
+    private async Task<StockMovement[]> GetTraceMovementsAsync(
+        Guid companyId,
+        Guid warehouseId,
+        Guid productId,
+        string? lotNumber,
+        string? serialNumber,
+        DateOnly? expiryDate,
+        CancellationToken cancellationToken)
+    {
+        var query = db.StockMovements
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.WarehouseId == warehouseId &&
+                x.ProductId == productId);
+
+        if (!string.IsNullOrWhiteSpace(serialNumber))
+        {
+            query = query.Where(x => x.SerialNumber == serialNumber);
+        }
+        else if (!string.IsNullOrWhiteSpace(lotNumber))
+        {
+            query = query.Where(x =>
+                x.LotNumber == lotNumber &&
+                x.ExpiryDate == expiryDate);
+        }
+
+        return await query.ToArrayAsync(cancellationToken);
+    }
+
+    private async Task EnsureOperationalDateOpenAsync(
+        Guid companyId,
+        DateOnly documentDate,
+        CancellationToken cancellationToken)
+    {
+        var fiscalYear = await db.FiscalYears
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.StartDate <= documentDate &&
+                x.EndDate >= documentDate)
+            .OrderByDescending(x => x.IsDefault)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException(
+                "No fiscal year covers the document date.");
+
+        if (fiscalYear.IsClosed)
+        {
+            throw new InvalidOperationException(
+                "Fiscal year is closed.");
+        }
+
+        var periods = await db.FiscalPeriods
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYear.Id)
+            .ToArrayAsync(cancellationToken);
+
+        if (periods.Length == 0)
+        {
+            return;
+        }
+
+        var period = periods.FirstOrDefault(
+            x =>
+                x.StartDate <= documentDate &&
+                x.EndDate >= documentDate);
+
+        if (period is null)
+        {
+            throw new InvalidOperationException(
+                "No fiscal period covers the document date.");
+        }
+
+        if (period.IsClosed)
+        {
+            throw new InvalidOperationException(
+                $"Fiscal period '{period.Name}' is closed.");
+        }
+    }
+
+    private async Task<string> GeneratePurchaseNumberAsync(
+        Guid companyId,
+        int persianYear,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken)
+    {
+        var count = await db.PurchaseReceipts.CountAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYearId,
+            cancellationToken);
+
+        return $"PUR-{persianYear}-{count + 1:000000}";
+    }
+
+    private async Task<string> GenerateTransferNumberAsync(
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var count = await db.WarehouseTransfers.CountAsync(
+            x => x.CompanyId == companyId,
+            cancellationToken);
+
+        return $"TRF-{count + 1:000000}";
+    }
+
+    private async Task<string> GenerateReturnNumberAsync(
+        Guid companyId,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken)
+    {
+        var fiscalYear = await db.FiscalYears
+            .AsNoTracking()
+            .SingleAsync(
+                x =>
+                    x.Id == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken);
+
+        var count = await db.SalesReturns.CountAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYearId,
+            cancellationToken);
+
+        return $"RET-{fiscalYear.PersianYear}-{count + 1:000000}";
+    }
+
+    private async Task<PurchaseReceiptView> BuildPurchaseReceiptViewAsync(
+        Guid receiptId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var receipt = await db.PurchaseReceipts
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == receiptId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Purchase receipt does not exist in this company.");
+
+        var productIds = receipt.Lines.Select(x => x.ProductId).Distinct().ToArray();
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var warehouseName = await db.Warehouses
+            .AsNoTracking()
+            .Where(x => x.Id == receipt.WarehouseId)
+            .Select(x => x.Name)
+            .SingleAsync(cancellationToken);
+
+        string? supplierName = null;
+        if (receipt.SupplierDetailAccountId is Guid supplierId)
+        {
+            supplierName = await db.DetailAccounts
+                .AsNoTracking()
+                .Where(x => x.Id == supplierId)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        string? journalNumber = null;
+        if (receipt.AccountingJournalEntryId is Guid journalId)
+        {
+            journalNumber = await db.JournalEntries
+                .AsNoTracking()
+                .Where(x => x.Id == journalId)
+                .Select(x => x.Number)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var lines = receipt.Lines
+            .Select(line =>
+            {
+                products.TryGetValue(line.ProductId, out var product);
+
+                return new PurchaseReceiptLineView(
+                    line.Id,
+                    line.ProductId,
+                    product?.Sku ?? "?",
+                    product?.Name ?? "کالای نامشخص",
+                    product?.UnitName ?? "عدد",
+                    line.Quantity,
+                    line.UnitCost,
+                    line.DiscountAmount,
+                    line.TaxAmount,
+                    line.NetAmount,
+                    line.LotNumber,
+                    line.SerialNumber,
+                    line.ExpiryDate);
+            })
+            .ToArray();
+
+        return new PurchaseReceiptView(
+            receipt.Id,
+            receipt.FiscalYearId,
+            receipt.Number,
+            receipt.DocumentDate,
+            receipt.SupplierDetailAccountId,
+            supplierName,
+            receipt.WarehouseId,
+            warehouseName,
+            receipt.PaymentType,
+            receipt.Status,
+            receipt.Description,
+            receipt.Subtotal,
+            receipt.DiscountTotal,
+            receipt.TaxTotal,
+            receipt.GrandTotal,
+            receipt.AccountingJournalEntryId,
+            journalNumber,
+            receipt.CreatedAt,
+            receipt.PostedAt,
+            lines);
+    }
+
+    private async Task<WarehouseTransferView> BuildTransferViewAsync(
+        Guid transferId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var transfer = await db.WarehouseTransfers
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == transferId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Warehouse transfer does not exist in this company.");
+
+        var warehouseIds = new[]
+        {
+            transfer.FromWarehouseId,
+            transfer.ToWarehouseId
+        };
+
+        var warehouses = await db.Warehouses
+            .AsNoTracking()
+            .Where(x => warehouseIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var productIds = transfer.Lines.Select(x => x.ProductId).Distinct().ToArray();
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var movementCosts = await db.StockMovements
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.ReferenceType == "WarehouseTransfer" &&
+                x.ReferenceId == transfer.Id &&
+                x.Type == StockMovementType.TransferOut)
+            .ToArrayAsync(cancellationToken);
+
+        var lines = transfer.Lines.Select(line =>
+        {
+            products.TryGetValue(line.ProductId, out var product);
+
+            var related = movementCosts
+                .Where(x =>
+                    x.ProductId == line.ProductId &&
+                    x.LotNumber == line.LotNumber &&
+                    x.SerialNumber == line.SerialNumber &&
+                    x.ExpiryDate == line.ExpiryDate)
+                .ToArray();
+
+            var quantity = related.Sum(x => -x.Quantity);
+            var cost = quantity == 0
+                ? 0
+                : related.Sum(x => -x.Quantity * x.UnitCost) / quantity;
+
+            return new WarehouseTransferLineView(
+                line.Id,
+                line.ProductId,
+                product?.Sku ?? "?",
+                product?.Name ?? "کالای نامشخص",
+                line.Quantity,
+                cost,
+                line.LotNumber,
+                line.SerialNumber,
+                line.ExpiryDate);
+        }).ToArray();
+
+        return new WarehouseTransferView(
+            transfer.Id,
+            transfer.Number,
+            transfer.DocumentDate,
+            transfer.FromWarehouseId,
+            warehouses.GetValueOrDefault(transfer.FromWarehouseId)?.Name ?? "?",
+            transfer.ToWarehouseId,
+            warehouses.GetValueOrDefault(transfer.ToWarehouseId)?.Name ?? "?",
+            transfer.Status,
+            transfer.Description,
+            transfer.CreatedAt,
+            transfer.PostedAt,
+            lines);
+    }
+
+    private async Task<SalesReturnView> BuildSalesReturnViewAsync(
+        Guid returnId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var salesReturn = await db.SalesReturns
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == returnId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Sales return does not exist in this company.");
+
+        var productIds = salesReturn.Lines.Select(x => x.ProductId).Distinct().ToArray();
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var warehouseName = await db.Warehouses
+            .AsNoTracking()
+            .Where(x => x.Id == salesReturn.WarehouseId)
+            .Select(x => x.Name)
+            .SingleAsync(cancellationToken);
+
+        string? journalNumber = null;
+        if (salesReturn.AccountingJournalEntryId is Guid journalId)
+        {
+            journalNumber = await db.JournalEntries
+                .AsNoTracking()
+                .Where(x => x.Id == journalId)
+                .Select(x => x.Number)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var lines = salesReturn.Lines.Select(line =>
+        {
+            products.TryGetValue(line.ProductId, out var product);
+
+            return new SalesReturnLineView(
+                line.Id,
+                line.SalesInvoiceLineId,
+                line.ProductId,
+                product?.Sku ?? "?",
+                product?.Name ?? "کالای نامشخص",
+                line.Quantity,
+                line.NetAmount,
+                line.TaxAmount,
+                line.UnitCost,
+                line.CostAmount);
+        }).ToArray();
+
+        return new SalesReturnView(
+            salesReturn.Id,
+            salesReturn.SalesInvoiceId,
+            salesReturn.Number,
+            salesReturn.DocumentDate,
+            salesReturn.WarehouseId,
+            warehouseName,
+            salesReturn.Status,
+            salesReturn.Reason,
+            salesReturn.GrandTotal,
+            salesReturn.TaxTotal,
+            salesReturn.CostTotal,
+            salesReturn.AccountingJournalEntryId,
+            journalNumber,
+            salesReturn.CreatedAt,
             lines);
     }
 
