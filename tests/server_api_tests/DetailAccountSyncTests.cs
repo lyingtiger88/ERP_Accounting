@@ -480,6 +480,73 @@ public sealed class DetailAccountSyncTests
                  x.Action == "FISCAL_PERIOD_REOPEN");
     }
 
+    [Fact]
+    public async Task ProfitLoss_AndBalanceSheet_StayConsistent()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+
+        await service.SeedDefaultAccountsAsync(fixture.Company.Id);
+        var fiscalYear = await service.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+
+        var cash = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "1110");
+
+        var revenue = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "4100");
+
+        var date = fiscalYear.StartDate.AddDays(5);
+
+        await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                date,
+                "فروش نقدی",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        cash.Id,
+                        null,
+                        10_000m,
+                        0m),
+                    new CreateJournalLineRequest(
+                        revenue.Id,
+                        null,
+                        0m,
+                        10_000m)
+                },
+                fiscalYear.Id));
+
+        var profitLoss = await service.GetProfitLossAsync(
+            fixture.Company.Id,
+            fiscalYear.StartDate,
+            date);
+
+        Assert.Equal(10_000m, profitLoss.RevenueTotal);
+        Assert.Equal(0m, profitLoss.ExpenseTotal);
+        Assert.Equal(10_000m, profitLoss.NetProfit);
+
+        var balanceSheet = await service.GetBalanceSheetAsync(
+            fixture.Company.Id,
+            date);
+
+        Assert.Equal(10_000m, balanceSheet.AssetTotal);
+        Assert.Equal(0m, balanceSheet.LiabilityTotal);
+        Assert.Equal(0m, balanceSheet.EquityTotal);
+        Assert.Equal(
+            10_000m,
+            balanceSheet.AccumulatedResult);
+        Assert.Equal(
+            10_000m,
+            balanceSheet.RightSideTotal);
+        Assert.Equal(0m, balanceSheet.Difference);
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
