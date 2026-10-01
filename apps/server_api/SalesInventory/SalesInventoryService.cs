@@ -1043,7 +1043,9 @@ public sealed class SalesInventoryService(
                 x => x.CompanyId == companyId,
                 cancellationToken);
 
-        if (settings is not null)
+        if (settings is not null &&
+            settings.PayablesAccountId.HasValue &&
+            settings.PurchaseTaxReceivableAccountId.HasValue)
         {
             return settings;
         }
@@ -1061,7 +1063,7 @@ public sealed class SalesInventoryService(
         UpdateSalesInventorySettingsRequest request,
         CancellationToken cancellationToken)
     {
-        var ids = new[]
+        var ids = new List<Guid>
         {
             request.ReceivablesAccountId,
             request.CashAccountId,
@@ -1071,15 +1073,27 @@ public sealed class SalesInventoryService(
             request.SalesTaxPayableAccountId
         };
 
+        if (request.PayablesAccountId is Guid payablesId)
+        {
+            ids.Add(payablesId);
+        }
+
+        if (request.PurchaseTaxReceivableAccountId is Guid purchaseTaxId)
+        {
+            ids.Add(purchaseTaxId);
+        }
+
+        var distinctIds = ids.Distinct().ToArray();
+
         var accounts = await db.Accounts
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
                 x.IsActive &&
-                ids.Contains(x.Id))
+                distinctIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
-        if (accounts.Count != ids.Distinct().Count())
+        if (accounts.Count != distinctIds.Length)
         {
             throw new ArgumentException(
                 "One or more accounting mapping accounts are missing or inactive.");
@@ -1109,6 +1123,22 @@ public sealed class SalesInventoryService(
             accounts[request.SalesTaxPayableAccountId],
             AccountType.Liability,
             "Sales tax payable");
+
+        if (request.PayablesAccountId is Guid payables)
+        {
+            ValidateAccountType(
+                accounts[payables],
+                AccountType.Liability,
+                "Payables");
+        }
+
+        if (request.PurchaseTaxReceivableAccountId is Guid purchaseTax)
+        {
+            ValidateAccountType(
+                accounts[purchaseTax],
+                AccountType.Asset,
+                "Purchase tax receivable");
+        }
     }
 
     private static void ValidateAccountType(
