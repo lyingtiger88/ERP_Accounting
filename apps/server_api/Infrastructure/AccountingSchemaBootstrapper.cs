@@ -59,6 +59,37 @@ public static class AccountingSchemaBootstrapper
             ON fiscal_years ("CompanyId", "StartDate", "EndDate");
             """,
             """
+            CREATE TABLE IF NOT EXISTS fiscal_periods (
+                "Id" TEXT NOT NULL
+                    CONSTRAINT "PK_fiscal_periods" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "FiscalYearId" TEXT NOT NULL,
+                "PeriodNumber" INTEGER NOT NULL,
+                "Name" TEXT NOT NULL,
+                "StartDate" TEXT NOT NULL,
+                "EndDate" TEXT NOT NULL,
+                "IsClosed" INTEGER NOT NULL DEFAULT 0,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_fiscal_periods_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_fiscal_periods_fiscal_years"
+                    FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_fiscal_periods_FiscalYearId_PeriodNumber"
+            ON fiscal_periods ("FiscalYearId", "PeriodNumber");
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_fiscal_periods_CompanyId_StartDate_EndDate"
+            ON fiscal_periods ("CompanyId", "StartDate", "EndDate");
+            """,
+
+            """
             CREATE TABLE IF NOT EXISTS detail_accounts (
                 "Id" TEXT NOT NULL CONSTRAINT "PK_detail_accounts" PRIMARY KEY,
                 "CompanyId" TEXT NOT NULL,
@@ -417,6 +448,37 @@ public static class AccountingSchemaBootstrapper
                 "IX_fiscal_years_CompanyId_StartDate_EndDate"
             ON fiscal_years ("CompanyId", "StartDate", "EndDate");
             """,
+            """
+            CREATE TABLE IF NOT EXISTS fiscal_periods (
+                "Id" uuid NOT NULL
+                    CONSTRAINT "PK_fiscal_periods" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "FiscalYearId" uuid NOT NULL,
+                "PeriodNumber" integer NOT NULL,
+                "Name" character varying(120) NOT NULL,
+                "StartDate" date NOT NULL,
+                "EndDate" date NOT NULL,
+                "IsClosed" boolean NOT NULL DEFAULT FALSE,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_fiscal_periods_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_fiscal_periods_fiscal_years"
+                    FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_fiscal_periods_FiscalYearId_PeriodNumber"
+            ON fiscal_periods ("FiscalYearId", "PeriodNumber");
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_fiscal_periods_CompanyId_StartDate_EndDate"
+            ON fiscal_periods ("CompanyId", "StartDate", "EndDate");
+            """,
+
             """
             CREATE TABLE IF NOT EXISTS detail_accounts (
                 "Id" uuid NOT NULL CONSTRAINT "PK_detail_accounts" PRIMARY KEY,
