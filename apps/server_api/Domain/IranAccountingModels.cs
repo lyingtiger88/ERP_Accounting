@@ -24,6 +24,19 @@ public sealed class FiscalYear
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class FiscalPeriod
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required Guid FiscalYearId { get; set; }
+    public required int PeriodNumber { get; set; }
+    public required string Name { get; set; }
+    public required DateOnly StartDate { get; set; }
+    public required DateOnly EndDate { get; set; }
+    public bool IsClosed { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class DetailAccount
 {
     public Guid Id { get; set; } = Guid.NewGuid();
