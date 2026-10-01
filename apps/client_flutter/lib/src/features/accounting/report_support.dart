@@ -32,12 +32,18 @@ class AccountingReportPeriod {
       }
     }
 
-    selected ??= fiscalYears
-        .where((year) => !year.isClosed)
-        .cast<CachedFiscalYear?>()
-        .firstOrNull;
+    if (selected == null) {
+      for (final year in fiscalYears) {
+        if (!year.isClosed) {
+          selected = year;
+          break;
+        }
+      }
+    }
 
-    selected ??= fiscalYears.cast<CachedFiscalYear?>().firstOrNull;
+    if (selected == null && fiscalYears.isNotEmpty) {
+      selected = fiscalYears.first;
+    }
 
     return AccountingReportPeriod(
       fiscalYears: fiscalYears,
@@ -206,10 +212,3 @@ num reportNumber(dynamic value) {
   return num.tryParse(value?.toString() ?? '') ?? 0;
 }
 
-extension _FirstOrNullReport<T> on Iterable<T> {
-  T? get firstOrNull {
-    final iterator = this.iterator;
-    if (!iterator.moveNext()) return null;
-    return iterator.current;
-  }
-}
