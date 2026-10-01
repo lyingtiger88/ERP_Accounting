@@ -60,6 +60,98 @@ public sealed class AccountingService(AppDbContext db)
             .ToArrayAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<FiscalPeriod>> GetFiscalPeriodsAsync(
+        Guid companyId,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken = default)
+    {
+        var yearExists = await db.FiscalYears.AnyAsync(
+            x =>
+                x.Id == fiscalYearId &&
+                x.CompanyId == companyId,
+            cancellationToken);
+
+        if (!yearExists)
+        {
+            throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+        }
+
+        return await db.FiscalPeriods
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYearId)
+            .OrderBy(x => x.PeriodNumber)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<FiscalPeriod>> EnsureStandardFiscalPeriodsAsync(
+        Guid companyId,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken = default)
+    {
+        var fiscalYear = await db.FiscalYears
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+
+        if (!IsStandardPersianFiscalYear(fiscalYear))
+        {
+            throw new InvalidOperationException(
+                "Standard monthly periods require a full Solar Hijri fiscal year.");
+        }
+
+        return await EnsureStandardFiscalPeriodsCoreAsync(
+            companyId,
+            fiscalYear,
+            cancellationToken);
+    }
+
+    public async Task<FiscalPeriod> SetFiscalPeriodClosedAsync(
+        Guid companyId,
+        Guid userId,
+        Guid periodId,
+        bool isClosed,
+        CancellationToken cancellationToken = default)
+    {
+        var period = await db.FiscalPeriods
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == periodId &&
+                    x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Fiscal period does not exist in this company.");
+
+        period.IsClosed = isClosed;
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "FiscalPeriod",
+            period.Id,
+            isClosed
+                ? "FISCAL_PERIOD_CLOSE"
+                : "FISCAL_PERIOD_REOPEN",
+            null,
+            new
+            {
+                period.FiscalYearId,
+                period.PeriodNumber,
+                period.Name,
+                period.StartDate,
+                period.EndDate
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        return period;
+    }
+
     public async Task<FiscalYear> CreateFiscalYearAsync(
         Guid companyId,
         CreateFiscalYearRequest request,
@@ -120,6 +212,14 @@ public sealed class AccountingService(AppDbContext db)
         db.FiscalYears.Add(fiscalYear);
         await db.SaveChangesAsync(cancellationToken);
 
+        if (IsStandardPersianFiscalYear(fiscalYear))
+        {
+            await EnsureStandardFiscalPeriodsCoreAsync(
+                companyId,
+                fiscalYear,
+                cancellationToken);
+        }
+
         return fiscalYear;
     }
 
@@ -178,6 +278,14 @@ public sealed class AccountingService(AppDbContext db)
 
         if (existing is not null)
         {
+            if (IsStandardPersianFiscalYear(existing))
+            {
+                await EnsureStandardFiscalPeriodsCoreAsync(
+                    companyId,
+                    existing,
+                    cancellationToken);
+            }
+
             return existing;
         }
 
@@ -1152,6 +1260,12 @@ public sealed class AccountingService(AppDbContext db)
                 "The selected fiscal year is closed.");
         }
 
+        await EnsurePostingPeriodIsOpenAsync(
+            companyId,
+            fiscalYear.Id,
+            request.DocumentDate,
+            cancellationToken);
+
         var detailIds = request.Lines
             .Where(x => x.DetailAccountId.HasValue)
             .Select(x => x.DetailAccountId!.Value)
@@ -1686,6 +1800,169 @@ public sealed class AccountingService(AppDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static readonly string[] PersianMonthNames =
+    [
+        "فروردین",
+        "اردیبهشت",
+        "خرداد",
+        "تیر",
+        "مرداد",
+        "شهریور",
+        "مهر",
+        "آبان",
+        "آذر",
+        "دی",
+        "بهمن",
+        "اسفند"
+    ];
+
+    private static bool IsStandardPersianFiscalYear(
+        FiscalYear fiscalYear)
+    {
+        var calendar = new PersianCalendar();
+
+        var expectedStart = DateOnly.FromDateTime(
+            calendar.ToDateTime(
+                fiscalYear.PersianYear,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0));
+
+        var expectedNextStart = DateOnly.FromDateTime(
+            calendar.ToDateTime(
+                fiscalYear.PersianYear + 1,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0));
+
+        return fiscalYear.StartDate == expectedStart &&
+               fiscalYear.EndDate == expectedNextStart.AddDays(-1);
+    }
+
+    private async Task<IReadOnlyList<FiscalPeriod>>
+        EnsureStandardFiscalPeriodsCoreAsync(
+            Guid companyId,
+            FiscalYear fiscalYear,
+            CancellationToken cancellationToken)
+    {
+        var existing = await db.FiscalPeriods
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYear.Id)
+            .ToArrayAsync(cancellationToken);
+
+        var byNumber = existing.ToDictionary(
+            x => x.PeriodNumber);
+
+        var calendar = new PersianCalendar();
+
+        for (var month = 1; month <= 12; month++)
+        {
+            if (byNumber.ContainsKey(month))
+            {
+                continue;
+            }
+
+            var start = DateOnly.FromDateTime(
+                calendar.ToDateTime(
+                    fiscalYear.PersianYear,
+                    month,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0));
+
+            DateOnly nextStart;
+
+            if (month == 12)
+            {
+                nextStart = DateOnly.FromDateTime(
+                    calendar.ToDateTime(
+                        fiscalYear.PersianYear + 1,
+                        1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0));
+            }
+            else
+            {
+                nextStart = DateOnly.FromDateTime(
+                    calendar.ToDateTime(
+                        fiscalYear.PersianYear,
+                        month + 1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0));
+            }
+
+            var period = new FiscalPeriod
+            {
+                CompanyId = companyId,
+                FiscalYearId = fiscalYear.Id,
+                PeriodNumber = month,
+                Name = PersianMonthNames[month - 1],
+                StartDate = start,
+                EndDate = nextStart.AddDays(-1)
+            };
+
+            db.FiscalPeriods.Add(period);
+            byNumber[month] = period;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return byNumber.Values
+            .OrderBy(x => x.PeriodNumber)
+            .ToArray();
+    }
+
+    private async Task EnsurePostingPeriodIsOpenAsync(
+        Guid companyId,
+        Guid fiscalYearId,
+        DateOnly documentDate,
+        CancellationToken cancellationToken)
+    {
+        var periods = await db.FiscalPeriods
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYearId)
+            .ToArrayAsync(cancellationToken);
+
+        if (periods.Length == 0)
+        {
+            return;
+        }
+
+        var period = periods.FirstOrDefault(
+            x =>
+                x.StartDate <= documentDate &&
+                x.EndDate >= documentDate);
+
+        if (period is null)
+        {
+            throw new InvalidOperationException(
+                "No fiscal period covers the document date.");
+        }
+
+        if (period.IsClosed)
+        {
+            throw new InvalidOperationException(
+                $"Fiscal period '{period.Name}' is closed.");
+        }
     }
 
     private static void ValidateDateRange(
