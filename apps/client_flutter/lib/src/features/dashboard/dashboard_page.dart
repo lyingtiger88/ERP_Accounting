@@ -330,6 +330,8 @@ class _DashboardBody extends StatelessWidget {
                   const _StatusRow('Fiscal periods / close control', true),
                   const _StatusRow('Journal reversal / audit trail', true),
                   const _StatusRow('Core accounting reports', true),
+                  const _StatusRow('Sales / inventory workspace', true),
+                  const _StatusRow('Sales → accounting integration', true),
                   const _StatusRow('Floating detail accounts', true),
                   const _StatusRow('Detail entity revisions', true),
                   const _StatusRow('Conflict detection / resolution', true),
