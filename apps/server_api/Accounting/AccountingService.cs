@@ -739,7 +739,9 @@ public sealed class AccountingService(AppDbContext db)
         var query = db.JournalEntries
             .AsNoTracking()
             .Include(x => x.Lines)
-            .Where(x => x.CompanyId == companyId);
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Status == JournalStatus.Posted);
 
         if (from is DateOnly fromDate)
         {
@@ -1427,12 +1429,6 @@ public sealed class AccountingService(AppDbContext db)
                 x.CompanyId == companyId &&
                 x.Status == JournalStatus.Posted);
 
-        if (from is DateOnly fromDate)
-        {
-            journalQuery = journalQuery.Where(
-                x => x.DocumentDate >= fromDate);
-        }
-
         if (to is DateOnly toDate)
         {
             journalQuery = journalQuery.Where(
@@ -1446,27 +1442,49 @@ public sealed class AccountingService(AppDbContext db)
 
         foreach (var account in accounts)
         {
-            var lines = journals
-                .SelectMany(x => x.Lines)
-                .Where(x => x.AccountId == account.Id)
+            var accountLines = journals
+                .SelectMany(journal => journal.Lines.Select(
+                    line => new
+                    {
+                        journal.DocumentDate,
+                        Line = line
+                    }))
+                .Where(x => x.Line.AccountId == account.Id)
                 .ToArray();
 
-            var debit = lines.Sum(x => x.Debit);
-            var credit = lines.Sum(x => x.Credit);
+            var opening = from is DateOnly fromDate
+                ? accountLines
+                    .Where(x => x.DocumentDate < fromDate)
+                    .Sum(x => x.Line.Debit - x.Line.Credit)
+                : 0m;
+
+            var periodLines = accountLines
+                .Where(x =>
+                    (from is not DateOnly startDate ||
+                     x.DocumentDate >= startDate) &&
+                    (to is not DateOnly endDate ||
+                     x.DocumentDate <= endDate))
+                .Select(x => x.Line)
+                .ToArray();
+
+            var debit = periodLines.Sum(x => x.Debit);
+            var credit = periodLines.Sum(x => x.Credit);
+            var closing = opening + debit - credit;
 
             rows.Add(new TrialBalanceRow(
                 account.Id,
                 account.Code,
                 account.Name,
+                opening,
                 debit,
                 credit,
-                debit - credit));
+                closing));
         }
 
         return rows;
     }
 
-    public async Task<IReadOnlyList<GeneralLedgerRow>> GetGeneralLedgerAsync(
+    public async Task<GeneralLedgerReportResponse> GetGeneralLedgerAsync(
         Guid companyId,
         Guid? accountId = null,
         DateOnly? from = null,
@@ -1480,18 +1498,19 @@ public sealed class AccountingService(AppDbContext db)
             .Where(x => x.CompanyId == companyId)
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
+        if (accountId is Guid selectedAccountId &&
+            !accountLookup.ContainsKey(selectedAccountId))
+        {
+            throw new ArgumentException(
+                "Selected account does not exist in this company.");
+        }
+
         var journalQuery = db.JournalEntries
             .AsNoTracking()
             .Include(x => x.Lines)
             .Where(x =>
                 x.CompanyId == companyId &&
                 x.Status == JournalStatus.Posted);
-
-        if (from is DateOnly fromDate)
-        {
-            journalQuery = journalQuery.Where(
-                x => x.DocumentDate >= fromDate);
-        }
 
         if (to is DateOnly toDate)
         {
@@ -1504,11 +1523,38 @@ public sealed class AccountingService(AppDbContext db)
             .ThenBy(x => x.CreatedAt)
             .ToArrayAsync(cancellationToken);
 
-        var balances = new Dictionary<Guid, decimal>();
+        var openingBalances = new Dictionary<Guid, decimal>();
+
+        if (from is DateOnly fromDate)
+        {
+            foreach (var journal in ordered.Where(
+                         x => x.DocumentDate < fromDate))
+            {
+                foreach (var line in journal.Lines)
+                {
+                    openingBalances[line.AccountId] =
+                        openingBalances.GetValueOrDefault(line.AccountId) +
+                        line.Debit -
+                        line.Credit;
+                }
+            }
+        }
+
+        var balances = new Dictionary<Guid, decimal>(
+            openingBalances);
+
         var rows = new List<GeneralLedgerRow>();
+        decimal debitTurnover = 0;
+        decimal creditTurnover = 0;
 
         foreach (var journal in ordered)
         {
+            if (from is DateOnly fromDate &&
+                journal.DocumentDate < fromDate)
+            {
+                continue;
+            }
+
             foreach (var line in journal.Lines)
             {
                 if (!accountLookup.TryGetValue(
@@ -1528,6 +1574,9 @@ public sealed class AccountingService(AppDbContext db)
                     continue;
                 }
 
+                debitTurnover += line.Debit;
+                creditTurnover += line.Credit;
+
                 rows.Add(new GeneralLedgerRow(
                     journal.Id,
                     journal.Number,
@@ -1542,7 +1591,29 @@ public sealed class AccountingService(AppDbContext db)
             }
         }
 
-        return rows;
+        decimal openingBalance;
+        decimal closingBalance;
+
+        if (accountId is Guid targetId)
+        {
+            openingBalance =
+                openingBalances.GetValueOrDefault(targetId);
+            closingBalance =
+                balances.GetValueOrDefault(targetId);
+        }
+        else
+        {
+            openingBalance = openingBalances.Values.Sum();
+            closingBalance = balances.Values.Sum();
+        }
+
+        return new GeneralLedgerReportResponse(
+            accountId,
+            openingBalance,
+            debitTurnover,
+            creditTurnover,
+            closingBalance,
+            rows);
     }
 
     public async Task SeedDefaultAccountsAsync(
