@@ -1613,14 +1613,16 @@ public sealed class AccountingService(AppDbContext db)
             {
                 dimensions.TryGetValue(
                     line.Id,
-                    out var detailAccountId);
+                    out var dimension);
 
                 return new CreateJournalLineRequest(
                     line.AccountId,
                     "برگشت: " + (line.Description ?? original.Description ?? string.Empty),
                     line.Credit,
                     line.Debit,
-                    detailAccountId);
+                    dimension?.DetailAccountId,
+                    dimension?.CostCenterId,
+                    dimension?.ProjectId);
             })
             .ToArray();
 
