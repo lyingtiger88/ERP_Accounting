@@ -58,13 +58,13 @@ public sealed record UpdateWarehouseRequest(
 
 public sealed record SalesInventorySettingsView(
     Guid ReceivablesAccountId,
-    Guid PayablesAccountId,
+    Guid? PayablesAccountId,
     Guid CashAccountId,
     Guid SalesRevenueAccountId,
     Guid InventoryAccountId,
     Guid CostOfGoodsSoldAccountId,
     Guid SalesTaxPayableAccountId,
-    Guid PurchaseTaxReceivableAccountId,
+    Guid? PurchaseTaxReceivableAccountId,
     bool PreventNegativeStock);
 
 public sealed record UpdateSalesInventorySettingsRequest(
