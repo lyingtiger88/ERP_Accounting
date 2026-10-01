@@ -36,6 +36,8 @@ public sealed class SalesInventoryService(
                 "1110",
                 "1200",
                 "1300",
+                "1410",
+                "2100",
                 "2200",
                 "4100",
                 "5100"
@@ -63,12 +65,26 @@ public sealed class SalesInventoryService(
                 CompanyId = companyId,
                 CashAccountId = accounts["1110"].Id,
                 ReceivablesAccountId = accounts["1200"].Id,
+                PayablesAccountId = accounts["2100"].Id,
                 InventoryAccountId = accounts["1300"].Id,
+                PurchaseTaxReceivableAccountId = accounts["1410"].Id,
                 SalesTaxPayableAccountId = accounts["2200"].Id,
                 SalesRevenueAccountId = accounts["4100"].Id,
                 CostOfGoodsSoldAccountId = accounts["5100"].Id,
                 PreventNegativeStock = true
             });
+        }
+
+        var existingSettings = await db.SalesInventorySettings
+            .FirstOrDefaultAsync(
+                x => x.CompanyId == companyId,
+                cancellationToken);
+
+        if (existingSettings is not null)
+        {
+            existingSettings.PayablesAccountId ??= accounts.GetValueOrDefault("2100")?.Id;
+            existingSettings.PurchaseTaxReceivableAccountId ??=
+                accounts.GetValueOrDefault("1410")?.Id;
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -92,7 +108,9 @@ public sealed class SalesInventoryService(
                 x.TrackInventory,
                 x.SalesPrice,
                 x.DefaultPurchasePrice,
-                x.IsActive))
+                x.IsActive,
+                x.TrackingMode,
+                x.MinimumStock))
             .ToArrayAsync(cancellationToken);
     }
 
@@ -111,7 +129,8 @@ public sealed class SalesInventoryService(
             name,
             unitName,
             request.SalesPrice,
-            request.DefaultPurchasePrice);
+            request.DefaultPurchasePrice,
+            request.MinimumStock);
 
         if (await db.StoreProducts.AnyAsync(
                 x => x.CompanyId == companyId && x.Sku == sku,
@@ -132,6 +151,14 @@ public sealed class SalesInventoryService(
             TrackInventory =
                 request.Kind == ProductKind.Inventory &&
                 request.TrackInventory,
+            TrackingMode =
+                request.Kind == ProductKind.Inventory && request.TrackInventory
+                    ? request.TrackingMode
+                    : InventoryTrackingMode.None,
+            MinimumStock =
+                request.Kind == ProductKind.Inventory && request.TrackInventory
+                    ? request.MinimumStock
+                    : 0,
             SalesPrice = request.SalesPrice,
             DefaultPurchasePrice = request.DefaultPurchasePrice
         };
@@ -186,6 +213,14 @@ public sealed class SalesInventoryService(
         product.TrackInventory =
             request.Kind == ProductKind.Inventory &&
             request.TrackInventory;
+        product.TrackingMode =
+            product.TrackInventory
+                ? request.TrackingMode
+                : InventoryTrackingMode.None;
+        product.MinimumStock =
+            product.TrackInventory
+                ? request.MinimumStock
+                : 0;
         product.SalesPrice = request.SalesPrice;
         product.DefaultPurchasePrice = request.DefaultPurchasePrice;
         product.IsActive = request.IsActive;
@@ -333,11 +368,14 @@ public sealed class SalesInventoryService(
             {
                 CompanyId = companyId,
                 ReceivablesAccountId = request.ReceivablesAccountId,
+                PayablesAccountId = request.PayablesAccountId,
                 CashAccountId = request.CashAccountId,
                 SalesRevenueAccountId = request.SalesRevenueAccountId,
                 InventoryAccountId = request.InventoryAccountId,
                 CostOfGoodsSoldAccountId = request.CostOfGoodsSoldAccountId,
                 SalesTaxPayableAccountId = request.SalesTaxPayableAccountId,
+                PurchaseTaxReceivableAccountId =
+                    request.PurchaseTaxReceivableAccountId,
                 PreventNegativeStock = request.PreventNegativeStock
             };
 
@@ -346,11 +384,20 @@ public sealed class SalesInventoryService(
         else
         {
             settings.ReceivablesAccountId = request.ReceivablesAccountId;
+            if (request.PayablesAccountId.HasValue)
+            {
+                settings.PayablesAccountId = request.PayablesAccountId;
+            }
             settings.CashAccountId = request.CashAccountId;
             settings.SalesRevenueAccountId = request.SalesRevenueAccountId;
             settings.InventoryAccountId = request.InventoryAccountId;
             settings.CostOfGoodsSoldAccountId = request.CostOfGoodsSoldAccountId;
             settings.SalesTaxPayableAccountId = request.SalesTaxPayableAccountId;
+            if (request.PurchaseTaxReceivableAccountId.HasValue)
+            {
+                settings.PurchaseTaxReceivableAccountId =
+                    request.PurchaseTaxReceivableAccountId;
+            }
             settings.PreventNegativeStock = request.PreventNegativeStock;
             settings.UpdatedAt = DateTimeOffset.UtcNow;
         }
@@ -422,7 +469,9 @@ public sealed class SalesInventoryService(
                     warehouse.Name,
                     quantity,
                     averageCost,
-                    value));
+                    value,
+                    product.MinimumStock,
+                    product.MinimumStock > 0 && quantity <= product.MinimumStock));
             }
         }
 
@@ -523,6 +572,9 @@ public sealed class SalesInventoryService(
             Type = movementType,
             Quantity = request.QuantityDelta,
             UnitCost = unitCost,
+            LotNumber = NullIfBlank(request.LotNumber),
+            SerialNumber = NullIfBlank(request.SerialNumber),
+            ExpiryDate = request.ExpiryDate,
             ReferenceType = "ManualAdjustment",
             Description = reason,
             CreatedByUserId = userId
@@ -679,7 +731,10 @@ public sealed class SalesInventoryService(
                 TaxAmount = requestedLine.TaxAmount,
                 NetAmount = net,
                 UnitCost = 0,
-                CostAmount = 0
+                CostAmount = 0,
+                LotNumber = NullIfBlank(requestedLine.LotNumber),
+                SerialNumber = NullIfBlank(requestedLine.SerialNumber),
+                ExpiryDate = requestedLine.ExpiryDate
             });
 
             invoice.Subtotal += gross;
@@ -869,6 +924,9 @@ public sealed class SalesInventoryService(
                 Type = StockMovementType.SaleIssue,
                 Quantity = -line.Quantity,
                 UnitCost = unitCost,
+                LotNumber = line.LotNumber,
+                SerialNumber = line.SerialNumber,
+                ExpiryDate = line.ExpiryDate,
                 ReferenceType = "SalesInvoice",
                 ReferenceId = invoice.Id,
                 Description = $"خروج بابت فاکتور فروش {invoice.Number}",
@@ -1107,7 +1165,9 @@ public sealed class SalesInventoryService(
             warehouse.Name,
             quantity,
             averageCost,
-            value);
+            value,
+            product.MinimumStock,
+            product.MinimumStock > 0 && quantity <= product.MinimumStock);
     }
 
     private async Task<string> GenerateInvoiceNumberAsync(
@@ -1203,7 +1263,10 @@ public sealed class SalesInventoryService(
                     line.TaxAmount,
                     line.NetAmount,
                     line.UnitCost,
-                    line.CostAmount);
+                    line.CostAmount,
+                    line.LotNumber,
+                    line.SerialNumber,
+                    line.ExpiryDate);
             })
             .ToArray();
 
@@ -1236,7 +1299,8 @@ public sealed class SalesInventoryService(
         string name,
         string unitName,
         decimal salesPrice,
-        decimal purchasePrice)
+        decimal purchasePrice,
+        decimal minimumStock)
     {
         if (string.IsNullOrWhiteSpace(sku) ||
             string.IsNullOrWhiteSpace(name) ||
@@ -1250,6 +1314,12 @@ public sealed class SalesInventoryService(
         {
             throw new ArgumentException(
                 "Product prices cannot be negative.");
+        }
+
+        if (minimumStock < 0)
+        {
+            throw new ArgumentException(
+                "Minimum stock cannot be negative.");
         }
     }
 
@@ -1265,7 +1335,9 @@ public sealed class SalesInventoryService(
             product.TrackInventory,
             product.SalesPrice,
             product.DefaultPurchasePrice,
-            product.IsActive);
+            product.IsActive,
+            product.TrackingMode,
+            product.MinimumStock);
     }
 
     private static SalesInventorySettingsView ToSettingsView(
@@ -1273,11 +1345,13 @@ public sealed class SalesInventoryService(
     {
         return new SalesInventorySettingsView(
             settings.ReceivablesAccountId,
+            settings.PayablesAccountId,
             settings.CashAccountId,
             settings.SalesRevenueAccountId,
             settings.InventoryAccountId,
             settings.CostOfGoodsSoldAccountId,
             settings.SalesTaxPayableAccountId,
+            settings.PurchaseTaxReceivableAccountId,
             settings.PreventNegativeStock);
     }
 
