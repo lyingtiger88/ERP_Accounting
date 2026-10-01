@@ -108,7 +108,7 @@ public sealed record ServerJournalChangeView(
     long Cursor,
     Guid JournalEntryId,
     string Number,
-    Guid FiscalYearId,
+    Guid? FiscalYearId,
     DateOnly DocumentDate,
     string? Description,
     JournalStatus Status,
