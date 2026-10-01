@@ -61,3 +61,27 @@ public sealed record BalanceSheetReportResponse(
     decimal RightSideTotal,
     decimal Difference,
     IReadOnlyList<BalanceSheetRow> Rows);
+
+
+public sealed record DetailLedgerRow(
+    Guid JournalId,
+    string JournalNumber,
+    DateOnly DocumentDate,
+    Guid AccountId,
+    string AccountCode,
+    string AccountName,
+    Guid DetailAccountId,
+    string DetailCode,
+    string DetailName,
+    string? Description,
+    decimal Debit,
+    decimal Credit,
+    decimal RunningBalance);
+
+public sealed record DetailLedgerReportResponse(
+    Guid DetailAccountId,
+    decimal OpeningBalance,
+    decimal DebitTurnover,
+    decimal CreditTurnover,
+    decimal ClosingBalance,
+    IReadOnlyList<DetailLedgerRow> Rows);
