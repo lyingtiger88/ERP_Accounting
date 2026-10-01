@@ -236,6 +236,63 @@ class ApiClient {
     return Map<String, dynamic>.from(payload as Map);
   }
 
+  Future<List<Map<String, dynamic>>> getFiscalPeriods({
+    required String bearerToken,
+    required String fiscalYearId,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/fiscal-years/' +
+          fiscalYearId +
+          '/periods',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> ensureStandardFiscalPeriods({
+    required String bearerToken,
+    required String fiscalYearId,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/fiscal-years/' +
+          fiscalYearId +
+          '/periods/ensure-standard',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> setFiscalPeriodClosed({
+    required String bearerToken,
+    required String periodId,
+    required bool isClosed,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/fiscal-periods/' +
+          periodId +
+          '/state',
+      bearerToken: bearerToken,
+      body: {
+        'isClosed': isClosed,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
   Future<Map<String, dynamic>> setFiscalYearClosed({
     required String bearerToken,
     required String fiscalYearId,
