@@ -48,6 +48,26 @@ public sealed class FiscalYearClosing
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class CostCenter
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AccountingProject
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class DetailAccount
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -70,6 +90,8 @@ public sealed class JournalLineDimension
 {
     public required Guid JournalLineId { get; set; }
     public Guid? DetailAccountId { get; set; }
+    public Guid? CostCenterId { get; set; }
+    public Guid? ProjectId { get; set; }
 }
 
 
