@@ -57,10 +57,19 @@ class _ProductsPageState extends State<ProductsPage> {
               existing['defaultPurchasePrice'],
             ).toString(),
     );
+    final minimumStock = TextEditingController(
+      text: existing == null
+          ? '0'
+          : reportNumber(
+              existing['minimumStock'],
+            ).toString(),
+    );
 
     var kind = existing?['kind']?.toString() ?? 'Inventory';
     var trackInventory =
         existing?['trackInventory'] as bool? ?? true;
+    var trackingMode =
+        existing?['trackingMode']?.toString() ?? 'None';
     var isActive = existing?['isActive'] as bool? ?? true;
 
     final saved = await showDialog<bool>(
@@ -177,6 +186,50 @@ class _ProductsPageState extends State<ProductsPage> {
                               }
                             : null,
                       ),
+                      if (inventoryKind &&
+                          trackInventory) ...[
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          initialValue: trackingMode,
+                          decoration: const InputDecoration(
+                            labelText: 'رهگیری موجودی',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'None',
+                              child: Text('بدون لات / سریال'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Lot',
+                              child: Text('لات / بچ'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Serial',
+                              child: Text('سریال یکتا'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setDialogState(
+                                () => trackingMode = value,
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: minimumStock,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          textDirection: TextDirection.ltr,
+                          decoration: const InputDecoration(
+                            labelText:
+                                'حداقل موجودی / نقطه هشدار',
+                          ),
+                        ),
+                      ],
                       if (existing != null)
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
@@ -223,6 +276,7 @@ class _ProductsPageState extends State<ProductsPage> {
       unit.dispose();
       salesPrice.dispose();
       purchasePrice.dispose();
+      minimumStock.dispose();
       return;
     }
 
@@ -230,6 +284,8 @@ class _ProductsPageState extends State<ProductsPage> {
         _parseNumber(salesPrice.text) ?? 0;
     final purchase =
         _parseNumber(purchasePrice.text) ?? 0;
+    final minStock =
+        _parseNumber(minimumStock.text) ?? 0;
 
     setState(() => _busy = true);
 
@@ -245,6 +301,8 @@ class _ProductsPageState extends State<ProductsPage> {
           trackInventory: trackInventory,
           salesPrice: sales,
           defaultPurchasePrice: purchase,
+          trackingMode: trackingMode,
+          minimumStock: minStock,
         );
       } else {
         await _apiClient.updateStoreProduct(
@@ -259,6 +317,8 @@ class _ProductsPageState extends State<ProductsPage> {
           salesPrice: sales,
           defaultPurchasePrice: purchase,
           isActive: isActive,
+          trackingMode: trackingMode,
+          minimumStock: minStock,
         );
       }
 
@@ -273,8 +333,66 @@ class _ProductsPageState extends State<ProductsPage> {
       unit.dispose();
       salesPrice.dispose();
       purchasePrice.dispose();
+      minimumStock.dispose();
 
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _lookupBarcode() async {
+    final controller = TextEditingController();
+
+    final code = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('جست‌وجوی بارکد / SKU'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textDirection: TextDirection.ltr,
+          decoration: const InputDecoration(
+            labelText: 'بارکد را اسکن کنید',
+            helperText:
+                'بارکدخوان USB معمولاً مانند کیبورد مقدار را وارد و Enter ارسال می‌کند.',
+          ),
+          onSubmitted: (value) =>
+              Navigator.pop(context, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              context,
+              controller.text.trim(),
+            ),
+            child: const Text('جست‌وجو'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (code == null || code.isEmpty) return;
+
+    try {
+      final product = await _apiClient.findStoreProduct(
+        bearerToken: widget.accessToken,
+        code: code,
+      );
+
+      if (product == null) {
+        _message('کالایی با این بارکد یا SKU پیدا نشد.');
+        return;
+      }
+
+      if (!mounted) return;
+      await _openEditor(product);
+    } on ApiException catch (error) {
+      _message(error.message);
     }
   }
 
@@ -304,6 +422,11 @@ class _ProductsPageState extends State<ProductsPage> {
         appBar: AppBar(
           title: const Text('کالاها و خدمات'),
           actions: [
+            IconButton(
+              tooltip: 'بارکد / SKU',
+              onPressed: _busy ? null : _lookupBarcode,
+              icon: const Icon(Icons.qr_code_scanner_outlined),
+            ),
             IconButton(
               tooltip: 'بازخوانی',
               onPressed: _busy
@@ -378,7 +501,19 @@ class _ProductsPageState extends State<ProductsPage> {
                           formatReportMoney(
                             reportNumber(item['salesPrice']),
                           ) +
-                          ' ریال',
+                          ' ریال' +
+                          (inventory &&
+                                  reportNumber(
+                                        item['minimumStock'],
+                                      ) >
+                                      0
+                              ? ' • حداقل: ' +
+                                  formatReportMoney(
+                                    reportNumber(
+                                      item['minimumStock'],
+                                    ),
+                                  )
+                              : ''),
                     ),
                     trailing: Wrap(
                       spacing: 8,
@@ -390,6 +525,17 @@ class _ProductsPageState extends State<ProductsPage> {
                             inventory ? 'کالا' : 'خدمت',
                           ),
                         ),
+                        if (inventory &&
+                            item['trackingMode']?.toString() !=
+                                'None')
+                          Chip(
+                            label: Text(
+                              item['trackingMode'].toString() ==
+                                      'Serial'
+                                  ? 'سریال'
+                                  : 'لات',
+                            ),
+                          ),
                         if (!(item['isActive'] as bool? ?? true))
                           const Chip(
                             label: Text('غیرفعال'),
