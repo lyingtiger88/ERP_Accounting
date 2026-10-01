@@ -3,6 +3,7 @@ using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.Security;
+using ERPAccounting.Api.SalesInventory;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
@@ -61,6 +62,7 @@ builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AccountingService>();
+builder.Services.AddScoped<SalesInventoryService>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -77,6 +79,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.EnsureCreatedAsync();
     await AccountingSchemaBootstrapper.EnsureExtensionsAsync(db);
+    await SalesInventorySchemaBootstrapper.EnsureAsync(db);
 }
 
 app.MapGet("/", () => Results.Ok(new
@@ -189,6 +192,456 @@ app.MapGet("/api/me", async (
             user.MfaEnabled
         });
 });
+
+var store = app.MapGroup("/api/sales-inventory");
+
+store.MapPost("/defaults/ensure", async (
+    HttpRequest request,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        await storeService.EnsureDefaultsAsync(
+            user.CompanyId,
+            cancellationToken);
+
+        return Results.Ok(new { ready = true });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapGet("/products", async (
+    HttpRequest request,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await storeService.GetProductsAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+store.MapPost("/products", async (
+    HttpRequest request,
+    CreateProductRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSalesInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.CreateProductAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapPut("/products/{productId:guid}", async (
+    HttpRequest request,
+    Guid productId,
+    UpdateProductRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSalesInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.UpdateProductAsync(
+            user.CompanyId,
+            productId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapGet("/warehouses", async (
+    HttpRequest request,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await storeService.GetWarehousesAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+store.MapPost("/warehouses", async (
+    HttpRequest request,
+    CreateWarehouseRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSalesInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.CreateWarehouseAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapPut("/warehouses/{warehouseId:guid}", async (
+    HttpRequest request,
+    Guid warehouseId,
+    UpdateWarehouseRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSalesInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.UpdateWarehouseAsync(
+            user.CompanyId,
+            warehouseId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapGet("/settings", async (
+    HttpRequest request,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.GetSettingsAsync(
+            user.CompanyId,
+            cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapPut("/settings", async (
+    HttpRequest request,
+    UpdateSalesInventorySettingsRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanManageSalesInventorySettings(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.UpdateSettingsAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+store.MapGet("/stock", async (
+    HttpRequest request,
+    Guid? warehouseId,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await storeService.GetStockBalancesAsync(
+            user.CompanyId,
+            warehouseId,
+            cancellationToken));
+});
+
+store.MapPost("/stock/adjust", async (
+    HttpRequest request,
+    CreateStockAdjustmentRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.AdjustStockAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapGet("/invoices", async (
+    HttpRequest request,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await storeService.GetSalesInvoicesAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+store.MapPost("/invoices", async (
+    HttpRequest request,
+    CreateSalesInvoiceRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSales(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.CreateSalesInvoiceAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapPost("/invoices/{invoiceId:guid}/post", async (
+    HttpRequest request,
+    Guid invoiceId,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSales(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.PostSalesInvoiceAsync(
+            user.CompanyId,
+            user.Id,
+            invoiceId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
 
 var accounting = app.MapGroup("/api/accounting");
 
@@ -1061,6 +1514,46 @@ static async Task<AppUser?> CurrentUserAsync(
     return await authService.ResolveAsync(
         token,
         cancellationToken);
+}
+
+static bool CanWriteSalesInventory(AppUser user)
+{
+    return user.Role is
+        UserRole.Owner or
+        UserRole.Administrator or
+        UserRole.FinancialManager or
+        UserRole.Accountant or
+        UserRole.InventoryManager or
+        UserRole.Sales;
+}
+
+static bool CanWriteInventory(AppUser user)
+{
+    return user.Role is
+        UserRole.Owner or
+        UserRole.Administrator or
+        UserRole.FinancialManager or
+        UserRole.Accountant or
+        UserRole.InventoryManager;
+}
+
+static bool CanWriteSales(AppUser user)
+{
+    return user.Role is
+        UserRole.Owner or
+        UserRole.Administrator or
+        UserRole.FinancialManager or
+        UserRole.Accountant or
+        UserRole.Sales;
+}
+
+static bool CanManageSalesInventorySettings(AppUser user)
+{
+    return user.Role is
+        UserRole.Owner or
+        UserRole.Administrator or
+        UserRole.FinancialManager or
+        UserRole.Accountant;
 }
 
 static bool CanWriteAccounting(AppUser user)
