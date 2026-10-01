@@ -2727,6 +2727,7 @@ public sealed class AccountingService(AppDbContext db)
             new SeedAccount("1200", "حساب‌ها و اسناد دریافتنی", AccountType.Asset, "1000"),
             new SeedAccount("1300", "موجودی مواد و کالا", AccountType.Asset, "1000"),
             new SeedAccount("1400", "پیش‌پرداخت‌ها", AccountType.Asset, "1000"),
+            new SeedAccount("1410", "مالیات و عوارض ارزش افزوده خرید", AccountType.Asset, "1400"),
             new SeedAccount("1500", "دارایی‌های ثابت مشهود", AccountType.Asset, "1000"),
 
             new SeedAccount("2000", "بدهی‌ها", AccountType.Liability, null),
