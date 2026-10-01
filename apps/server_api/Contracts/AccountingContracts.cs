@@ -48,6 +48,14 @@ public sealed record SetFiscalYearStateRequest(
 public sealed record SetFiscalPeriodStateRequest(
     bool IsClosed);
 
+public sealed record CreateCostCenterRequest(
+    string Code,
+    string Name);
+
+public sealed record CreateAccountingProjectRequest(
+    string Code,
+    string Name);
+
 public sealed record CreateDetailAccountRequest(
     string Code,
     string Name,
@@ -59,7 +67,9 @@ public sealed record CreateJournalLineRequest(
     string? Description,
     decimal Debit,
     decimal Credit,
-    Guid? DetailAccountId = null);
+    Guid? DetailAccountId = null,
+    Guid? CostCenterId = null,
+    Guid? ProjectId = null);
 
 public sealed record CreateJournalRequest(
     string? Number,
@@ -88,6 +98,8 @@ public sealed record SyncJournalResponse(
 public sealed record ServerJournalLineView(
     Guid AccountId,
     Guid? DetailAccountId,
+    Guid? CostCenterId,
+    Guid? ProjectId,
     string? Description,
     decimal Debit,
     decimal Credit);
