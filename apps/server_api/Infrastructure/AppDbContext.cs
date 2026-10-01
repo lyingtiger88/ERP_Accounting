@@ -16,6 +16,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<FiscalPeriod> FiscalPeriods => Set<FiscalPeriod>();
     public DbSet<FiscalYearClosing> FiscalYearClosings => Set<FiscalYearClosing>();
     public DbSet<DetailAccount> DetailAccounts => Set<DetailAccount>();
+    public DbSet<CostCenter> CostCenters => Set<CostCenter>();
+    public DbSet<AccountingProject> AccountingProjects => Set<AccountingProject>();
     public DbSet<JournalEntryFiscalYear> JournalEntryFiscalYears => Set<JournalEntryFiscalYear>();
     public DbSet<JournalLineDimension> JournalLineDimensions => Set<JournalLineDimension>();
     public DbSet<JournalSyncReceipt> JournalSyncReceipts => Set<JournalSyncReceipt>();
@@ -185,6 +187,32 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<CostCenter>(entity =>
+        {
+            entity.ToTable("cost_centers");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AccountingProject>(entity =>
+        {
+            entity.ToTable("accounting_projects");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<DetailAccount>(entity =>
         {
             entity.ToTable("detail_accounts");
@@ -221,6 +249,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.ToTable("journal_line_dimensions");
             entity.HasKey(x => x.JournalLineId);
             entity.HasIndex(x => x.DetailAccountId);
+            entity.HasIndex(x => x.CostCenterId);
+            entity.HasIndex(x => x.ProjectId);
             entity.HasOne<JournalLine>()
                 .WithOne()
                 .HasForeignKey<JournalLineDimension>(x => x.JournalLineId)
@@ -228,6 +258,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<DetailAccount>()
                 .WithMany()
                 .HasForeignKey(x => x.DetailAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<CostCenter>()
+                .WithMany()
+                .HasForeignKey(x => x.CostCenterId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AccountingProject>()
+                .WithMany()
+                .HasForeignKey(x => x.ProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
