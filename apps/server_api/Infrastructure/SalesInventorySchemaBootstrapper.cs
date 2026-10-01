@@ -237,12 +237,239 @@ public static class SalesInventorySchemaBootstrapper
             CREATE INDEX IF NOT EXISTS
                 "IX_stock_movements_Reference"
             ON stock_movements ("ReferenceType", "ReferenceId");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_receipts (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_receipts" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "FiscalYearId" TEXT NOT NULL,
+                "Number" TEXT NOT NULL,
+                "DocumentDate" TEXT NOT NULL,
+                "SupplierDetailAccountId" TEXT NULL,
+                "WarehouseId" TEXT NOT NULL,
+                "PaymentType" TEXT NOT NULL,
+                "Status" TEXT NOT NULL,
+                "Description" TEXT NULL,
+                "Subtotal" TEXT NOT NULL,
+                "DiscountTotal" TEXT NOT NULL,
+                "TaxTotal" TEXT NOT NULL,
+                "GrandTotal" TEXT NOT NULL,
+                "AccountingJournalEntryId" TEXT NULL,
+                "ReversalJournalEntryId" TEXT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "PostedAt" TEXT NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("SupplierDetailAccountId") REFERENCES detail_accounts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ReversalJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_purchase_receipts_CompanyId_Number"
+            ON purchase_receipts ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_receipt_lines (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_receipt_lines" PRIMARY KEY,
+                "PurchaseReceiptId" TEXT NOT NULL,
+                "ProductId" TEXT NOT NULL,
+                "Quantity" TEXT NOT NULL,
+                "UnitCost" TEXT NOT NULL,
+                "DiscountAmount" TEXT NOT NULL,
+                "TaxAmount" TEXT NOT NULL,
+                "NetAmount" TEXT NOT NULL,
+                "LotNumber" TEXT NULL,
+                "SerialNumber" TEXT NULL,
+                "ExpiryDate" TEXT NULL,
+                FOREIGN KEY ("PurchaseReceiptId") REFERENCES purchase_receipts ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS warehouse_transfers (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_warehouse_transfers" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "Number" TEXT NOT NULL,
+                "DocumentDate" TEXT NOT NULL,
+                "FromWarehouseId" TEXT NOT NULL,
+                "ToWarehouseId" TEXT NOT NULL,
+                "Status" TEXT NOT NULL,
+                "Description" TEXT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "PostedAt" TEXT NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FromWarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ToWarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_warehouse_transfers_CompanyId_Number"
+            ON warehouse_transfers ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS warehouse_transfer_lines (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_warehouse_transfer_lines" PRIMARY KEY,
+                "WarehouseTransferId" TEXT NOT NULL,
+                "ProductId" TEXT NOT NULL,
+                "Quantity" TEXT NOT NULL,
+                "LotNumber" TEXT NULL,
+                "SerialNumber" TEXT NULL,
+                "ExpiryDate" TEXT NULL,
+                FOREIGN KEY ("WarehouseTransferId") REFERENCES warehouse_transfers ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS sales_returns (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_sales_returns" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "FiscalYearId" TEXT NOT NULL,
+                "SalesInvoiceId" TEXT NOT NULL,
+                "Number" TEXT NOT NULL,
+                "DocumentDate" TEXT NOT NULL,
+                "WarehouseId" TEXT NOT NULL,
+                "Status" TEXT NOT NULL,
+                "Reason" TEXT NULL,
+                "GrandTotal" TEXT NOT NULL,
+                "TaxTotal" TEXT NOT NULL,
+                "CostTotal" TEXT NOT NULL,
+                "AccountingJournalEntryId" TEXT NULL,
+                "ReversalJournalEntryId" TEXT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("SalesInvoiceId") REFERENCES sales_invoices ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ReversalJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_sales_returns_CompanyId_Number"
+            ON sales_returns ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS sales_return_lines (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_sales_return_lines" PRIMARY KEY,
+                "SalesReturnId" TEXT NOT NULL,
+                "SalesInvoiceLineId" TEXT NOT NULL,
+                "ProductId" TEXT NOT NULL,
+                "Quantity" TEXT NOT NULL,
+                "NetAmount" TEXT NOT NULL,
+                "TaxAmount" TEXT NOT NULL,
+                "UnitCost" TEXT NOT NULL,
+                "CostAmount" TEXT NOT NULL,
+                FOREIGN KEY ("SalesReturnId") REFERENCES sales_returns ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("SalesInvoiceLineId") REFERENCES sales_invoice_lines ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
             """
         };
 
         foreach (var command in commands)
         {
             await db.Database.ExecuteSqlRawAsync(command, cancellationToken);
+        }
+
+        await EnsureSqliteColumnAsync(
+            db, "store_products", "TrackingMode",
+            "ALTER TABLE store_products ADD COLUMN \"TrackingMode\" TEXT NOT NULL DEFAULT 'None';",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "store_products", "MinimumStock",
+            "ALTER TABLE store_products ADD COLUMN \"MinimumStock\" TEXT NOT NULL DEFAULT '0';",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "sales_inventory_settings", "PayablesAccountId",
+            "ALTER TABLE sales_inventory_settings ADD COLUMN \"PayablesAccountId\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "sales_inventory_settings", "PurchaseTaxReceivableAccountId",
+            "ALTER TABLE sales_inventory_settings ADD COLUMN \"PurchaseTaxReceivableAccountId\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "sales_invoice_lines", "LotNumber",
+            "ALTER TABLE sales_invoice_lines ADD COLUMN \"LotNumber\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "sales_invoice_lines", "SerialNumber",
+            "ALTER TABLE sales_invoice_lines ADD COLUMN \"SerialNumber\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "sales_invoice_lines", "ExpiryDate",
+            "ALTER TABLE sales_invoice_lines ADD COLUMN \"ExpiryDate\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "stock_movements", "LotNumber",
+            "ALTER TABLE stock_movements ADD COLUMN \"LotNumber\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "stock_movements", "SerialNumber",
+            "ALTER TABLE stock_movements ADD COLUMN \"SerialNumber\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "stock_movements", "ExpiryDate",
+            "ALTER TABLE stock_movements ADD COLUMN \"ExpiryDate\" TEXT NULL;",
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_stock_movements_Company_Product_Lot\" ON stock_movements (\"CompanyId\", \"ProductId\", \"LotNumber\");",
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_stock_movements_Company_Serial\" ON stock_movements (\"CompanyId\", \"SerialNumber\");",
+            cancellationToken);
+    }
+
+    private static async Task EnsureSqliteColumnAsync(
+        AppDbContext db,
+        string tableName,
+        string columnName,
+        string alterSql,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != System.Data.ConnectionState.Open;
+
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT COUNT(*) FROM pragma_table_info('{tableName.Replace("'", "''")}') WHERE name = $name;";
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "$name";
+            parameter.Value = columnName;
+            command.Parameters.Add(parameter);
+
+            var exists = Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken)) > 0;
+
+            if (!exists)
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    alterSql,
+                    cancellationToken);
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
         }
     }
 
@@ -457,6 +684,170 @@ public static class SalesInventorySchemaBootstrapper
             CREATE INDEX IF NOT EXISTS
                 "IX_stock_movements_Reference"
             ON stock_movements ("ReferenceType", "ReferenceId");
+            """,
+            """
+            ALTER TABLE store_products
+                ADD COLUMN IF NOT EXISTS "TrackingMode" character varying(30) NOT NULL DEFAULT 'None',
+                ADD COLUMN IF NOT EXISTS "MinimumStock" numeric(20,4) NOT NULL DEFAULT 0;
+            """,
+            """
+            ALTER TABLE sales_inventory_settings
+                ADD COLUMN IF NOT EXISTS "PayablesAccountId" uuid NULL,
+                ADD COLUMN IF NOT EXISTS "PurchaseTaxReceivableAccountId" uuid NULL;
+            """,
+            """
+            ALTER TABLE sales_invoice_lines
+                ADD COLUMN IF NOT EXISTS "LotNumber" character varying(120) NULL,
+                ADD COLUMN IF NOT EXISTS "SerialNumber" character varying(180) NULL,
+                ADD COLUMN IF NOT EXISTS "ExpiryDate" date NULL;
+            """,
+            """
+            ALTER TABLE stock_movements
+                ADD COLUMN IF NOT EXISTS "LotNumber" character varying(120) NULL,
+                ADD COLUMN IF NOT EXISTS "SerialNumber" character varying(180) NULL,
+                ADD COLUMN IF NOT EXISTS "ExpiryDate" date NULL;
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS "IX_stock_movements_Company_Product_Lot"
+            ON stock_movements ("CompanyId", "ProductId", "LotNumber");
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS "IX_stock_movements_Company_Serial"
+            ON stock_movements ("CompanyId", "SerialNumber");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_receipts (
+                "Id" uuid NOT NULL CONSTRAINT "PK_purchase_receipts" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "FiscalYearId" uuid NOT NULL,
+                "Number" character varying(80) NOT NULL,
+                "DocumentDate" date NOT NULL,
+                "SupplierDetailAccountId" uuid NULL,
+                "WarehouseId" uuid NOT NULL,
+                "PaymentType" character varying(30) NOT NULL,
+                "Status" character varying(30) NOT NULL,
+                "Description" character varying(500) NULL,
+                "Subtotal" numeric(20,4) NOT NULL,
+                "DiscountTotal" numeric(20,4) NOT NULL,
+                "TaxTotal" numeric(20,4) NOT NULL,
+                "GrandTotal" numeric(20,4) NOT NULL,
+                "AccountingJournalEntryId" uuid NULL,
+                "ReversalJournalEntryId" uuid NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "PostedAt" timestamp with time zone NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("SupplierDetailAccountId") REFERENCES detail_accounts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ReversalJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_purchase_receipts_CompanyId_Number"
+            ON purchase_receipts ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_receipt_lines (
+                "Id" uuid NOT NULL CONSTRAINT "PK_purchase_receipt_lines" PRIMARY KEY,
+                "PurchaseReceiptId" uuid NOT NULL,
+                "ProductId" uuid NOT NULL,
+                "Quantity" numeric(20,4) NOT NULL,
+                "UnitCost" numeric(20,4) NOT NULL,
+                "DiscountAmount" numeric(20,4) NOT NULL,
+                "TaxAmount" numeric(20,4) NOT NULL,
+                "NetAmount" numeric(20,4) NOT NULL,
+                "LotNumber" character varying(120) NULL,
+                "SerialNumber" character varying(180) NULL,
+                "ExpiryDate" date NULL,
+                FOREIGN KEY ("PurchaseReceiptId") REFERENCES purchase_receipts ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS warehouse_transfers (
+                "Id" uuid NOT NULL CONSTRAINT "PK_warehouse_transfers" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "Number" character varying(80) NOT NULL,
+                "DocumentDate" date NOT NULL,
+                "FromWarehouseId" uuid NOT NULL,
+                "ToWarehouseId" uuid NOT NULL,
+                "Status" character varying(30) NOT NULL,
+                "Description" character varying(500) NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "PostedAt" timestamp with time zone NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FromWarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ToWarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_warehouse_transfers_CompanyId_Number"
+            ON warehouse_transfers ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS warehouse_transfer_lines (
+                "Id" uuid NOT NULL CONSTRAINT "PK_warehouse_transfer_lines" PRIMARY KEY,
+                "WarehouseTransferId" uuid NOT NULL,
+                "ProductId" uuid NOT NULL,
+                "Quantity" numeric(20,4) NOT NULL,
+                "LotNumber" character varying(120) NULL,
+                "SerialNumber" character varying(180) NULL,
+                "ExpiryDate" date NULL,
+                FOREIGN KEY ("WarehouseTransferId") REFERENCES warehouse_transfers ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS sales_returns (
+                "Id" uuid NOT NULL CONSTRAINT "PK_sales_returns" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "FiscalYearId" uuid NOT NULL,
+                "SalesInvoiceId" uuid NOT NULL,
+                "Number" character varying(80) NOT NULL,
+                "DocumentDate" date NOT NULL,
+                "WarehouseId" uuid NOT NULL,
+                "Status" character varying(30) NOT NULL,
+                "Reason" character varying(500) NULL,
+                "GrandTotal" numeric(20,4) NOT NULL,
+                "TaxTotal" numeric(20,4) NOT NULL,
+                "CostTotal" numeric(20,4) NOT NULL,
+                "AccountingJournalEntryId" uuid NULL,
+                "ReversalJournalEntryId" uuid NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("SalesInvoiceId") REFERENCES sales_invoices ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ReversalJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_sales_returns_CompanyId_Number"
+            ON sales_returns ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS sales_return_lines (
+                "Id" uuid NOT NULL CONSTRAINT "PK_sales_return_lines" PRIMARY KEY,
+                "SalesReturnId" uuid NOT NULL,
+                "SalesInvoiceLineId" uuid NOT NULL,
+                "ProductId" uuid NOT NULL,
+                "Quantity" numeric(20,4) NOT NULL,
+                "NetAmount" numeric(20,4) NOT NULL,
+                "TaxAmount" numeric(20,4) NOT NULL,
+                "UnitCost" numeric(20,4) NOT NULL,
+                "CostAmount" numeric(20,4) NOT NULL,
+                FOREIGN KEY ("SalesReturnId") REFERENCES sales_returns ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("SalesInvoiceLineId") REFERENCES sales_invoice_lines ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
             """
         };
 
