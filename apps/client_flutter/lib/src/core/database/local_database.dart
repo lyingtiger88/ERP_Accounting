@@ -14,7 +14,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 8;
+  static const _databaseVersion = 9;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -125,6 +125,7 @@ class LocalDatabase {
     ''');
 
     await _createAccountingSchema(db);
+    await _createSalesInventoryCacheSchema(db);
   }
 
   Future<void> _upgradeSchema(
@@ -212,6 +213,10 @@ class LocalDatabase {
       }
 
       await _createMasterDataSchema(db);
+    }
+
+    if (oldVersion < 9) {
+      await _createSalesInventoryCacheSchema(db);
     }
   }
 
@@ -359,12 +364,242 @@ class LocalDatabase {
     ''');
   }
 
+  Future<void> _createSalesInventoryCacheSchema(
+    Database db,
+  ) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_store_entities (
+        company_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(company_id, entity_type, entity_id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_cached_store_entities_type
+      ON cached_store_entities(company_id, entity_type, updated_at)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_store_drafts (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'LocalOnly',
+        server_id TEXT,
+        server_number TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_local_store_drafts_sync
+      ON local_store_drafts(company_id, entity_type, sync_status, updated_at)
+    ''');
+  }
+
   Database get _db {
     final db = _database;
     if (db == null) {
       throw StateError('LocalDatabase.initialize() must be called first.');
     }
     return db;
+  }
+
+  Future<void> replaceStoreEntities({
+    required String companyId,
+    required String entityType,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.delete(
+        'cached_store_entities',
+        where: 'company_id = ? AND entity_type = ?',
+        whereArgs: [companyId, entityType],
+      );
+
+      for (var index = 0; index < items.length; index++) {
+        final item = items[index];
+        final entityId =
+            item['id']?.toString() ??
+            item['productId']?.toString() ??
+            item['warehouseId']?.toString() ??
+            (entityType + ':' + index.toString());
+
+        await txn.insert(
+          'cached_store_entities',
+          {
+            'company_id': companyId,
+            'entity_type': entityType,
+            'entity_id': entityId,
+            'payload_json': jsonEncode(item),
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedStoreEntities({
+    required String companyId,
+    required String entityType,
+  }) async {
+    final rows = await _db.query(
+      'cached_store_entities',
+      columns: ['payload_json'],
+      where: 'company_id = ? AND entity_type = ?',
+      whereArgs: [companyId, entityType],
+      orderBy: 'updated_at DESC',
+    );
+
+    return rows
+        .map(
+          (row) => Map<String, dynamic>.from(
+            jsonDecode(row['payload_json'] as String) as Map,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<String> saveLocalStoreDraft({
+    required String companyId,
+    required String entityType,
+    required Map<String, dynamic> payload,
+    bool queueForSync = true,
+  }) async {
+    final localId = _newId();
+    final now = DateTime.now().toUtc().toIso8601String();
+    final draftPayload = <String, dynamic>{
+      ...payload,
+      'localId': localId,
+    };
+
+    await _db.transaction((txn) async {
+      await txn.insert(
+        'local_store_drafts',
+        {
+          'id': localId,
+          'company_id': companyId,
+          'entity_type': entityType,
+          'payload_json': jsonEncode(draftPayload),
+          'sync_status': queueForSync ? 'Pending' : 'LocalOnly',
+          'created_at': now,
+          'updated_at': now,
+        },
+      );
+
+      if (queueForSync) {
+        await txn.insert(
+          'sync_outbox',
+          {
+            'change_id': _newId(),
+            'company_id': companyId,
+            'entity_type': entityType,
+            'entity_id': localId,
+            'operation': 'Create',
+            'payload_json': jsonEncode(draftPayload),
+            'created_at': now,
+            'attempt_count': 0,
+          },
+        );
+      }
+    });
+
+    return localId;
+  }
+
+  Future<List<LocalStoreDraft>> getLocalStoreDrafts({
+    required String companyId,
+    String? entityType,
+  }) async {
+    final where = entityType == null
+        ? 'company_id = ?'
+        : 'company_id = ? AND entity_type = ?';
+    final args = entityType == null
+        ? <Object?>[companyId]
+        : <Object?>[companyId, entityType];
+
+    final rows = await _db.query(
+      'local_store_drafts',
+      where: where,
+      whereArgs: args,
+      orderBy: 'updated_at DESC',
+    );
+
+    return rows
+        .map(
+          (row) => LocalStoreDraft(
+            id: row['id'] as String,
+            companyId: row['company_id'] as String,
+            entityType: row['entity_type'] as String,
+            payload: Map<String, dynamic>.from(
+              jsonDecode(row['payload_json'] as String) as Map,
+            ),
+            syncStatus: row['sync_status'] as String,
+            serverId: row['server_id'] as String?,
+            serverNumber: row['server_number'] as String?,
+            lastError: row['last_error'] as String?,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> markStoreDraftSynced({
+    required int outboxId,
+    required String localId,
+    required Map<String, dynamic> serverEntity,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.update(
+        'local_store_drafts',
+        {
+          'sync_status': 'Synced',
+          'server_id': serverEntity['id']?.toString(),
+          'server_number': serverEntity['number']?.toString(),
+          'last_error': null,
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [localId],
+      );
+
+      await txn.update(
+        'sync_outbox',
+        {
+          'sent_at': now,
+          'last_error': null,
+        },
+        where: 'id = ?',
+        whereArgs: [outboxId],
+      );
+    });
+  }
+
+  Future<void> markStoreDraftSyncError({
+    required String localId,
+    required String error,
+  }) async {
+    await _db.update(
+      'local_store_drafts',
+      {
+        'sync_status': 'Pending',
+        'last_error': error,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [localId],
+    );
   }
 
   Future<void> cacheUserProfile({
@@ -2068,6 +2303,28 @@ class LocalDatabase {
         '-' +
         value.substring(20);
   }
+}
+
+class LocalStoreDraft {
+  const LocalStoreDraft({
+    required this.id,
+    required this.companyId,
+    required this.entityType,
+    required this.payload,
+    required this.syncStatus,
+    required this.serverId,
+    required this.serverNumber,
+    required this.lastError,
+  });
+
+  final String id;
+  final String companyId;
+  final String entityType;
+  final Map<String, dynamic> payload;
+  final String syncStatus;
+  final String? serverId;
+  final String? serverNumber;
+  final String? lastError;
 }
 
 class CachedAccount {
