@@ -547,6 +547,96 @@ public sealed class DetailAccountSyncTests
         Assert.Equal(0m, balanceSheet.Difference);
     }
 
+    [Fact]
+    public async Task DetailLedger_CarriesOpeningAndRunningBalance()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+
+        await service.SeedDefaultAccountsAsync(fixture.Company.Id);
+        var fiscalYear = await service.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+
+        var receivable = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "1200");
+
+        var revenue = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "4100");
+
+        var detail = await service.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "CUS-001",
+                "مشتری تست",
+                DetailAccountType.Customer,
+                null));
+
+        var firstDate = fiscalYear.StartDate.AddDays(2);
+        var secondDate = fiscalYear.StartDate.AddDays(12);
+
+        await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                firstDate,
+                "فروش نسیه اول",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        receivable.Id,
+                        null,
+                        1_000m,
+                        0m,
+                        detail.Id),
+                    new CreateJournalLineRequest(
+                        revenue.Id,
+                        null,
+                        0m,
+                        1_000m)
+                },
+                fiscalYear.Id));
+
+        await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                secondDate,
+                "فروش نسیه دوم",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        receivable.Id,
+                        null,
+                        2_000m,
+                        0m,
+                        detail.Id),
+                    new CreateJournalLineRequest(
+                        revenue.Id,
+                        null,
+                        0m,
+                        2_000m)
+                },
+                fiscalYear.Id));
+
+        var report = await service.GetDetailLedgerAsync(
+            fixture.Company.Id,
+            detail.Id,
+            secondDate,
+            secondDate);
+
+        Assert.Equal(1_000m, report.OpeningBalance);
+        Assert.Equal(2_000m, report.DebitTurnover);
+        Assert.Equal(0m, report.CreditTurnover);
+        Assert.Equal(3_000m, report.ClosingBalance);
+        Assert.Single(report.Rows);
+        Assert.Equal(3_000m, report.Rows[0].RunningBalance);
+        Assert.Equal("CUS-001", report.Rows[0].DetailCode);
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
