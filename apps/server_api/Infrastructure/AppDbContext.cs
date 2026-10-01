@@ -14,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
     public DbSet<FiscalPeriod> FiscalPeriods => Set<FiscalPeriod>();
+    public DbSet<FiscalYearClosing> FiscalYearClosings => Set<FiscalYearClosing>();
     public DbSet<DetailAccount> DetailAccounts => Set<DetailAccount>();
     public DbSet<JournalEntryFiscalYear> JournalEntryFiscalYears => Set<JournalEntryFiscalYear>();
     public DbSet<JournalLineDimension> JournalLineDimensions => Set<JournalLineDimension>();
@@ -154,6 +155,34 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .WithMany()
                 .HasForeignKey(x => x.FiscalYearId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FiscalYearClosing>(entity =>
+        {
+            entity.ToTable("fiscal_year_closings");
+            entity.HasKey(x => x.FiscalYearId);
+            entity.Property(x => x.NetResult).HasPrecision(20, 4);
+            entity.HasIndex(x => x.ClosingJournalEntryId).IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<FiscalYear>()
+                .WithOne()
+                .HasForeignKey<FiscalYearClosing>(x => x.FiscalYearId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<JournalEntry>()
+                .WithOne()
+                .HasForeignKey<FiscalYearClosing>(x => x.ClosingJournalEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.RetainedEarningsAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<DetailAccount>(entity =>
