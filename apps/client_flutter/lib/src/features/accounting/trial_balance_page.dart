@@ -270,6 +270,7 @@ class _TrialBalanceTable extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: const [
+            DataColumn(label: Text('سطح')),
             DataColumn(label: Text('کد حساب')),
             DataColumn(label: Text('نام حساب')),
             DataColumn(
@@ -293,6 +294,14 @@ class _TrialBalanceTable extends StatelessWidget {
             for (final row in rows)
               DataRow(
                 cells: [
+                  DataCell(
+                    Text(
+                      row['levelTitle'].toString() +
+                          ((row['isPostable'] as bool? ?? false)
+                              ? ''
+                              : ' • کنترلی'),
+                    ),
+                  ),
                   DataCell(Text(row['accountCode'].toString())),
                   DataCell(Text(row['accountName'].toString())),
                   DataCell(
