@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/database/local_database.dart';
 import '../accounting/report_support.dart';
 
 class StockPage extends StatefulWidget {
   const StockPage({
     super.key,
+    required this.companyId,
     required this.accessToken,
+    required this.localDatabase,
   });
 
+  final String companyId;
   final String accessToken;
+  final LocalDatabase localDatabase;
 
   @override
   State<StockPage> createState() => _StockPageState();
@@ -63,21 +68,97 @@ class _StockPageState extends State<StockPage> {
 
       if (!mounted) return;
 
+      final warehouses = results[0];
+      final products = results[1];
+      final balances = results[2];
+      final lowStock = results[3];
+      final traceBalances = results[4];
+
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'Warehouse',
+        items: warehouses,
+      );
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'StoreProduct',
+        items: products,
+      );
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'StockBalance',
+        items: balances,
+      );
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'LowStockAlert',
+        items: lowStock,
+      );
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'StockTrace',
+        items: traceBalances,
+      );
+
       setState(() {
-        _warehouses = results[0];
-        _products = results[1]
+        _warehouses = warehouses;
+        _products = products
             .where(
               (item) =>
                   item['trackInventory'] as bool? ?? false,
             )
             .toList(growable: false);
-        _balances = results[2];
-        _lowStock = results[3];
-        _traceBalances = results[4];
+        _balances = balances;
+        _lowStock = lowStock;
+        _traceBalances = traceBalances;
       });
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.message);
+
+      if (error.statusCode != null) {
+        setState(() => _error = error.message);
+      } else {
+        final warehouses =
+            await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'Warehouse',
+        );
+        final products =
+            await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StoreProduct',
+        );
+        final balances =
+            await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StockBalance',
+        );
+        final lowStock =
+            await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'LowStockAlert',
+        );
+        final trace =
+            await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StockTrace',
+        );
+
+        if (!mounted) return;
+
+        setState(() {
+          _warehouses = warehouses;
+          _products = products
+              .where(
+                (item) =>
+                    item['trackInventory'] as bool? ?? false,
+              )
+              .toList(growable: false);
+          _balances = balances;
+          _lowStock = lowStock;
+          _traceBalances = trace;
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
