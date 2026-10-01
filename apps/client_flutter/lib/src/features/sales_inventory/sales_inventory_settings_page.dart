@@ -186,7 +186,7 @@ class _SalesInventorySettingsPageState
                               ),
                               const SizedBox(height: 8),
                               const Text(
-                                'هنگام ثبت قطعی فاکتور، سند حسابداری با این حساب‌ها ساخته می‌شود.',
+                                'فروش و خرید قطعی با این نگاشت‌ها به‌صورت خودکار سند حسابداری می‌سازند.',
                               ),
                               const SizedBox(height: 18),
                               _accountField(
@@ -195,6 +195,14 @@ class _SalesInventorySettingsPageState
                                 label:
                                     'حساب‌های دریافتنی',
                                 type: 'Asset',
+                              ),
+                              const SizedBox(height: 12),
+                              _accountField(
+                                keyName:
+                                    'payablesAccountId',
+                                label:
+                                    'حساب‌های پرداختنی خرید',
+                                type: 'Liability',
                               ),
                               const SizedBox(height: 12),
                               _accountField(
@@ -228,8 +236,16 @@ class _SalesInventorySettingsPageState
                                 keyName:
                                     'salesTaxPayableAccountId',
                                 label:
-                                    'مالیات و عوارض پرداختنی',
+                                    'مالیات و عوارض فروش پرداختنی',
                                 type: 'Liability',
+                              ),
+                              const SizedBox(height: 12),
+                              _accountField(
+                                keyName:
+                                    'purchaseTaxReceivableAccountId',
+                                label:
+                                    'مالیات و عوارض خرید قابل‌دریافت',
+                                type: 'Asset',
                               ),
                               const SizedBox(height: 12),
                               SwitchListTile(
