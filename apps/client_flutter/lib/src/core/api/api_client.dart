@@ -709,6 +709,39 @@ class ApiClient {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<Map<String, dynamic>> updateStoreProduct({
+    required String bearerToken,
+    required String productId,
+    required String sku,
+    required String name,
+    String? barcode,
+    required String unitName,
+    required String kind,
+    required bool trackInventory,
+    required num salesPrice,
+    required num defaultPurchasePrice,
+    required bool isActive,
+  }) async {
+    final response = await _request(
+      'PUT',
+      '/api/sales-inventory/products/' + productId,
+      bearerToken: bearerToken,
+      body: {
+        'sku': sku,
+        'name': name,
+        'barcode': barcode,
+        'unitName': unitName,
+        'kind': kind,
+        'trackInventory': trackInventory,
+        'salesPrice': salesPrice,
+        'defaultPurchasePrice': defaultPurchasePrice,
+        'isActive': isActive,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getWarehouses({
     required String bearerToken,
   }) async {
@@ -737,6 +770,27 @@ class ApiClient {
       body: {
         'code': code,
         'name': name,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> updateWarehouse({
+    required String bearerToken,
+    required String warehouseId,
+    required String code,
+    required String name,
+    required bool isActive,
+  }) async {
+    final response = await _request(
+      'PUT',
+      '/api/sales-inventory/warehouses/' + warehouseId,
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+        'isActive': isActive,
       },
     );
 
