@@ -1071,11 +1071,11 @@ public sealed class AccountingService(AppDbContext db)
                 CreatedAt = now
             });
 
-            if (userId is Guid actorId)
+            if (userId is Guid createActorId)
             {
                 AddAuditLog(
                     companyId,
-                    actorId,
+                    createActorId,
                     "DetailAccount",
                     detail.Id,
                     "DETAIL_CREATE_SYNC",
@@ -1174,11 +1174,11 @@ public sealed class AccountingService(AppDbContext db)
             CreatedAt = state.UpdatedAt
         });
 
-        if (userId is Guid actorId)
+        if (userId is Guid updateActorId)
         {
             AddAuditLog(
                 companyId,
-                actorId,
+                updateActorId,
                 "DetailAccount",
                 detail.Id,
                 "DETAIL_UPDATE_SYNC",
@@ -1600,13 +1600,12 @@ public sealed class AccountingService(AppDbContext db)
             .ToArray();
 
         var dimensions = lineIds.Length == 0
-            ? new Dictionary<Guid, Guid?>()
+            ? new Dictionary<Guid, JournalLineDimension>()
             : await db.JournalLineDimensions
                 .AsNoTracking()
                 .Where(x => lineIds.Contains(x.JournalLineId))
                 .ToDictionaryAsync(
                     x => x.JournalLineId,
-                    x => x.DetailAccountId,
                     cancellationToken);
 
         var reversalLines = original.Lines
@@ -2032,11 +2031,13 @@ public sealed class AccountingService(AppDbContext db)
             var lines = journal.Lines
                 .Select(line =>
                 {
-                    dimensions.TryGetValue(line.Id, out var detailAccountId);
+                    dimensions.TryGetValue(line.Id, out var dimension);
 
                     return new ServerJournalLineView(
                         line.AccountId,
-                        detailAccountId,
+                        dimension?.DetailAccountId,
+                        dimension?.CostCenterId,
+                        dimension?.ProjectId,
                         line.Description,
                         line.Debit,
                         line.Credit);
