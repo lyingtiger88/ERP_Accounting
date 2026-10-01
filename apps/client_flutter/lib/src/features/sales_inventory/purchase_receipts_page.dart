@@ -35,9 +35,130 @@ class _PurchaseReceiptsPageState
   }
 
   void _reload() {
-    _future = _apiClient.getPurchaseReceipts(
-      bearerToken: widget.accessToken,
+    _future = _loadReceipts();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadReceipts() async {
+    List<Map<String, dynamic>> serverItems;
+
+    try {
+      serverItems = await _apiClient.getPurchaseReceipts(
+        bearerToken: widget.accessToken,
+      );
+
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'PurchaseReceipt',
+        items: serverItems,
+      );
+    } on ApiException catch (error) {
+      if (error.statusCode != null) rethrow;
+
+      serverItems =
+          await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'PurchaseReceipt',
+      );
+    }
+
+    final drafts = await widget.localDatabase.getLocalStoreDrafts(
+      companyId: widget.companyId,
+      entityType: 'StorePurchaseReceiptDraft',
     );
+    final products =
+        await widget.localDatabase.getCachedStoreEntities(
+      companyId: widget.companyId,
+      entityType: 'StoreProduct',
+    );
+    final warehouses =
+        await widget.localDatabase.getCachedStoreEntities(
+      companyId: widget.companyId,
+      entityType: 'Warehouse',
+    );
+
+    final productMap = {
+      for (final item in products)
+        item['id'].toString(): item,
+    };
+    final warehouseMap = {
+      for (final item in warehouses)
+        item['id'].toString(): item,
+    };
+
+    final localItems = drafts
+        .where((draft) => draft.syncStatus != 'Synced')
+        .map((draft) {
+          final payload = draft.payload;
+          final lines =
+              (payload['lines'] as List<dynamic>? ?? const [])
+                  .map((raw) {
+            final line = Map<String, dynamic>.from(raw as Map);
+            final product =
+                productMap[line['productId']?.toString()];
+            final quantity = reportNumber(line['quantity']);
+            final unitCost = reportNumber(
+              line['unitCost'] ??
+                  product?['defaultPurchasePrice'],
+            );
+            final discount =
+                reportNumber(line['discountAmount']);
+
+            return <String, dynamic>{
+              ...line,
+              'id': draft.id + ':' +
+                  line['productId'].toString(),
+              'sku': product?['sku']?.toString() ?? '?',
+              'productName':
+                  product?['name']?.toString() ?? 'کالای محلی',
+              'unitName':
+                  product?['unitName']?.toString() ?? 'عدد',
+              'unitCost': unitCost,
+              'netAmount': quantity * unitCost - discount,
+            };
+          }).toList(growable: false);
+
+          final subtotal = lines.fold<num>(
+            0,
+            (sum, line) =>
+                sum +
+                reportNumber(line['quantity']) *
+                    reportNumber(line['unitCost']),
+          );
+          final discount = lines.fold<num>(
+            0,
+            (sum, line) =>
+                sum + reportNumber(line['discountAmount']),
+          );
+          final tax = lines.fold<num>(
+            0,
+            (sum, line) =>
+                sum + reportNumber(line['taxAmount']),
+          );
+
+          final warehouse =
+              warehouseMap[payload['warehouseId']?.toString()];
+
+          return <String, dynamic>{
+            'id': draft.id,
+            'number': 'LOCAL-' +
+                draft.id.substring(0, 8).toUpperCase(),
+            'documentDate': payload['documentDate'],
+            'warehouseName':
+                warehouse?['name']?.toString() ?? 'انبار محلی',
+            'supplierName': null,
+            'status': 'LocalPending',
+            'subtotal': subtotal,
+            'discountTotal': discount,
+            'taxTotal': tax,
+            'grandTotal': subtotal - discount + tax,
+            'accountingJournalNumber': null,
+            'syncError': draft.lastError,
+            'lines': lines,
+          };
+        })
+        .toList(growable: false);
+
+    return [...localItems, ...serverItems];
   }
 
   Future<void> _create() async {
@@ -187,10 +308,29 @@ class _PurchaseReceiptsPageState
                       label: Text(
                         item['status'].toString() == 'Posted'
                             ? 'قطعی'
-                            : 'پیش‌نویس',
+                            : item['status'].toString() ==
+                                    'LocalPending'
+                                ? 'منتظر Sync'
+                                : 'پیش‌نویس',
                       ),
                     ),
                     children: [
+                      if (item['syncError'] != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            20,
+                            0,
+                            20,
+                            10,
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              'خطای Sync: ' +
+                                  item['syncError'].toString(),
+                            ),
+                          ),
+                        ),
                       for (final raw in lines)
                         Builder(
                           builder: (context) {
