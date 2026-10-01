@@ -203,7 +203,8 @@ public sealed class SalesInventoryService(
             name,
             unitName,
             request.SalesPrice,
-            request.DefaultPurchasePrice);
+            request.DefaultPurchasePrice,
+            request.MinimumStock);
 
         if (await db.StoreProducts.AnyAsync(
                 x =>
