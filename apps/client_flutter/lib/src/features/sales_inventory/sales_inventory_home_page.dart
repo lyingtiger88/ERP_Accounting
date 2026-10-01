@@ -422,7 +422,9 @@ class _SalesInventoryHomePageState
                       icon: Icons.swap_horiz,
                       onTap: () => _open(
                         WarehouseTransfersPage(
+                          companyId: widget.companyId,
                           accessToken: widget.accessToken,
+                          localDatabase: widget.localDatabase,
                         ),
                       ),
                     ),
