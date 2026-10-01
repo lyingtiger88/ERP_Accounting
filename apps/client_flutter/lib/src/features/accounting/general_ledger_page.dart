@@ -27,6 +27,10 @@ class _GeneralLedgerPageState extends State<GeneralLedgerPage> {
   List<CachedAccount> _accounts = const [];
   String? _accountId;
   List<Map<String, dynamic>> _rows = const [];
+  num _openingBalance = 0;
+  num _debitTurnover = 0;
+  num _creditTurnover = 0;
+  num _closingBalance = 0;
   bool _loading = true;
   String? _error;
 
@@ -77,15 +81,31 @@ class _GeneralLedgerPageState extends State<GeneralLedgerPage> {
     });
 
     try {
-      final rows = await _apiClient.getGeneralLedger(
+      final report = await _apiClient.getGeneralLedger(
         bearerToken: widget.accessToken,
         accountId: _accountId,
         from: period.from,
         to: period.to,
       );
 
+      final rows = (report['rows'] as List<dynamic>)
+          .map(
+            (item) => Map<String, dynamic>.from(item as Map),
+          )
+          .toList(growable: false);
+
       if (!mounted) return;
-      setState(() => _rows = rows);
+      setState(() {
+        _rows = rows;
+        _openingBalance =
+            reportNumber(report['openingBalance']);
+        _debitTurnover =
+            reportNumber(report['debitTurnover']);
+        _creditTurnover =
+            reportNumber(report['creditTurnover']);
+        _closingBalance =
+            reportNumber(report['closingBalance']);
+      });
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _error = error.message);
@@ -121,15 +141,6 @@ class _GeneralLedgerPageState extends State<GeneralLedgerPage> {
   @override
   Widget build(BuildContext context) {
     final period = _period;
-    final totalDebit = _rows.fold<num>(
-      0,
-      (sum, row) => sum + reportNumber(row['debit']),
-    );
-    final totalCredit = _rows.fold<num>(
-      0,
-      (sum, row) => sum + reportNumber(row['credit']),
-    );
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -226,16 +237,36 @@ class _GeneralLedgerPageState extends State<GeneralLedgerPage> {
                           spacing: 28,
                           runSpacing: 10,
                           children: [
+                            if (_accountId != null)
+                              Text(
+                                'مانده افتتاحیه: ' +
+                                    formatReportMoney(
+                                      _openingBalance,
+                                    ) +
+                                    ' ریال',
+                              ),
                             Text(
                               'گردش بدهکار: ' +
-                                  formatReportMoney(totalDebit) +
+                                  formatReportMoney(
+                                    _debitTurnover,
+                                  ) +
                                   ' ریال',
                             ),
                             Text(
                               'گردش بستانکار: ' +
-                                  formatReportMoney(totalCredit) +
+                                  formatReportMoney(
+                                    _creditTurnover,
+                                  ) +
                                   ' ریال',
                             ),
+                            if (_accountId != null)
+                              Text(
+                                'مانده پایان: ' +
+                                    formatReportMoney(
+                                      _closingBalance,
+                                    ) +
+                                    ' ریال',
+                              ),
                             Text(
                               'تعداد گردش‌ها: ' +
                                   _rows.length.toString(),
