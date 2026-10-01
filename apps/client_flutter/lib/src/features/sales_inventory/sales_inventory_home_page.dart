@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/sync/accounting_sync_service.dart';
 import '../accounting/report_support.dart';
 import 'products_page.dart';
 import 'purchase_receipts_page.dart';
@@ -34,6 +35,7 @@ class _SalesInventoryHomePageState
   final _apiClient = ApiClient();
 
   Future<_StoreOverview>? _future;
+  bool _syncing = false;
 
   @override
   void initState() {
@@ -222,6 +224,49 @@ class _SalesInventoryHomePageState
     );
   }
 
+  Future<void> _syncAll() async {
+    if (_syncing) return;
+
+    setState(() => _syncing = true);
+
+    try {
+      final result = await AccountingSyncService(
+        localDatabase: widget.localDatabase,
+        apiClient: _apiClient,
+      ).syncAll(
+        companyId: widget.companyId,
+        bearerToken: widget.accessToken,
+      );
+
+      await _refresh();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Sync انجام شد • ارسال: ' +
+                result.pushed.toString() +
+                ' • خطا: ' +
+                result.pushFailed.toString() +
+                ' • باقی‌مانده: ' +
+                result.remainingOutbox.toString(),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sync ناموفق بود: ' + error.toString()),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
   Future<void> _refresh() async {
     setState(() {
       _future = _loadOverview();
@@ -249,6 +294,19 @@ class _SalesInventoryHomePageState
         appBar: AppBar(
           title: const Text('فروشگاه و انبار'),
           actions: [
+            IconButton(
+              tooltip: 'همگام‌سازی فروش و انبار',
+              onPressed: _syncing ? null : _syncAll,
+              icon: _syncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.sync),
+            ),
             IconButton(
               tooltip: 'بازخوانی',
               onPressed: _refresh,
