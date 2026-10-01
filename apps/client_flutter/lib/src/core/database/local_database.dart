@@ -14,7 +14,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 6;
+  static const _databaseVersion = 7;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -193,6 +193,10 @@ class LocalDatabase {
         "ALTER TABLE local_accounting_documents ADD COLUMN reversed_by_server_id TEXT",
       );
     }
+
+    if (oldVersion < 7) {
+      await _createMasterDataSchema(db);
+    }
   }
 
   Future<void> _createMasterDataSchema(Database db) async {
@@ -214,6 +218,31 @@ class LocalDatabase {
       CREATE INDEX IF NOT EXISTS idx_cached_fiscal_years_company
       ON cached_fiscal_years(company_id, start_date, end_date)
     ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_fiscal_periods (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        fiscal_year_id TEXT NOT NULL,
+        period_number INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        is_closed INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_fiscal_periods_year_number
+      ON cached_fiscal_periods(fiscal_year_id, period_number)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_cached_fiscal_periods_company_date
+      ON cached_fiscal_periods(company_id, start_date, end_date)
+    ''');
+
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS cached_detail_accounts (
@@ -528,6 +557,70 @@ class LocalDatabase {
             startDate: row['start_date'] as String,
             endDate: row['end_date'] as String,
             isDefault: (row['is_default'] as int) == 1,
+            isClosed: (row['is_closed'] as int) == 1,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> replaceFiscalPeriods({
+    required String companyId,
+    required String fiscalYearId,
+    required List<Map<String, dynamic>> periods,
+  }) async {
+    await _db.transaction((txn) async {
+      await txn.delete(
+        'cached_fiscal_periods',
+        where: 'company_id = ? AND fiscal_year_id = ?',
+        whereArgs: [companyId, fiscalYearId],
+      );
+
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      for (final period in periods) {
+        await txn.insert(
+          'cached_fiscal_periods',
+          {
+            'id': period['id'] as String,
+            'company_id': companyId,
+            'fiscal_year_id': fiscalYearId,
+            'period_number':
+                (period['periodNumber'] as num).toInt(),
+            'name': period['name'] as String,
+            'start_date': period['startDate'] as String,
+            'end_date': period['endDate'] as String,
+            'is_closed':
+                (period['isClosed'] as bool? ?? false) ? 1 : 0,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<List<CachedFiscalPeriod>> getCachedFiscalPeriods({
+    required String companyId,
+    required String fiscalYearId,
+  }) async {
+    final rows = await _db.query(
+      'cached_fiscal_periods',
+      where: 'company_id = ? AND fiscal_year_id = ?',
+      whereArgs: [companyId, fiscalYearId],
+      orderBy: 'period_number ASC',
+    );
+
+    return rows
+        .map(
+          (row) => CachedFiscalPeriod(
+            id: row['id'] as String,
+            companyId: row['company_id'] as String,
+            fiscalYearId: row['fiscal_year_id'] as String,
+            periodNumber:
+                (row['period_number'] as num).toInt(),
+            name: row['name'] as String,
+            startDate: row['start_date'] as String,
+            endDate: row['end_date'] as String,
             isClosed: (row['is_closed'] as int) == 1,
           ),
         )
@@ -1083,6 +1176,42 @@ class LocalDatabase {
         throw ArgumentError(
           'سال مالی برای سند آماده همگام‌سازی الزامی است.',
         );
+      }
+
+      final dateOnly = _dateOnly(documentDate);
+      final periodRows = await _db.query(
+        'cached_fiscal_periods',
+        where: 'company_id = ? AND fiscal_year_id = ?',
+        whereArgs: [companyId, fiscalYearId],
+      );
+
+      if (periodRows.isNotEmpty) {
+        Map<String, Object?>? matchingPeriod;
+
+        for (final row in periodRows) {
+          final start = row['start_date'] as String;
+          final end = row['end_date'] as String;
+
+          if (dateOnly.compareTo(start) >= 0 &&
+              dateOnly.compareTo(end) <= 0) {
+            matchingPeriod = row;
+            break;
+          }
+        }
+
+        if (matchingPeriod == null) {
+          throw ArgumentError(
+            'برای تاریخ سند، دوره مالی معتبری پیدا نشد.',
+          );
+        }
+
+        if ((matchingPeriod['is_closed'] as int) == 1) {
+          throw ArgumentError(
+            'دوره مالی «' +
+                matchingPeriod['name'].toString() +
+                '» بسته است.',
+          );
+        }
       }
 
       if (effectiveLines.length < 2) {
@@ -1767,6 +1896,34 @@ class CachedFiscalYear {
   final String startDate;
   final String endDate;
   final bool isDefault;
+  final bool isClosed;
+
+  bool contains(DateTime date) {
+    final value = LocalDatabase._dateOnly(date);
+    return value.compareTo(startDate) >= 0 &&
+        value.compareTo(endDate) <= 0;
+  }
+}
+
+class CachedFiscalPeriod {
+  const CachedFiscalPeriod({
+    required this.id,
+    required this.companyId,
+    required this.fiscalYearId,
+    required this.periodNumber,
+    required this.name,
+    required this.startDate,
+    required this.endDate,
+    required this.isClosed,
+  });
+
+  final String id;
+  final String companyId;
+  final String fiscalYearId;
+  final int periodNumber;
+  final String name;
+  final String startDate;
+  final String endDate;
   final bool isClosed;
 
   bool contains(DateTime date) {
