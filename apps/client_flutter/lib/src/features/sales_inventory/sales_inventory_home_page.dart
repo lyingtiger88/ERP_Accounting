@@ -4,9 +4,12 @@ import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
 import '../accounting/report_support.dart';
 import 'products_page.dart';
+import 'purchase_receipts_page.dart';
 import 'sales_invoices_page.dart';
 import 'sales_inventory_settings_page.dart';
+import 'sales_returns_page.dart';
 import 'stock_page.dart';
+import 'warehouse_transfers_page.dart';
 import 'warehouses_page.dart';
 
 class SalesInventoryHomePage extends StatefulWidget {
@@ -56,6 +59,18 @@ class _SalesInventoryHomePageState
       _apiClient.getSalesInvoices(
         bearerToken: widget.accessToken,
       ),
+      _apiClient.getPurchaseReceipts(
+        bearerToken: widget.accessToken,
+      ),
+      _apiClient.getSalesReturns(
+        bearerToken: widget.accessToken,
+      ),
+      _apiClient.getLowStockAlerts(
+        bearerToken: widget.accessToken,
+      ),
+      _apiClient.getWarehouseTransfers(
+        bearerToken: widget.accessToken,
+      ),
     ]);
 
     final products =
@@ -66,6 +81,14 @@ class _SalesInventoryHomePageState
         results[2] as List<Map<String, dynamic>>;
     final invoices =
         results[3] as List<Map<String, dynamic>>;
+    final purchases =
+        results[4] as List<Map<String, dynamic>>;
+    final returns =
+        results[5] as List<Map<String, dynamic>>;
+    final lowStock =
+        results[6] as List<Map<String, dynamic>>;
+    final transfers =
+        results[7] as List<Map<String, dynamic>>;
 
     final inventoryValue = stock.fold<num>(
       0,
@@ -91,6 +114,23 @@ class _SalesInventoryHomePageState
         )
         .length;
 
+    final postedPurchases = purchases
+        .where(
+          (receipt) =>
+              receipt['status'].toString() == 'Posted',
+        )
+        .fold<num>(
+          0,
+          (sum, receipt) =>
+              sum + reportNumber(receipt['grandTotal']),
+        );
+
+    final returnedSales = returns.fold<num>(
+      0,
+      (sum, item) =>
+          sum + reportNumber(item['grandTotal']),
+    );
+
     return _StoreOverview(
       productCount: products
           .where(
@@ -108,6 +148,10 @@ class _SalesInventoryHomePageState
       invoiceCount: invoices.length,
       draftInvoices: draftInvoices,
       postedSales: postedSales,
+      postedPurchases: postedPurchases,
+      returnedSales: returnedSales,
+      lowStockCount: lowStock.length,
+      transferCount: transfers.length,
     );
   }
 
@@ -184,7 +228,7 @@ class _SalesInventoryHomePageState
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'این ماژول مستقل از حسابداری قابل استفاده است؛ ثبت قطعی فروش می‌تواند به‌صورت خودکار سند حسابداری و بهای تمام‌شده ایجاد کند.',
+                  'این ماژول مستقل از حسابداری قابل استفاده است؛ فروش، خرید و برگشت قطعی می‌توانند سند حسابداری خودکار بسازند و تمام گردش‌های انبار به‌صورت یکپارچه نگه‌داری می‌شوند.',
                 ),
                 const SizedBox(height: 20),
                 Wrap(
@@ -226,6 +270,27 @@ class _SalesInventoryHomePageState
                           ' ریال',
                       icon: Icons.point_of_sale_outlined,
                     ),
+                    _MetricCard(
+                      title: 'خرید قطعی',
+                      value: formatReportMoney(
+                            overview.postedPurchases,
+                          ) +
+                          ' ریال',
+                      icon: Icons.shopping_cart_checkout_outlined,
+                    ),
+                    _MetricCard(
+                      title: 'برگشت فروش',
+                      value: formatReportMoney(
+                            overview.returnedSales,
+                          ) +
+                          ' ریال',
+                      icon: Icons.assignment_return_outlined,
+                    ),
+                    _MetricCard(
+                      title: 'هشدار کمبود',
+                      value: overview.lowStockCount.toString(),
+                      icon: Icons.warning_amber_outlined,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -248,6 +313,41 @@ class _SalesInventoryHomePageState
                       ),
                     ),
                     _ModuleCard(
+                      title: 'خرید و رسید انبار',
+                      subtitle:
+                          'خرید نقدی/نسیه، ورود موجودی و سند حسابداری',
+                      icon: Icons.shopping_cart_checkout_outlined,
+                      onTap: () => _open(
+                        PurchaseReceiptsPage(
+                          companyId: widget.companyId,
+                          accessToken: widget.accessToken,
+                          localDatabase: widget.localDatabase,
+                        ),
+                      ),
+                    ),
+                    _ModuleCard(
+                      title: 'برگشت از فروش',
+                      subtitle:
+                          'برگشت جزئی/کامل، ورود کالا و سند معکوس عملیاتی',
+                      icon: Icons.assignment_return_outlined,
+                      onTap: () => _open(
+                        SalesReturnsPage(
+                          accessToken: widget.accessToken,
+                        ),
+                      ),
+                    ),
+                    _ModuleCard(
+                      title: 'انتقال بین انبارها',
+                      subtitle:
+                          'جابجایی کالا با حفظ بهای لات و سریال',
+                      icon: Icons.swap_horiz,
+                      onTap: () => _open(
+                        WarehouseTransfersPage(
+                          accessToken: widget.accessToken,
+                        ),
+                      ),
+                    ),
+                    _ModuleCard(
                       title: 'کالاها و خدمات',
                       subtitle:
                           'کد کالا، بارکد، قیمت و نوع موجودی',
@@ -262,7 +362,7 @@ class _SalesInventoryHomePageState
                     _ModuleCard(
                       title: 'موجودی انبار',
                       subtitle:
-                          'موجودی، میانگین بها و تعدیل انبار',
+                          'موجودی، هشدار کمبود، لات/سریال و تعدیل',
                       icon: Icons.inventory_outlined,
                       onTap: () => _open(
                         StockPage(
@@ -286,7 +386,7 @@ class _SalesInventoryHomePageState
                     _ModuleCard(
                       title: 'اتصال به حسابداری',
                       subtitle:
-                          'نگاشت فروش، موجودی، بهای تمام‌شده و مالیات',
+                          'نگاشت فروش، خرید، موجودی، مالیات و بهای تمام‌شده',
                       icon: Icons.link_outlined,
                       onTap: () => _open(
                         SalesInventorySettingsPage(
@@ -328,6 +428,18 @@ class _SalesInventoryHomePageState
                           'خروج کالا → بهای تمام‌شده + کاهش موجودی',
                         ),
                         const _IntegrationRow(
+                          'خرید نسیه → موجودی + مالیات خرید + پرداختنی تامین‌کننده',
+                        ),
+                        const _IntegrationRow(
+                          'برگشت فروش → برگشت درآمد/مالیات + ورود موجودی + برگشت بهای تمام‌شده',
+                        ),
+                        const _IntegrationRow(
+                          'انتقال انبار → جابجایی موجودی بدون اثر مالی',
+                        ),
+                        const _IntegrationRow(
+                          'لات / سریال / انقضا → رهگیری در خرید، فروش، انتقال و موجودی',
+                        ),
+                        const _IntegrationRow(
                           'ثبت قطعی → سند حسابداری لینک‌شده',
                         ),
                       ],
@@ -351,6 +463,10 @@ class _StoreOverview {
     required this.invoiceCount,
     required this.draftInvoices,
     required this.postedSales,
+    required this.postedPurchases,
+    required this.returnedSales,
+    required this.lowStockCount,
+    required this.transferCount,
   });
 
   final int productCount;
@@ -359,6 +475,10 @@ class _StoreOverview {
   final int invoiceCount;
   final int draftInvoices;
   final num postedSales;
+  final num postedPurchases;
+  final num returnedSales;
+  final int lowStockCount;
+  final int transferCount;
 }
 
 class _MetricCard extends StatelessWidget {
