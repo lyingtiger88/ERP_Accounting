@@ -1395,6 +1395,42 @@ public sealed class AccountingService(AppDbContext db)
         return entry;
     }
 
+    internal async Task<JournalEntry> PostJournalWithinCurrentTransactionAsync(
+        Guid companyId,
+        Guid userId,
+        CreateJournalRequest request,
+        string auditAction,
+        CancellationToken cancellationToken = default)
+    {
+        if (db.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException(
+                "An active database transaction is required.");
+        }
+
+        var entry = await CreatePostedJournalCoreAsync(
+            companyId,
+            userId,
+            request,
+            cancellationToken);
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "JournalEntry",
+            entry.Id,
+            auditAction,
+            null,
+            new
+            {
+                entry.Number,
+                entry.DocumentDate
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        return entry;
+    }
+
     public async Task<SyncJournalResponse> SyncJournalAsync(
         Guid companyId,
         Guid userId,
