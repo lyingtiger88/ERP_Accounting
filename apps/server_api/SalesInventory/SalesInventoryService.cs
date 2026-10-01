@@ -1034,6 +1034,1043 @@ public sealed class SalesInventoryService(
             invoice.CostTotal);
     }
 
+    public async Task<ProductView?> FindProductAsync(
+        Guid companyId,
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = code.Trim();
+
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        var product = await db.StoreProducts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.IsActive &&
+                    (x.Sku == normalized || x.Barcode == normalized),
+                cancellationToken);
+
+        return product is null ? null : ToProductView(product);
+    }
+
+    public async Task<IReadOnlyList<LowStockAlertView>> GetLowStockAlertsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var balances = await GetStockBalancesAsync(
+            companyId,
+            null,
+            cancellationToken);
+
+        return balances
+            .Where(x => x.IsLowStock)
+            .OrderByDescending(x => x.Shortage())
+            .Select(x => new LowStockAlertView(
+                x.ProductId,
+                x.Sku,
+                x.ProductName,
+                x.WarehouseId,
+                x.WarehouseName,
+                x.Quantity,
+                x.MinimumStock,
+                Math.Max(0, x.MinimumStock - x.Quantity)))
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyList<StockTraceBalanceView>> GetStockTraceBalancesAsync(
+        Guid companyId,
+        Guid? warehouseId = null,
+        Guid? productId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = db.StockMovements
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId);
+
+        if (warehouseId is Guid selectedWarehouse)
+        {
+            query = query.Where(x => x.WarehouseId == selectedWarehouse);
+        }
+
+        if (productId is Guid selectedProduct)
+        {
+            query = query.Where(x => x.ProductId == selectedProduct);
+        }
+
+        var movements = await query.ToArrayAsync(cancellationToken);
+
+        var warehouseIds = movements.Select(x => x.WarehouseId).Distinct().ToArray();
+        var productIds = movements.Select(x => x.ProductId).Distinct().ToArray();
+
+        var warehouses = warehouseIds.Length == 0
+            ? new Dictionary<Guid, Warehouse>()
+            : await db.Warehouses
+                .AsNoTracking()
+                .Where(x => warehouseIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var products = productIds.Length == 0
+            ? new Dictionary<Guid, StoreProduct>()
+            : await db.StoreProducts
+                .AsNoTracking()
+                .Where(x => productIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        return movements
+            .GroupBy(x => new
+            {
+                x.WarehouseId,
+                x.ProductId,
+                x.LotNumber,
+                x.SerialNumber,
+                x.ExpiryDate
+            })
+            .Select(group =>
+            {
+                var quantity = group.Sum(x => x.Quantity);
+                var value = group.Sum(x => x.Quantity * x.UnitCost);
+                var averageCost = quantity == 0 ? 0 : value / quantity;
+
+                products.TryGetValue(group.Key.ProductId, out var product);
+                warehouses.TryGetValue(group.Key.WarehouseId, out var warehouse);
+
+                return new StockTraceBalanceView(
+                    group.Key.ProductId,
+                    product?.Sku ?? "?",
+                    product?.Name ?? "کالای نامشخص",
+                    group.Key.WarehouseId,
+                    warehouse?.Name ?? "انبار نامشخص",
+                    group.Key.LotNumber,
+                    group.Key.SerialNumber,
+                    group.Key.ExpiryDate,
+                    quantity,
+                    averageCost);
+            })
+            .Where(x => x.Quantity != 0)
+            .OrderBy(x => x.Sku)
+            .ThenBy(x => x.ExpiryDate)
+            .ToArray();
+    }
+
+    public async Task<PurchaseReceiptView> CreatePurchaseReceiptAsync(
+        Guid companyId,
+        Guid userId,
+        CreatePurchaseReceiptRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Lines.Count == 0)
+        {
+            throw new ArgumentException(
+                "Purchase receipt requires at least one line.");
+        }
+
+        var fiscalYear = await db.FiscalYears
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == request.FiscalYearId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+
+        var warehouseExists = await db.Warehouses.AnyAsync(
+            x =>
+                x.Id == request.WarehouseId &&
+                x.CompanyId == companyId &&
+                x.IsActive,
+            cancellationToken);
+
+        if (!warehouseExists)
+        {
+            throw new ArgumentException(
+                "Warehouse does not exist or is inactive.");
+        }
+
+        if (request.PaymentType == PurchasePaymentType.Credit &&
+            request.SupplierDetailAccountId is null)
+        {
+            throw new ArgumentException(
+                "Supplier is required for a credit purchase.");
+        }
+
+        if (request.SupplierDetailAccountId is Guid supplierId)
+        {
+            var supplierExists = await db.DetailAccounts.AnyAsync(
+                x =>
+                    x.Id == supplierId &&
+                    x.CompanyId == companyId &&
+                    x.IsActive,
+                cancellationToken);
+
+            if (!supplierExists)
+            {
+                throw new ArgumentException(
+                    "Supplier detail account does not exist or is inactive.");
+            }
+        }
+
+        var productIds = request.Lines
+            .Select(x => x.ProductId)
+            .Distinct()
+            .ToArray();
+
+        var products = await db.StoreProducts
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                x.TrackInventory &&
+                productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        if (products.Count != productIds.Length)
+        {
+            throw new ArgumentException(
+                "Purchase receipt only accepts active inventory-tracked products.");
+        }
+
+        var receipt = new PurchaseReceipt
+        {
+            CompanyId = companyId,
+            FiscalYearId = fiscalYear.Id,
+            Number = await GeneratePurchaseNumberAsync(
+                companyId,
+                fiscalYear.PersianYear,
+                fiscalYear.Id,
+                cancellationToken),
+            DocumentDate = request.DocumentDate,
+            SupplierDetailAccountId = request.SupplierDetailAccountId,
+            WarehouseId = request.WarehouseId,
+            PaymentType = request.PaymentType,
+            Description = NullIfBlank(request.Description),
+            CreatedByUserId = userId
+        };
+
+        foreach (var requestedLine in request.Lines)
+        {
+            if (requestedLine.Quantity <= 0)
+            {
+                throw new ArgumentException(
+                    "Purchase quantity must be greater than zero.");
+            }
+
+            var product = products[requestedLine.ProductId];
+            ValidateTraceFields(
+                product,
+                requestedLine.Quantity,
+                requestedLine.LotNumber,
+                requestedLine.SerialNumber);
+
+            var unitCost = requestedLine.UnitCost ??
+                product.DefaultPurchasePrice;
+
+            if (unitCost < 0 ||
+                requestedLine.DiscountAmount < 0 ||
+                requestedLine.TaxAmount < 0)
+            {
+                throw new ArgumentException(
+                    "Purchase amounts cannot be negative.");
+            }
+
+            var gross = requestedLine.Quantity * unitCost;
+
+            if (requestedLine.DiscountAmount > gross)
+            {
+                throw new ArgumentException(
+                    "Purchase discount cannot exceed gross line amount.");
+            }
+
+            var net = gross - requestedLine.DiscountAmount;
+
+            receipt.Lines.Add(new PurchaseReceiptLine
+            {
+                PurchaseReceiptId = receipt.Id,
+                ProductId = product.Id,
+                Quantity = requestedLine.Quantity,
+                UnitCost = unitCost,
+                DiscountAmount = requestedLine.DiscountAmount,
+                TaxAmount = requestedLine.TaxAmount,
+                NetAmount = net,
+                LotNumber = NullIfBlank(requestedLine.LotNumber),
+                SerialNumber = NullIfBlank(requestedLine.SerialNumber),
+                ExpiryDate = requestedLine.ExpiryDate
+            });
+
+            receipt.Subtotal += gross;
+            receipt.DiscountTotal += requestedLine.DiscountAmount;
+            receipt.TaxTotal += requestedLine.TaxAmount;
+        }
+
+        receipt.GrandTotal =
+            receipt.Subtotal -
+            receipt.DiscountTotal +
+            receipt.TaxTotal;
+
+        if (receipt.GrandTotal <= 0)
+        {
+            throw new ArgumentException(
+                "Purchase grand total must be greater than zero.");
+        }
+
+        db.PurchaseReceipts.Add(receipt);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return await BuildPurchaseReceiptViewAsync(
+            receipt.Id,
+            companyId,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PurchaseReceiptView>> GetPurchaseReceiptsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = await db.PurchaseReceipts
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderByDescending(x => x.DocumentDate)
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken);
+
+        var result = new List<PurchaseReceiptView>(ids.Length);
+
+        foreach (var id in ids)
+        {
+            result.Add(await BuildPurchaseReceiptViewAsync(
+                id,
+                companyId,
+                cancellationToken));
+        }
+
+        return result;
+    }
+
+    public async Task<PostPurchaseReceiptResponse> PostPurchaseReceiptAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var receipt = await db.PurchaseReceipts
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == receiptId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Purchase receipt does not exist in this company.");
+
+        if (receipt.Status != PurchaseReceiptStatus.Draft)
+        {
+            throw new InvalidOperationException(
+                "Only draft purchase receipts can be posted.");
+        }
+
+        var settings = await GetOrCreateSettingsEntityAsync(
+            companyId,
+            cancellationToken);
+
+        if (settings.PayablesAccountId is not Guid payablesAccountId ||
+            settings.PurchaseTaxReceivableAccountId is not Guid purchaseTaxAccountId)
+        {
+            throw new InvalidOperationException(
+                "Purchase accounting mappings are incomplete.");
+        }
+
+        var products = await db.StoreProducts
+            .Where(x =>
+                x.CompanyId == companyId &&
+                receipt.Lines.Select(l => l.ProductId).Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        foreach (var line in receipt.Lines)
+        {
+            var product = products[line.ProductId];
+
+            ValidateTraceFields(
+                product,
+                line.Quantity,
+                line.LotNumber,
+                line.SerialNumber);
+
+            if (product.TrackingMode == InventoryTrackingMode.Serial &&
+                line.SerialNumber is not null)
+            {
+                var existingSerialQty = await db.StockMovements
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.CompanyId == companyId &&
+                        x.ProductId == product.Id &&
+                        x.SerialNumber == line.SerialNumber)
+                    .SumAsync(x => x.Quantity, cancellationToken);
+
+                if (existingSerialQty > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Serial '{line.SerialNumber}' already exists in stock.");
+                }
+            }
+
+            db.StockMovements.Add(new StockMovement
+            {
+                CompanyId = companyId,
+                WarehouseId = receipt.WarehouseId,
+                ProductId = product.Id,
+                DocumentDate = receipt.DocumentDate,
+                Type = StockMovementType.PurchaseReceipt,
+                Quantity = line.Quantity,
+                UnitCost = line.NetAmount / line.Quantity,
+                LotNumber = line.LotNumber,
+                SerialNumber = line.SerialNumber,
+                ExpiryDate = line.ExpiryDate,
+                ReferenceType = "PurchaseReceipt",
+                ReferenceId = receipt.Id,
+                Description = $"ورود خرید {receipt.Number}",
+                CreatedByUserId = userId
+            });
+
+            product.DefaultPurchasePrice =
+                line.NetAmount / line.Quantity;
+        }
+
+        var inventoryNet = receipt.Subtotal - receipt.DiscountTotal;
+        var settlementAccount =
+            receipt.PaymentType == PurchasePaymentType.Cash
+                ? settings.CashAccountId
+                : payablesAccountId;
+
+        var journalLines = new List<CreateJournalLineRequest>
+        {
+            new(
+                settings.InventoryAccountId,
+                $"خرید کالا {receipt.Number}",
+                inventoryNet,
+                0)
+        };
+
+        if (receipt.TaxTotal > 0)
+        {
+            journalLines.Add(new CreateJournalLineRequest(
+                purchaseTaxAccountId,
+                $"مالیات خرید {receipt.Number}",
+                receipt.TaxTotal,
+                0));
+        }
+
+        journalLines.Add(new CreateJournalLineRequest(
+            settlementAccount,
+            $"تسویه خرید {receipt.Number}",
+            0,
+            receipt.GrandTotal,
+            receipt.PaymentType == PurchasePaymentType.Credit
+                ? receipt.SupplierDetailAccountId
+                : null));
+
+        var journal = await accountingService
+            .PostJournalWithinCurrentTransactionAsync(
+                companyId,
+                userId,
+                new CreateJournalRequest(
+                    null,
+                    receipt.DocumentDate,
+                    $"ثبت حسابداری خرید {receipt.Number}",
+                    journalLines,
+                    receipt.FiscalYearId),
+                "POST_PURCHASE_RECEIPT",
+                cancellationToken);
+
+        receipt.AccountingJournalEntryId = journal.Id;
+        receipt.Status = PurchaseReceiptStatus.Posted;
+        receipt.PostedAt = DateTimeOffset.UtcNow;
+
+        db.AccountingAuditLogs.Add(new AccountingAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EntityType = "PurchaseReceipt",
+            EntityId = receipt.Id,
+            Action = "PURCHASE_RECEIPT_POST",
+            PayloadJson =
+                $"{{\"receiptNumber\":\"{receipt.Number}\",\"journalNumber\":\"{journal.Number}\"}}"
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new PostPurchaseReceiptResponse(
+            receipt.Id,
+            receipt.Number,
+            journal.Id,
+            journal.Number,
+            receipt.GrandTotal);
+    }
+
+    public async Task<WarehouseTransferView> CreateWarehouseTransferAsync(
+        Guid companyId,
+        Guid userId,
+        CreateWarehouseTransferRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.FromWarehouseId == request.ToWarehouseId)
+        {
+            throw new ArgumentException(
+                "Source and destination warehouses must be different.");
+        }
+
+        if (request.Lines.Count == 0)
+        {
+            throw new ArgumentException(
+                "Warehouse transfer requires at least one line.");
+        }
+
+        var warehouseIds = new[]
+        {
+            request.FromWarehouseId,
+            request.ToWarehouseId
+        };
+
+        var warehouses = await db.Warehouses
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                warehouseIds.Contains(x.Id))
+            .ToArrayAsync(cancellationToken);
+
+        if (warehouses.Length != 2)
+        {
+            throw new ArgumentException(
+                "Source or destination warehouse is missing or inactive.");
+        }
+
+        var productIds = request.Lines
+            .Select(x => x.ProductId)
+            .Distinct()
+            .ToArray();
+
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                x.TrackInventory &&
+                productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        if (products.Count != productIds.Length)
+        {
+            throw new ArgumentException(
+                "Transfer contains invalid inventory products.");
+        }
+
+        var transfer = new WarehouseTransfer
+        {
+            CompanyId = companyId,
+            Number = await GenerateTransferNumberAsync(
+                companyId,
+                cancellationToken),
+            DocumentDate = request.DocumentDate,
+            FromWarehouseId = request.FromWarehouseId,
+            ToWarehouseId = request.ToWarehouseId,
+            Description = NullIfBlank(request.Description),
+            CreatedByUserId = userId
+        };
+
+        foreach (var requestedLine in request.Lines)
+        {
+            if (requestedLine.Quantity <= 0)
+            {
+                throw new ArgumentException(
+                    "Transfer quantity must be greater than zero.");
+            }
+
+            var product = products[requestedLine.ProductId];
+            ValidateTraceFields(
+                product,
+                requestedLine.Quantity,
+                requestedLine.LotNumber,
+                requestedLine.SerialNumber);
+
+            transfer.Lines.Add(new WarehouseTransferLine
+            {
+                WarehouseTransferId = transfer.Id,
+                ProductId = product.Id,
+                Quantity = requestedLine.Quantity,
+                LotNumber = NullIfBlank(requestedLine.LotNumber),
+                SerialNumber = NullIfBlank(requestedLine.SerialNumber),
+                ExpiryDate = requestedLine.ExpiryDate
+            });
+        }
+
+        db.WarehouseTransfers.Add(transfer);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return await BuildTransferViewAsync(
+            transfer.Id,
+            companyId,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<WarehouseTransferView>> GetWarehouseTransfersAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = await db.WarehouseTransfers
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderByDescending(x => x.DocumentDate)
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken);
+
+        var result = new List<WarehouseTransferView>(ids.Length);
+
+        foreach (var id in ids)
+        {
+            result.Add(await BuildTransferViewAsync(
+                id,
+                companyId,
+                cancellationToken));
+        }
+
+        return result;
+    }
+
+    public async Task<WarehouseTransferView> PostWarehouseTransferAsync(
+        Guid companyId,
+        Guid userId,
+        Guid transferId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var transfer = await db.WarehouseTransfers
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == transferId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Warehouse transfer does not exist in this company.");
+
+        if (transfer.Status != WarehouseTransferStatus.Draft)
+        {
+            throw new InvalidOperationException(
+                "Only draft warehouse transfers can be posted.");
+        }
+
+        await EnsureOperationalDateOpenAsync(
+            companyId,
+            transfer.DocumentDate,
+            cancellationToken);
+
+        var settings = await GetOrCreateSettingsEntityAsync(
+            companyId,
+            cancellationToken);
+
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                transfer.Lines.Select(l => l.ProductId).Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        foreach (var line in transfer.Lines)
+        {
+            var product = products[line.ProductId];
+
+            var traceMovements = await GetTraceMovementsAsync(
+                companyId,
+                transfer.FromWarehouseId,
+                product.Id,
+                line.LotNumber,
+                line.SerialNumber,
+                line.ExpiryDate,
+                cancellationToken);
+
+            var available = traceMovements.Sum(x => x.Quantity);
+            var value = traceMovements.Sum(x => x.Quantity * x.UnitCost);
+            var averageCost = available == 0
+                ? product.DefaultPurchasePrice
+                : value / available;
+
+            if (settings.PreventNegativeStock &&
+                available < line.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Insufficient stock for transfer of '{product.Name}'.");
+            }
+
+            db.StockMovements.AddRange(
+                new StockMovement
+                {
+                    CompanyId = companyId,
+                    WarehouseId = transfer.FromWarehouseId,
+                    ProductId = product.Id,
+                    DocumentDate = transfer.DocumentDate,
+                    Type = StockMovementType.TransferOut,
+                    Quantity = -line.Quantity,
+                    UnitCost = averageCost,
+                    LotNumber = line.LotNumber,
+                    SerialNumber = line.SerialNumber,
+                    ExpiryDate = line.ExpiryDate,
+                    ReferenceType = "WarehouseTransfer",
+                    ReferenceId = transfer.Id,
+                    Description = $"خروج انتقال {transfer.Number}",
+                    CreatedByUserId = userId
+                },
+                new StockMovement
+                {
+                    CompanyId = companyId,
+                    WarehouseId = transfer.ToWarehouseId,
+                    ProductId = product.Id,
+                    DocumentDate = transfer.DocumentDate,
+                    Type = StockMovementType.TransferIn,
+                    Quantity = line.Quantity,
+                    UnitCost = averageCost,
+                    LotNumber = line.LotNumber,
+                    SerialNumber = line.SerialNumber,
+                    ExpiryDate = line.ExpiryDate,
+                    ReferenceType = "WarehouseTransfer",
+                    ReferenceId = transfer.Id,
+                    Description = $"ورود انتقال {transfer.Number}",
+                    CreatedByUserId = userId
+                });
+        }
+
+        transfer.Status = WarehouseTransferStatus.Posted;
+        transfer.PostedAt = DateTimeOffset.UtcNow;
+
+        db.AccountingAuditLogs.Add(new AccountingAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EntityType = "WarehouseTransfer",
+            EntityId = transfer.Id,
+            Action = "WAREHOUSE_TRANSFER_POST",
+            PayloadJson = $"{{\"transferNumber\":\"{transfer.Number}\"}}"
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return await BuildTransferViewAsync(
+            transfer.Id,
+            companyId,
+            cancellationToken);
+    }
+
+    public async Task<SalesReturnView> CreateSalesReturnAsync(
+        Guid companyId,
+        Guid userId,
+        Guid invoiceId,
+        CreateSalesReturnRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Lines.Count == 0)
+        {
+            throw new ArgumentException(
+                "Sales return requires at least one line.");
+        }
+
+        var reason = request.Reason.Trim();
+
+        if (reason.Length == 0)
+        {
+            throw new ArgumentException(
+                "Sales return reason is required.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var invoice = await db.SalesInvoices
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == invoiceId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Sales invoice does not exist in this company.");
+
+        if (invoice.Status is not SalesInvoiceStatus.Posted and
+            not SalesInvoiceStatus.Reversed)
+        {
+            throw new InvalidOperationException(
+                "Only posted sales invoices can be returned.");
+        }
+
+        var requestedLineIds = request.Lines
+            .Select(x => x.SalesInvoiceLineId)
+            .Distinct()
+            .ToArray();
+
+        var originalLines = invoice.Lines
+            .Where(x => requestedLineIds.Contains(x.Id))
+            .ToDictionary(x => x.Id);
+
+        if (originalLines.Count != requestedLineIds.Length)
+        {
+            throw new ArgumentException(
+                "Return contains lines that do not belong to the sales invoice.");
+        }
+
+        var previousReturned = await db.SalesReturnLines
+            .AsNoTracking()
+            .Where(x =>
+                requestedLineIds.Contains(x.SalesInvoiceLineId) &&
+                db.SalesReturns.Any(r =>
+                    r.Id == x.SalesReturnId &&
+                    r.CompanyId == companyId &&
+                    r.Status == SalesReturnStatus.Posted))
+            .GroupBy(x => x.SalesInvoiceLineId)
+            .Select(group => new
+            {
+                LineId = group.Key,
+                Quantity = group.Sum(x => x.Quantity)
+            })
+            .ToDictionaryAsync(x => x.LineId, x => x.Quantity, cancellationToken);
+
+        var salesReturn = new SalesReturn
+        {
+            CompanyId = companyId,
+            FiscalYearId = invoice.FiscalYearId,
+            SalesInvoiceId = invoice.Id,
+            Number = await GenerateReturnNumberAsync(
+                companyId,
+                invoice.FiscalYearId,
+                cancellationToken),
+            DocumentDate = request.DocumentDate,
+            WarehouseId = invoice.WarehouseId,
+            Reason = reason,
+            CreatedByUserId = userId
+        };
+
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                invoice.Lines.Select(l => l.ProductId).Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        foreach (var requested in request.Lines)
+        {
+            if (requested.Quantity <= 0)
+            {
+                throw new ArgumentException(
+                    "Return quantity must be greater than zero.");
+            }
+
+            var original = originalLines[requested.SalesInvoiceLineId];
+            var alreadyReturned = previousReturned.GetValueOrDefault(original.Id);
+
+            if (alreadyReturned + requested.Quantity > original.Quantity)
+            {
+                throw new InvalidOperationException(
+                    "Returned quantity cannot exceed the remaining invoice quantity.");
+            }
+
+            var ratio = requested.Quantity / original.Quantity;
+            var netAmount = original.NetAmount * ratio;
+            var taxAmount = original.TaxAmount * ratio;
+            var costAmount = original.CostAmount * ratio;
+
+            salesReturn.Lines.Add(new SalesReturnLine
+            {
+                SalesReturnId = salesReturn.Id,
+                SalesInvoiceLineId = original.Id,
+                ProductId = original.ProductId,
+                Quantity = requested.Quantity,
+                NetAmount = netAmount,
+                TaxAmount = taxAmount,
+                UnitCost = original.UnitCost,
+                CostAmount = costAmount
+            });
+
+            salesReturn.GrandTotal += netAmount + taxAmount;
+            salesReturn.TaxTotal += taxAmount;
+            salesReturn.CostTotal += costAmount;
+
+            var product = products[original.ProductId];
+
+            if (product.TrackInventory)
+            {
+                db.StockMovements.Add(new StockMovement
+                {
+                    CompanyId = companyId,
+                    WarehouseId = invoice.WarehouseId,
+                    ProductId = original.ProductId,
+                    DocumentDate = request.DocumentDate,
+                    Type = StockMovementType.SaleReturn,
+                    Quantity = requested.Quantity,
+                    UnitCost = original.UnitCost,
+                    LotNumber = original.LotNumber,
+                    SerialNumber = original.SerialNumber,
+                    ExpiryDate = original.ExpiryDate,
+                    ReferenceType = "SalesReturn",
+                    ReferenceId = salesReturn.Id,
+                    Description = $"برگشت از فروش {invoice.Number}",
+                    CreatedByUserId = userId
+                });
+            }
+        }
+
+        var settings = await GetOrCreateSettingsEntityAsync(
+            companyId,
+            cancellationToken);
+
+        var settlementAccount =
+            invoice.PaymentType == SalesPaymentType.Cash
+                ? settings.CashAccountId
+                : settings.ReceivablesAccountId;
+
+        var journalLines = new List<CreateJournalLineRequest>();
+
+        var netSales = salesReturn.GrandTotal - salesReturn.TaxTotal;
+
+        if (netSales > 0)
+        {
+            journalLines.Add(new CreateJournalLineRequest(
+                settings.SalesRevenueAccountId,
+                $"برگشت درآمد فروش {salesReturn.Number}",
+                netSales,
+                0));
+        }
+
+        if (salesReturn.TaxTotal > 0)
+        {
+            journalLines.Add(new CreateJournalLineRequest(
+                settings.SalesTaxPayableAccountId,
+                $"برگشت مالیات فروش {salesReturn.Number}",
+                salesReturn.TaxTotal,
+                0));
+        }
+
+        journalLines.Add(new CreateJournalLineRequest(
+            settlementAccount,
+            $"تسویه برگشت از فروش {salesReturn.Number}",
+            0,
+            salesReturn.GrandTotal,
+            invoice.PaymentType == SalesPaymentType.Credit
+                ? invoice.CustomerDetailAccountId
+                : null));
+
+        if (salesReturn.CostTotal > 0)
+        {
+            journalLines.Add(new CreateJournalLineRequest(
+                settings.InventoryAccountId,
+                $"برگشت موجودی فروش {salesReturn.Number}",
+                salesReturn.CostTotal,
+                0));
+
+            journalLines.Add(new CreateJournalLineRequest(
+                settings.CostOfGoodsSoldAccountId,
+                $"برگشت بهای تمام‌شده {salesReturn.Number}",
+                0,
+                salesReturn.CostTotal));
+        }
+
+        var journal = await accountingService
+            .PostJournalWithinCurrentTransactionAsync(
+                companyId,
+                userId,
+                new CreateJournalRequest(
+                    null,
+                    request.DocumentDate,
+                    $"ثبت حسابداری برگشت از فروش {salesReturn.Number}",
+                    journalLines,
+                    invoice.FiscalYearId),
+                "POST_SALES_RETURN",
+                cancellationToken);
+
+        salesReturn.AccountingJournalEntryId = journal.Id;
+        db.SalesReturns.Add(salesReturn);
+
+        var allInvoiceLineIds = invoice.Lines.Select(x => x.Id).ToArray();
+        var allPreviousReturns = await db.SalesReturnLines
+            .AsNoTracking()
+            .Where(x =>
+                allInvoiceLineIds.Contains(x.SalesInvoiceLineId) &&
+                db.SalesReturns.Any(r =>
+                    r.Id == x.SalesReturnId &&
+                    r.CompanyId == companyId &&
+                    r.Status == SalesReturnStatus.Posted))
+            .GroupBy(x => x.SalesInvoiceLineId)
+            .Select(group => new
+            {
+                LineId = group.Key,
+                Quantity = group.Sum(x => x.Quantity)
+            })
+            .ToDictionaryAsync(x => x.LineId, x => x.Quantity, cancellationToken);
+
+        var newReturnByLine = salesReturn.Lines
+            .GroupBy(x => x.SalesInvoiceLineId)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.Quantity));
+
+        var fullyReturned = invoice.Lines.All(line =>
+            allPreviousReturns.GetValueOrDefault(line.Id) +
+            newReturnByLine.GetValueOrDefault(line.Id) >= line.Quantity);
+
+        if (fullyReturned)
+        {
+            invoice.Status = SalesInvoiceStatus.Reversed;
+            invoice.ReversalJournalEntryId = journal.Id;
+        }
+
+        db.AccountingAuditLogs.Add(new AccountingAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EntityType = "SalesReturn",
+            EntityId = salesReturn.Id,
+            Action = "SALES_RETURN_POST",
+            Reason = reason,
+            PayloadJson =
+                $"{{\"returnNumber\":\"{salesReturn.Number}\",\"invoiceNumber\":\"{invoice.Number}\",\"journalNumber\":\"{journal.Number}\"}}"
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return await BuildSalesReturnViewAsync(
+            salesReturn.Id,
+            companyId,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SalesReturnView>> GetSalesReturnsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = await db.SalesReturns
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderByDescending(x => x.DocumentDate)
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken);
+
+        var result = new List<SalesReturnView>(ids.Length);
+
+        foreach (var id in ids)
+        {
+            result.Add(await BuildSalesReturnViewAsync(
+                id,
+                companyId,
+                cancellationToken));
+        }
+
+        return result;
+    }
+
     private async Task<SalesInventorySettings> GetOrCreateSettingsEntityAsync(
         Guid companyId,
         CancellationToken cancellationToken)
