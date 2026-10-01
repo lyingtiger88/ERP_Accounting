@@ -21,6 +21,8 @@ class _StockPageState extends State<StockPage> {
   List<Map<String, dynamic>> _warehouses = const [];
   List<Map<String, dynamic>> _products = const [];
   List<Map<String, dynamic>> _balances = const [];
+  List<Map<String, dynamic>> _lowStock = const [];
+  List<Map<String, dynamic>> _traceBalances = const [];
 
   String? _warehouseId;
   bool _loading = true;
@@ -50,6 +52,13 @@ class _StockPageState extends State<StockPage> {
           bearerToken: widget.accessToken,
           warehouseId: _warehouseId,
         ),
+        _apiClient.getLowStockAlerts(
+          bearerToken: widget.accessToken,
+        ),
+        _apiClient.getStockTraceBalances(
+          bearerToken: widget.accessToken,
+          warehouseId: _warehouseId,
+        ),
       ]);
 
       if (!mounted) return;
@@ -63,6 +72,8 @@ class _StockPageState extends State<StockPage> {
             )
             .toList(growable: false);
         _balances = results[2];
+        _lowStock = results[3];
+        _traceBalances = results[4];
       });
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -87,12 +98,27 @@ class _StockPageState extends State<StockPage> {
     final quantity = TextEditingController();
     final unitCost = TextEditingController();
     final reason = TextEditingController();
+    final lot = TextEditingController();
+    final serial = TextEditingController();
+    DateTime? expiryDate;
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            Map<String, dynamic>? selectedProduct;
+
+            for (final product in _products) {
+              if (product['id'].toString() == productId) {
+                selectedProduct = product;
+                break;
+              }
+            }
+
+            final tracking =
+                selectedProduct?['trackingMode']?.toString() ?? 'None';
+
             return AlertDialog(
               title: const Text('تعدیل موجودی'),
               content: SizedBox(
@@ -152,6 +178,52 @@ class _StockPageState extends State<StockPage> {
                           }
                         },
                       ),
+                      if (tracking == 'Lot') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: lot,
+                          textDirection: TextDirection.ltr,
+                          decoration: const InputDecoration(
+                            labelText: 'شماره لات',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: expiryDate ??
+                                  DateTime.now().add(
+                                    const Duration(days: 365),
+                                  ),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2200),
+                            );
+
+                            if (picked != null) {
+                              setDialogState(
+                                () => expiryDate = picked,
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.event_outlined),
+                          label: Text(
+                            expiryDate == null
+                                ? 'تاریخ انقضا (اختیاری)'
+                                : formatReportDate(expiryDate),
+                          ),
+                        ),
+                      ],
+                      if (tracking == 'Serial') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: serial,
+                          textDirection: TextDirection.ltr,
+                          decoration: const InputDecoration(
+                            labelText: 'شماره سریال',
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       TextField(
                         controller: quantity,
@@ -233,9 +305,33 @@ class _StockPageState extends State<StockPage> {
                 FilledButton(
                   onPressed: () {
                     final delta = _number(quantity.text);
+
+                    Map<String, dynamic>? selectedProduct;
+                    for (final product in _products) {
+                      if (product['id'].toString() == productId) {
+                        selectedProduct = product;
+                        break;
+                      }
+                    }
+
+                    final tracking =
+                        selectedProduct?['trackingMode']?.toString() ??
+                            'None';
+
                     if (delta == null ||
                         delta == 0 ||
                         reason.text.trim().isEmpty) {
+                      return;
+                    }
+
+                    if (tracking == 'Lot' &&
+                        lot.text.trim().isEmpty) {
+                      return;
+                    }
+
+                    if (tracking == 'Serial' &&
+                        (serial.text.trim().isEmpty ||
+                            delta.abs() != 1)) {
                       return;
                     }
 
@@ -254,6 +350,8 @@ class _StockPageState extends State<StockPage> {
       quantity.dispose();
       unitCost.dispose();
       reason.dispose();
+      lot.dispose();
+      serial.dispose();
       return;
     }
 
@@ -266,6 +364,13 @@ class _StockPageState extends State<StockPage> {
         quantityDelta: _number(quantity.text)!,
         unitCost: _number(unitCost.text),
         reason: reason.text.trim(),
+        lotNumber: lot.text.trim().isEmpty
+            ? null
+            : lot.text.trim(),
+        serialNumber: serial.text.trim().isEmpty
+            ? null
+            : serial.text.trim(),
+        expiryDate: expiryDate,
       );
 
       await _load();
@@ -275,6 +380,8 @@ class _StockPageState extends State<StockPage> {
       quantity.dispose();
       unitCost.dispose();
       reason.dispose();
+      lot.dispose();
+      serial.dispose();
     }
   }
 
@@ -375,6 +482,100 @@ class _StockPageState extends State<StockPage> {
               ),
             ),
             const SizedBox(height: 12),
+            if (_lowStock.isNotEmpty) ...[
+              Card(
+                child: ExpansionTile(
+                  initiallyExpanded: true,
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.warning_amber_outlined),
+                  ),
+                  title: Text(
+                    'هشدار کمبود موجودی (' +
+                        _lowStock.length.toString() +
+                        ')',
+                  ),
+                  subtitle: const Text(
+                    'کالاهایی که موجودی آن‌ها به حداقل تعریف‌شده رسیده یا کمتر شده است.',
+                  ),
+                  children: [
+                    for (final row in _lowStock)
+                      ListTile(
+                        dense: true,
+                        title: Text(
+                          row['sku'].toString() +
+                              ' — ' +
+                              row['productName'].toString(),
+                        ),
+                        subtitle: Text(
+                          row['warehouseName'].toString() +
+                              ' • موجودی: ' +
+                              formatReportMoney(
+                                reportNumber(row['quantity']),
+                              ) +
+                              ' • حداقل: ' +
+                              formatReportMoney(
+                                reportNumber(row['minimumStock']),
+                              ),
+                        ),
+                        trailing: Text(
+                          'کسری ' +
+                              formatReportMoney(
+                                reportNumber(row['shortage']),
+                              ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (_traceBalances.isNotEmpty) ...[
+              Card(
+                child: ExpansionTile(
+                  title: const Text('رهگیری لات / سریال / انقضا'),
+                  subtitle: Text(
+                    _traceBalances.length.toString() +
+                        ' موجودی رهگیری‌شده',
+                  ),
+                  children: [
+                    for (final row in _traceBalances)
+                      ListTile(
+                        dense: true,
+                        title: Text(
+                          row['sku'].toString() +
+                              ' — ' +
+                              row['productName'].toString(),
+                        ),
+                        subtitle: Text(
+                          row['warehouseName'].toString() +
+                              (row['lotNumber'] == null
+                                  ? ''
+                                  : ' • لات ' +
+                                      row['lotNumber'].toString()) +
+                              (row['serialNumber'] == null
+                                  ? ''
+                                  : ' • سریال ' +
+                                      row['serialNumber'].toString()) +
+                              (row['expiryDate'] == null
+                                  ? ''
+                                  : ' • انقضا ' +
+                                      formatReportDate(
+                                        DateTime.parse(
+                                          row['expiryDate'].toString(),
+                                        ),
+                                      )),
+                        ),
+                        trailing: Text(
+                          formatReportMoney(
+                            reportNumber(row['quantity']),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (_error != null)
               Card(
                 child: ListTile(
@@ -424,6 +625,7 @@ class _StockPageState extends State<StockPage> {
                         numeric: true,
                         label: Text('ارزش موجودی'),
                       ),
+                      DataColumn(label: Text('وضعیت')),
                     ],
                     rows: [
                       for (final row in _balances)
@@ -468,6 +670,13 @@ class _StockPageState extends State<StockPage> {
                                     row['inventoryValue'],
                                   ),
                                 ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                (row['isLowStock'] as bool? ?? false)
+                                    ? 'کمبود / نقطه سفارش'
+                                    : 'عادی',
                               ),
                             ),
                           ],
