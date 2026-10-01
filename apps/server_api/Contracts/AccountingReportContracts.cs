@@ -4,6 +4,7 @@ public sealed record TrialBalanceRow(
     Guid AccountId,
     string AccountCode,
     string AccountName,
+    decimal OpeningBalance,
     decimal DebitTurnover,
     decimal CreditTurnover,
     decimal Balance);
@@ -19,3 +20,11 @@ public sealed record GeneralLedgerRow(
     decimal Debit,
     decimal Credit,
     decimal RunningBalance);
+
+public sealed record GeneralLedgerReportResponse(
+    Guid? AccountId,
+    decimal OpeningBalance,
+    decimal DebitTurnover,
+    decimal CreditTurnover,
+    decimal ClosingBalance,
+    IReadOnlyList<GeneralLedgerRow> Rows);
