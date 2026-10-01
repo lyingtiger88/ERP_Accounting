@@ -87,6 +87,21 @@ class _LoginPageState extends State<LoginPage> {
           companyId: result.companyId,
           fiscalYears: fiscalYears,
         );
+
+        for (final fiscalYear in fiscalYears) {
+          final fiscalYearId = fiscalYear['id'] as String;
+          final periods = await _apiClient.getFiscalPeriods(
+            bearerToken: result.accessToken,
+            fiscalYearId: fiscalYearId,
+          );
+
+          await widget.localDatabase.replaceFiscalPeriods(
+            companyId: result.companyId,
+            fiscalYearId: fiscalYearId,
+            periods: periods,
+          );
+        }
+
         await widget.localDatabase.replaceDetailAccounts(
           companyId: result.companyId,
           details: detailAccounts,
