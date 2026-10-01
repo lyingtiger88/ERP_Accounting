@@ -13,8 +13,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 | **Phase 0** | Project foundation, architecture, Windows + Android targets, CI, online/USB sync design | 🟡 Mostly complete |
 | **Phase 1** | Identity, companies, users, roles, accounting foundation, 2FA, QR pairing | 🟡 In progress |
 | **Phase 2** | Offline-first sync engine, online sync, USB delta sync, conflict handling | 🟡 In progress |
-| **Phase 3** | Sales, purchasing, customers, suppliers, cash/bank, cheques, tax | ⚪ Planned |
-| **Phase 4** | Inventory, warehouses, resources, assets, barcode/QR, serial/batch tracking | ⚪ Planned |
+| **Phase 3** | Sales, purchasing, customers, suppliers, cash/bank, cheques, tax | 🟡 In progress |
+| **Phase 4** | Inventory, warehouses, resources, assets, barcode/QR, serial/batch tracking | 🟡 In progress |
 | **Phase 5** | CRM, HR, projects, cost centers, management dashboards and workflows | ⚪ Planned |
 | **Phase 6** | Backup, recovery, security hardening, installers, Android release, store readiness | ⚪ Planned |
 
@@ -118,12 +118,12 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Customers
 - [ ] Suppliers
 - [ ] Quotations / proforma invoices
-- [ ] Sales invoices
+- [x] Sales invoices
 - [ ] Sales returns
 - [ ] Purchase invoices
 - [ ] Purchase returns
-- [ ] Discounts
-- [ ] Tax
+- [x] Sales-line discounts
+- [x] Sales invoice tax amounts + accounting mapping
 - [ ] Receipts
 - [ ] Payments
 - [ ] Cashboxes
@@ -137,18 +137,18 @@ This roadmap is intentionally kept on the repository home page so the current pl
 
 ### Phase 4 — Inventory & Resource Management
 
-- [ ] Products and services
-- [ ] Multiple warehouses
-- [ ] Inventory receipts/issues
+- [x] Products and services
+- [x] Multiple warehouses
+- [x] Inventory issues + manual stock adjustments
 - [ ] Warehouse transfers
-- [ ] Real-time stock balances
+- [x] Real-time stock balances
 - [ ] Minimum stock alerts
 - [ ] Barcode support
 - [ ] QR support
 - [ ] Serial numbers
 - [ ] Batch/lot tracking
 - [ ] Expiration dates
-- [ ] Stock valuation
+- [x] Moving-average stock valuation for sales
 - [ ] Fixed assets
 - [ ] Depreciation
 - [ ] Equipment
@@ -240,12 +240,17 @@ Implemented so far:
 - Floating-detail ledger with opening/running/closing balances
 - Floating detail accounts cached offline and selectable per journal line
 - CI for ASP.NET Core build, sync/revision tests and Flutter analysis
+- Separate Sales & Inventory workspace for products, warehouses, stock and sales invoices
+- Sales posting integration: cash/receivable, revenue, tax, COGS and inventory journal lines
+- Linked accounting journal number on posted sales invoices
+- Non-destructive SQLite/PostgreSQL bootstrap for sales/inventory server tables
+- End-to-end automated test for sale → stock issue → balanced accounting journal
 - Architecture for online sync, USB sync, QR pairing and MFA
 
 ### Immediate next steps
 
-1. Validate SQLite v7 fiscal-period/report upgrade on Windows
-2. Implement formal opening/closing journal workflow for fiscal-year turnover
+1. Validate SQLite v8 fiscal-period/finalization upgrade plus sales/inventory bootstrap on Windows
+2. Add sales returns and warehouse transfers
 3. Extend revision/conflict policy to the next mutable business entities
 4. Freeze Phase 1 schema and generate provider-specific EF Core migrations
 5. Verify PostgreSQL provider when Docker/PostgreSQL is available
