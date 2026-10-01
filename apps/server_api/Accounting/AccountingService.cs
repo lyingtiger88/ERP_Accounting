@@ -1460,10 +1460,10 @@ public sealed class AccountingService(AppDbContext db)
 
             var periodLines = accountLines
                 .Where(x =>
-                    (from is not DateOnly startDate ||
-                     x.DocumentDate >= startDate) &&
-                    (to is not DateOnly endDate ||
-                     x.DocumentDate <= endDate))
+                    (!from.HasValue ||
+                     x.DocumentDate >= from.Value) &&
+                    (!to.HasValue ||
+                     x.DocumentDate <= to.Value))
                 .Select(x => x.Line)
                 .ToArray();
 
