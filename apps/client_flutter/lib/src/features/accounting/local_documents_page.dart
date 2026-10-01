@@ -88,6 +88,59 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
     }
   }
 
+  Future<void> _deleteDraft(
+    LocalAccountingDocument document,
+  ) async {
+    if (document.status != 'Draft' ||
+        document.syncStatus != 'LocalOnly' ||
+        document.serverId != null) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف پیش‌نویس'),
+        content: const Text(
+          'این پیش‌نویس هنوز وارد صف همگام‌سازی نشده است. حذف آن دائمی است.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('حذف پیش‌نویس'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await widget.localDatabase.deleteLocalJournalDraft(
+        documentId: document.id,
+        companyId: widget.companyId,
+      );
+
+      if (!mounted) return;
+      setState(_reload);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('پیش‌نویس حذف شد.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
+  }
+
   Future<void> _editDraft(
     LocalAccountingDocument document,
   ) async {
@@ -386,15 +439,25 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                           document.serverId == null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: FilledButton.tonalIcon(
-                              onPressed: _syncing
-                                  ? null
-                                  : () => _editDraft(document),
-                              icon: const Icon(Icons.edit_outlined),
-                              label: const Text('ویرایش پیش‌نویس'),
-                            ),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              FilledButton.tonalIcon(
+                                onPressed: _syncing
+                                    ? null
+                                    : () => _editDraft(document),
+                                icon: const Icon(Icons.edit_outlined),
+                                label: const Text('ویرایش پیش‌نویس'),
+                              ),
+                              TextButton.icon(
+                                onPressed: _syncing
+                                    ? null
+                                    : () => _deleteDraft(document),
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('حذف پیش‌نویس'),
+                              ),
+                            ],
                           ),
                         ),
                       if (document.syncError != null)
