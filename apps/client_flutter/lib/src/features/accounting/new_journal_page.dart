@@ -8,10 +8,12 @@ class NewJournalPage extends StatefulWidget {
     super.key,
     required this.companyId,
     required this.localDatabase,
+    this.draft,
   });
 
   final String companyId;
   final LocalDatabase localDatabase;
+  final LocalAccountingDocument? draft;
 
   @override
   State<NewJournalPage> createState() => _NewJournalPageState();
@@ -29,9 +31,19 @@ class _NewJournalPageState extends State<NewJournalPage> {
   @override
   void initState() {
     super.initState();
+
+    final draft = widget.draft;
+
+    if (draft != null) {
+      _documentDate = DateTime.parse(draft.documentDate);
+      _fiscalYearId = draft.fiscalYearId;
+      _description.text = draft.description;
+    } else {
+      _rows.add(_JournalRowEditor());
+      _rows.add(_JournalRowEditor());
+    }
+
     _masterDataFuture = _loadMasterData();
-    _addRow();
-    _addRow();
   }
 
   Future<_JournalMasterData> _loadMasterData() async {
@@ -41,6 +53,29 @@ class _NewJournalPageState extends State<NewJournalPage> {
         await widget.localDatabase.getCachedFiscalYears(widget.companyId);
     final detailAccounts =
         await widget.localDatabase.getCachedDetailAccounts(widget.companyId);
+
+    final draft = widget.draft;
+
+    if (draft != null && _rows.isEmpty) {
+      final lines =
+          await widget.localDatabase.getLocalDocumentLines(draft.id);
+
+      for (final line in lines) {
+        _rows.add(
+          _JournalRowEditor(
+            accountId: line.accountId,
+            detailAccountId: line.detailAccountId,
+            debitValue: line.debit,
+            creditValue: line.credit,
+            descriptionValue: line.description,
+          ),
+        );
+      }
+
+      while (_rows.length < 2) {
+        _rows.add(_JournalRowEditor());
+      }
+    }
 
     if (_fiscalYearId == null) {
       CachedFiscalYear? selected;
@@ -205,14 +240,28 @@ class _NewJournalPageState extends State<NewJournalPage> {
     setState(() => _busy = true);
 
     try {
-      await widget.localDatabase.saveLocalJournal(
-        companyId: widget.companyId,
-        fiscalYearId: _fiscalYearId,
-        documentDate: _documentDate,
-        description: _description.text,
-        lines: lines,
-        queueForSync: queueForSync,
-      );
+      final draft = widget.draft;
+
+      if (draft == null) {
+        await widget.localDatabase.saveLocalJournal(
+          companyId: widget.companyId,
+          fiscalYearId: _fiscalYearId,
+          documentDate: _documentDate,
+          description: _description.text,
+          lines: lines,
+          queueForSync: queueForSync,
+        );
+      } else {
+        await widget.localDatabase.updateLocalJournalDraft(
+          documentId: draft.id,
+          companyId: widget.companyId,
+          fiscalYearId: _fiscalYearId,
+          documentDate: _documentDate,
+          description: _description.text,
+          lines: lines,
+          queueForSync: queueForSync,
+        );
+      }
 
       if (!mounted) return;
 
@@ -220,8 +269,12 @@ class _NewJournalPageState extends State<NewJournalPage> {
         SnackBar(
           content: Text(
             queueForSync
-                ? 'سند در SQLite ذخیره و وارد صف همگام‌سازی شد.'
-                : 'پیش‌نویس سند در SQLite ذخیره شد.',
+                ? (widget.draft == null
+                    ? 'سند در SQLite ذخیره و وارد صف همگام‌سازی شد.'
+                    : 'همان پیش‌نویس به صف همگام‌سازی منتقل شد.')
+                : (widget.draft == null
+                    ? 'پیش‌نویس سند در SQLite ذخیره شد.'
+                    : 'تغییرات پیش‌نویس ذخیره شد.'),
           ),
         ),
       );
@@ -253,7 +306,11 @@ class _NewJournalPageState extends State<NewJournalPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('ثبت سند حسابداری'),
+          title: Text(
+            widget.draft == null
+                ? 'ثبت سند حسابداری'
+                : 'ویرایش پیش‌نویس',
+          ),
         ),
         body: FutureBuilder<_JournalMasterData>(
           future: _masterDataFuture,
@@ -439,9 +496,11 @@ class _NewJournalPageState extends State<NewJournalPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'واحد پایه مبلغ در این نسخه ریال است. شماره قطعی سند هنگام ثبت روی سرور تعیین خواهد شد.',
-                  style: TextStyle(fontSize: 12),
+                Text(
+                  widget.draft == null
+                      ? 'واحد پایه مبلغ در این نسخه ریال است. شماره قطعی سند هنگام ثبت روی سرور تعیین خواهد شد.'
+                      : 'این سند هنوز Draft محلی است و قابل ویرایش است. پس از «ثبت و آماده همگام‌سازی» قفل می‌شود و اصلاح سند قطعی فقط از مسیر برگشت انجام خواهد شد.',
+                  style: const TextStyle(fontSize: 12),
                 ),
               ],
             );
@@ -611,11 +670,27 @@ class _JournalLineCard extends StatelessWidget {
 }
 
 class _JournalRowEditor {
+  _JournalRowEditor({
+    this.accountId,
+    this.detailAccountId,
+    int debitValue = 0,
+    int creditValue = 0,
+    String descriptionValue = '',
+  })  : debit = TextEditingController(
+          text: debitValue == 0 ? '' : debitValue.toString(),
+        ),
+        credit = TextEditingController(
+          text: creditValue == 0 ? '' : creditValue.toString(),
+        ),
+        description = TextEditingController(
+          text: descriptionValue,
+        );
+
   String? accountId;
   String? detailAccountId;
-  final debit = TextEditingController();
-  final credit = TextEditingController();
-  final description = TextEditingController();
+  final TextEditingController debit;
+  final TextEditingController credit;
+  final TextEditingController description;
 
   void dispose() {
     debit.dispose();
