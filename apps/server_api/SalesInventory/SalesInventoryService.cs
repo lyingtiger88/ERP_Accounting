@@ -871,40 +871,9 @@ public sealed class SalesInventoryService(
                     inventoryProductIds.Contains(x.ProductId))
                 .ToArrayAsync(cancellationToken);
 
-        var requestedByProduct = invoice.Lines
-            .GroupBy(x => x.ProductId)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Sum(x => x.Quantity));
-
-        var averageCostByProduct = new Dictionary<Guid, decimal>();
-
-        foreach (var productId in inventoryProductIds)
-        {
-            var productMovements = existingMovements
-                .Where(x => x.ProductId == productId)
-                .ToArray();
-
-            var currentQuantity = productMovements.Sum(x => x.Quantity);
-            var currentValue = productMovements.Sum(
-                x => x.Quantity * x.UnitCost);
-            var averageCost = currentQuantity == 0
-                ? products[productId].DefaultPurchasePrice
-                : currentValue / currentQuantity;
-
-            var requestedQuantity =
-                requestedByProduct.GetValueOrDefault(productId);
-
-            if (settings.PreventNegativeStock &&
-                currentQuantity < requestedQuantity)
-            {
-                throw new InvalidOperationException(
-                    $"Insufficient stock for product '{products[productId].Name}'. " +
-                    $"Available: {currentQuantity}, requested: {requestedQuantity}.");
-            }
-
-            averageCostByProduct[productId] = averageCost;
-        }
+        var reservedByTrace = new Dictionary<
+            (Guid ProductId, string? Lot, string? Serial, DateOnly? Expiry),
+            decimal>();
 
         decimal totalCost = 0;
 
@@ -919,7 +888,64 @@ public sealed class SalesInventoryService(
                 continue;
             }
 
-            var unitCost = averageCostByProduct[line.ProductId];
+            ValidateTraceFields(
+                product,
+                line.Quantity,
+                line.LotNumber,
+                line.SerialNumber);
+
+            var relevantMovements = existingMovements
+                .Where(x => x.ProductId == product.Id)
+                .ToArray();
+
+            if (product.TrackingMode == InventoryTrackingMode.Serial)
+            {
+                relevantMovements = relevantMovements
+                    .Where(x => x.SerialNumber == line.SerialNumber)
+                    .ToArray();
+            }
+            else if (product.TrackingMode == InventoryTrackingMode.Lot)
+            {
+                relevantMovements = relevantMovements
+                    .Where(x =>
+                        x.LotNumber == line.LotNumber &&
+                        x.ExpiryDate == line.ExpiryDate)
+                    .ToArray();
+            }
+
+            var currentQuantity = relevantMovements.Sum(x => x.Quantity);
+            var currentValue = relevantMovements.Sum(
+                x => x.Quantity * x.UnitCost);
+            var unitCost = currentQuantity == 0
+                ? product.DefaultPurchasePrice
+                : currentValue / currentQuantity;
+
+            var traceKey = (
+                product.Id,
+                product.TrackingMode == InventoryTrackingMode.Lot
+                    ? line.LotNumber
+                    : null,
+                product.TrackingMode == InventoryTrackingMode.Serial
+                    ? line.SerialNumber
+                    : null,
+                product.TrackingMode == InventoryTrackingMode.Lot
+                    ? line.ExpiryDate
+                    : null);
+
+            var reserved =
+                reservedByTrace.GetValueOrDefault(traceKey);
+            var required = reserved + line.Quantity;
+
+            if (settings.PreventNegativeStock &&
+                currentQuantity < required)
+            {
+                throw new InvalidOperationException(
+                    $"Insufficient stock for product '{product.Name}'. " +
+                    $"Available: {currentQuantity}, requested: {required}.");
+            }
+
+            reservedByTrace[traceKey] = required;
+
             var costAmount = unitCost * line.Quantity;
 
             line.UnitCost = unitCost;
