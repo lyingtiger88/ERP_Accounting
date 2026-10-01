@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/database/local_database.dart';
 import '../accounting/report_support.dart';
 
 class SalesReturnsPage extends StatefulWidget {
   const SalesReturnsPage({
     super.key,
+    required this.companyId,
     required this.accessToken,
+    required this.localDatabase,
   });
 
+  final String companyId;
   final String accessToken;
+  final LocalDatabase localDatabase;
 
   @override
   State<SalesReturnsPage> createState() =>
@@ -27,9 +32,30 @@ class _SalesReturnsPageState extends State<SalesReturnsPage> {
   }
 
   void _reload() {
-    _future = _apiClient.getSalesReturns(
-      bearerToken: widget.accessToken,
-    );
+    _future = _loadReturns();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadReturns() async {
+    try {
+      final items = await _apiClient.getSalesReturns(
+        bearerToken: widget.accessToken,
+      );
+
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'SalesReturn',
+        items: items,
+      );
+
+      return items;
+    } on ApiException catch (error) {
+      if (error.statusCode != null) rethrow;
+
+      return widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'SalesReturn',
+      );
+    }
   }
 
   @override
