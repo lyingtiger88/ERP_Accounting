@@ -96,13 +96,13 @@ public sealed class SalesInventorySettings
 {
     public required Guid CompanyId { get; set; }
     public required Guid ReceivablesAccountId { get; set; }
-    public required Guid PayablesAccountId { get; set; }
+    public Guid? PayablesAccountId { get; set; }
     public required Guid CashAccountId { get; set; }
     public required Guid SalesRevenueAccountId { get; set; }
     public required Guid InventoryAccountId { get; set; }
     public required Guid CostOfGoodsSoldAccountId { get; set; }
     public required Guid SalesTaxPayableAccountId { get; set; }
-    public required Guid PurchaseTaxReceivableAccountId { get; set; }
+    public Guid? PurchaseTaxReceivableAccountId { get; set; }
     public bool PreventNegativeStock { get; set; } = true;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
