@@ -88,6 +88,39 @@ public static class AccountingSchemaBootstrapper
                 "IX_fiscal_periods_CompanyId_StartDate_EndDate"
             ON fiscal_periods ("CompanyId", "StartDate", "EndDate");
             """,
+            """
+            CREATE TABLE IF NOT EXISTS fiscal_year_closings (
+                "FiscalYearId" TEXT NOT NULL
+                    CONSTRAINT "PK_fiscal_year_closings" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "ClosingJournalEntryId" TEXT NULL,
+                "RetainedEarningsAccountId" TEXT NOT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "NetResult" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_fiscal_year_closings_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_fiscal_year_closings_fiscal_years"
+                    FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_fiscal_year_closings_journals"
+                    FOREIGN KEY ("ClosingJournalEntryId") REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_fiscal_year_closings_accounts"
+                    FOREIGN KEY ("RetainedEarningsAccountId") REFERENCES ledger_accounts ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_fiscal_year_closings_users"
+                    FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_fiscal_year_closings_ClosingJournalEntryId"
+            ON fiscal_year_closings ("ClosingJournalEntryId");
+            """,
+
 
             """
             CREATE TABLE IF NOT EXISTS detail_accounts (
@@ -478,6 +511,40 @@ public static class AccountingSchemaBootstrapper
                 "IX_fiscal_periods_CompanyId_StartDate_EndDate"
             ON fiscal_periods ("CompanyId", "StartDate", "EndDate");
             """,
+            """
+            CREATE TABLE IF NOT EXISTS fiscal_year_closings (
+                "FiscalYearId" uuid NOT NULL
+                    CONSTRAINT "PK_fiscal_year_closings" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "ClosingJournalEntryId" uuid NULL,
+                "RetainedEarningsAccountId" uuid NOT NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "NetResult" numeric(20, 4) NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_fiscal_year_closings_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_fiscal_year_closings_fiscal_years"
+                    FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_fiscal_year_closings_journals"
+                    FOREIGN KEY ("ClosingJournalEntryId") REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_fiscal_year_closings_accounts"
+                    FOREIGN KEY ("RetainedEarningsAccountId") REFERENCES ledger_accounts ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_fiscal_year_closings_users"
+                    FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_fiscal_year_closings_ClosingJournalEntryId"
+            ON fiscal_year_closings ("ClosingJournalEntryId")
+            WHERE "ClosingJournalEntryId" IS NOT NULL;
+            """,
+
 
             """
             CREATE TABLE IF NOT EXISTS detail_accounts (
