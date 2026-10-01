@@ -80,11 +80,22 @@ public sealed class SalesInventoryService(
                 x => x.CompanyId == companyId,
                 cancellationToken);
 
-        if (existingSettings is not null)
+        if (existingSettings is not null &&
+            (!existingSettings.PayablesAccountId.HasValue ||
+             !existingSettings.PurchaseTaxReceivableAccountId.HasValue))
         {
-            existingSettings.PayablesAccountId ??= accounts.GetValueOrDefault("2100")?.Id;
+            var upgradeCodes = new[] { "2100", "1410" };
+
+            var upgradeAccounts = await db.Accounts
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    upgradeCodes.Contains(x.Code))
+                .ToDictionaryAsync(x => x.Code, cancellationToken);
+
+            existingSettings.PayablesAccountId ??=
+                upgradeAccounts.GetValueOrDefault("2100")?.Id;
             existingSettings.PurchaseTaxReceivableAccountId ??=
-                accounts.GetValueOrDefault("1410")?.Id;
+                upgradeAccounts.GetValueOrDefault("1410")?.Id;
         }
 
         await db.SaveChangesAsync(cancellationToken);
