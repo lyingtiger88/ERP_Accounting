@@ -54,10 +54,7 @@ class _GeneralLedgerPageState extends State<GeneralLedgerPage> {
       setState(() {
         _period = period;
         _accounts = accounts
-            .where(
-              (account) =>
-                  account.isActive && account.isPostable,
-            )
+            .where((account) => account.isActive)
             .toList(growable: false);
       });
 
@@ -190,7 +187,10 @@ class _GeneralLedgerPageState extends State<GeneralLedgerPage> {
                                   DropdownMenuItem(
                                     value: account.id,
                                     child: Text(
-                                      account.code +
+                                      '[' +
+                                          account.levelTitle +
+                                          '] ' +
+                                          account.code +
                                           ' — ' +
                                           account.name,
                                     ),
