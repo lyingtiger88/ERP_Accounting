@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/database/local_database.dart';
 
 class WarehousesPage extends StatefulWidget {
   const WarehousesPage({
     super.key,
+    required this.companyId,
     required this.accessToken,
+    required this.localDatabase,
   });
 
+  final String companyId;
   final String accessToken;
+  final LocalDatabase localDatabase;
 
   @override
   State<WarehousesPage> createState() => _WarehousesPageState();
@@ -26,9 +31,30 @@ class _WarehousesPageState extends State<WarehousesPage> {
   }
 
   void _reload() {
-    _future = _apiClient.getWarehouses(
-      bearerToken: widget.accessToken,
-    );
+    _future = _loadWarehouses();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadWarehouses() async {
+    try {
+      final items = await _apiClient.getWarehouses(
+        bearerToken: widget.accessToken,
+      );
+
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'Warehouse',
+        items: items,
+      );
+
+      return items;
+    } on ApiException catch (error) {
+      if (error.statusCode != null) rethrow;
+
+      return widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'Warehouse',
+      );
+    }
   }
 
   Future<void> _edit([Map<String, dynamic>? existing]) async {
