@@ -277,6 +277,96 @@ class _NewSalesInvoicePageState
     }
   }
 
+  Future<void> _scanProduct() async {
+    final controller = TextEditingController();
+
+    final code = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('اسکن بارکد / SKU'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textDirection: TextDirection.ltr,
+          decoration: const InputDecoration(
+            labelText: 'بارکد را اسکن کنید',
+            helperText:
+                'بارکدخوان فروشگاهی معمولاً مقدار را تایپ و Enter ارسال می‌کند.',
+          ),
+          onSubmitted: (value) =>
+              Navigator.pop(context, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              context,
+              controller.text.trim(),
+            ),
+            child: const Text('ثبت'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (code == null || code.isEmpty) return;
+
+    Map<String, dynamic>? product;
+
+    try {
+      product = await _apiClient.findStoreProduct(
+        bearerToken: widget.accessToken,
+        code: code,
+      );
+    } on ApiException catch (error) {
+      if (error.statusCode != null) {
+        _message(error.message);
+        return;
+      }
+    }
+
+    product ??= _products.cast<Map<String, dynamic>?>().firstWhere(
+          (item) =>
+              item?['sku']?.toString() == code ||
+              item?['barcode']?.toString() == code,
+          orElse: () => null,
+        );
+
+    if (product == null) {
+      _message('کالایی با این بارکد یا SKU پیدا نشد.');
+      return;
+    }
+
+    _InvoiceRowEditor? target;
+
+    for (final row in _rows) {
+      if (row.productId == null) {
+        target = row;
+        break;
+      }
+    }
+
+    target ??= _InvoiceRowEditor();
+
+    if (!_rows.contains(target)) {
+      _rows.add(target);
+    }
+
+    setState(() {
+      target!.productId = product!['id'].toString();
+      target.unitPrice.text =
+          reportNumber(product['salesPrice']).toString();
+      if (product['trackingMode']?.toString() == 'Serial') {
+        target.quantity.text = '1';
+      }
+    });
+  }
+
   Future<void> _save() async {
     final fiscalYearId = _fiscalYearId;
     final warehouseId = _warehouseId;
@@ -440,6 +530,13 @@ class _NewSalesInvoicePageState
       child: Scaffold(
         appBar: AppBar(
           title: const Text('فاکتور فروش جدید'),
+          actions: [
+            IconButton(
+              tooltip: 'اسکن بارکد',
+              onPressed: _saving ? null : _scanProduct,
+              icon: const Icon(Icons.qr_code_scanner_outlined),
+            ),
+          ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
