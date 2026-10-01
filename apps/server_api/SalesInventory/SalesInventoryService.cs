@@ -713,6 +713,13 @@ public sealed class SalesInventoryService(
             }
 
             var product = products[requestedLine.ProductId];
+
+            ValidateTraceFields(
+                product,
+                requestedLine.Quantity,
+                requestedLine.LotNumber,
+                requestedLine.SerialNumber);
+
             var unitPrice = requestedLine.UnitPrice ??
                 product.SalesPrice;
 
