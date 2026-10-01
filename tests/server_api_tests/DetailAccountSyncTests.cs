@@ -662,6 +662,238 @@ public sealed class DetailAccountSyncTests
         Assert.Equal("CUS-001", report.Rows[0].DetailCode);
     }
 
+    [Fact]
+    public async Task FiscalYearFinalization_ClosesTemporaryAccounts_AndCanBeReopened()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+
+        await service.SeedDefaultAccountsAsync(fixture.Company.Id);
+        var fiscalYear = await service.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+
+        var cash = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "1110");
+
+        var revenue = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "4100");
+
+        var expense = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "5200");
+
+        var retained = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "3200");
+
+        var saleDate = fiscalYear.StartDate.AddDays(3);
+        var expenseDate = fiscalYear.StartDate.AddDays(4);
+
+        await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                saleDate,
+                "فروش",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        cash.Id,
+                        null,
+                        10_000m,
+                        0m),
+                    new CreateJournalLineRequest(
+                        revenue.Id,
+                        null,
+                        0m,
+                        10_000m)
+                },
+                fiscalYear.Id));
+
+        await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                expenseDate,
+                "هزینه",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        expense.Id,
+                        null,
+                        4_000m,
+                        0m),
+                    new CreateJournalLineRequest(
+                        cash.Id,
+                        null,
+                        0m,
+                        4_000m)
+                },
+                fiscalYear.Id));
+
+        var before = await service.GetProfitLossAsync(
+            fixture.Company.Id,
+            fiscalYear.StartDate,
+            fiscalYear.EndDate);
+
+        Assert.Equal(10_000m, before.RevenueTotal);
+        Assert.Equal(4_000m, before.ExpenseTotal);
+        Assert.Equal(6_000m, before.NetProfit);
+
+        var finalized = await service.FinalizeFiscalYearAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            fiscalYear.Id,
+            new FinalizeFiscalYearRequest(retained.Id));
+
+        Assert.False(finalized.AlreadyFinalized);
+        Assert.NotNull(finalized.ClosingJournalEntryId);
+        Assert.NotNull(finalized.ClosingJournalNumber);
+        Assert.Equal(6_000m, finalized.NetResult);
+
+        var closedYear = await fixture.Db.FiscalYears
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == fiscalYear.Id);
+
+        Assert.True(closedYear.IsClosed);
+        Assert.All(
+            await fixture.Db.FiscalPeriods
+                .AsNoTracking()
+                .Where(x => x.FiscalYearId == fiscalYear.Id)
+                .ToArrayAsync(),
+            period => Assert.True(period.IsClosed));
+
+        var after = await service.GetProfitLossAsync(
+            fixture.Company.Id,
+            fiscalYear.StartDate,
+            fiscalYear.EndDate);
+
+        Assert.Equal(10_000m, after.RevenueTotal);
+        Assert.Equal(4_000m, after.ExpenseTotal);
+        Assert.Equal(6_000m, after.NetProfit);
+
+        var trial = await service.GetTrialBalanceAsync(
+            fixture.Company.Id,
+            fiscalYear.StartDate,
+            fiscalYear.EndDate);
+
+        Assert.Equal(
+            0m,
+            trial.Single(x => x.AccountId == revenue.Id).Balance);
+        Assert.Equal(
+            0m,
+            trial.Single(x => x.AccountId == expense.Id).Balance);
+        Assert.Equal(
+            -6_000m,
+            trial.Single(x => x.AccountId == retained.Id).Balance);
+
+        var balanceSheet = await service.GetBalanceSheetAsync(
+            fixture.Company.Id,
+            fiscalYear.EndDate);
+
+        Assert.Equal(6_000m, balanceSheet.AssetTotal);
+        Assert.Equal(6_000m, balanceSheet.EquityTotal);
+        Assert.Equal(0m, balanceSheet.AccumulatedResult);
+        Assert.Equal(0m, balanceSheet.Difference);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.PostJournalAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                new CreateJournalRequest(
+                    null,
+                    fiscalYear.EndDate,
+                    "ثبت بعد از بستن",
+                    new[]
+                    {
+                        new CreateJournalLineRequest(
+                            cash.Id,
+                            null,
+                            1m,
+                            0m),
+                        new CreateJournalLineRequest(
+                            revenue.Id,
+                            null,
+                            0m,
+                            1m)
+                    },
+                    fiscalYear.Id)));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ReverseJournalAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                finalized.ClosingJournalEntryId!.Value,
+                new ReverseJournalRequest(
+                    fiscalYear.EndDate,
+                    "برگشت مستقیم غیرمجاز",
+                    fiscalYear.Id)));
+
+        var reopened = await service.ReopenFinalizedFiscalYearAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            fiscalYear.Id);
+
+        Assert.NotNull(reopened.ReversalJournalEntryId);
+        Assert.NotNull(reopened.ReversalJournalNumber);
+
+        var reopenedYear = await fixture.Db.FiscalYears
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == fiscalYear.Id);
+
+        Assert.False(reopenedYear.IsClosed);
+        Assert.False(
+            await fixture.Db.FiscalYearClosings
+                .AsNoTracking()
+                .AnyAsync(x => x.FiscalYearId == fiscalYear.Id));
+
+        var lastPeriod = await fixture.Db.FiscalPeriods
+            .AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYear.Id)
+            .OrderByDescending(x => x.EndDate)
+            .FirstAsync();
+
+        Assert.False(lastPeriod.IsClosed);
+
+        var reopenedProfitLoss = await service.GetProfitLossAsync(
+            fixture.Company.Id,
+            fiscalYear.StartDate,
+            fiscalYear.EndDate);
+
+        Assert.Equal(10_000m, reopenedProfitLoss.RevenueTotal);
+        Assert.Equal(4_000m, reopenedProfitLoss.ExpenseTotal);
+        Assert.Equal(6_000m, reopenedProfitLoss.NetProfit);
+
+        var reopenedBalanceSheet =
+            await service.GetBalanceSheetAsync(
+                fixture.Company.Id,
+                fiscalYear.EndDate);
+
+        Assert.Equal(6_000m, reopenedBalanceSheet.AssetTotal);
+        Assert.Equal(0m, reopenedBalanceSheet.EquityTotal);
+        Assert.Equal(
+            6_000m,
+            reopenedBalanceSheet.AccumulatedResult);
+        Assert.Equal(0m, reopenedBalanceSheet.Difference);
+
+        var audit = await service.GetAuditLogsAsync(
+            fixture.Company.Id,
+            limit: 500);
+
+        Assert.Contains(
+            audit,
+            x => x.EntityId == fiscalYear.Id &&
+                 x.Action == "FISCAL_YEAR_FINALIZE");
+        Assert.Contains(
+            audit,
+            x => x.EntityId == fiscalYear.Id &&
+                 x.Action == "FISCAL_YEAR_FINALIZATION_REOPEN");
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
