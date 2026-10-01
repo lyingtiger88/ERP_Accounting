@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
 import '../accounting/accounting_home_page.dart';
+import '../sales_inventory/sales_inventory_home_page.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({
@@ -128,6 +129,20 @@ class _Navigation extends StatelessWidget {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => AccountingHomePage(
+                        companyId: companyId,
+                        accessToken: accessToken,
+                        localDatabase: localDatabase,
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (item.label == 'فروش' ||
+                    item.label == 'انبار') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SalesInventoryHomePage(
                         companyId: companyId,
                         accessToken: accessToken,
                         localDatabase: localDatabase,
