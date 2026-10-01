@@ -26,15 +26,20 @@
 - [x] Account nature and control/postable rules
 - [x] Solar Hijri journal numbering
 - [x] Configurable fiscal years
-- [ ] Accounting periods
+- [x] Accounting periods
 - [x] Floating detail accounts
 - [x] Journal entries with double-entry validation
 - [x] Offline journal-entry UI
 - [x] Local Draft / Pending Sync journal storage
-- [x] General ledger (initial)
-- [x] Trial balance (initial)
+- [x] General ledger with opening/running balances
+- [x] Trial balance with opening/closing balances
 - [x] Fiscal year close/reopen enforcement
-- [ ] Audit log
+- [x] Fiscal period close/reopen enforcement
+- [x] Immutable journal reversal workflow
+- [x] Profit & loss
+- [x] Balance sheet
+- [x] Floating-detail ledger
+- [x] Accounting audit log
 - [x] PostgreSQL persistence
 - [x] Initial SQLite client persistence layer
 
