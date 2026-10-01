@@ -2000,13 +2000,12 @@ public sealed class AccountingService(AppDbContext db)
             .ToArray();
 
         var dimensions = lineIds.Length == 0
-            ? new Dictionary<Guid, Guid?>()
+            ? new Dictionary<Guid, JournalLineDimension>()
             : await db.JournalLineDimensions
                 .AsNoTracking()
                 .Where(x => lineIds.Contains(x.JournalLineId))
                 .ToDictionaryAsync(
                     x => x.JournalLineId,
-                    x => x.DetailAccountId,
                     cancellationToken);
 
         var reversalOf = await db.JournalReversalLinks
