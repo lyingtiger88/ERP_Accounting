@@ -755,6 +755,19 @@ public sealed class DetailAccountSyncTests
         Assert.NotNull(finalized.ClosingJournalNumber);
         Assert.Equal(6_000m, finalized.NetResult);
 
+        var yearViews = await service.GetFiscalYearsAsync(
+            fixture.Company.Id);
+
+        var finalizedView = yearViews.Single(
+            x => x.Id == fiscalYear.Id);
+
+        Assert.True(finalizedView.IsFinalized);
+        Assert.True(finalizedView.IsClosed);
+        Assert.Equal(
+            finalized.ClosingJournalNumber,
+            finalizedView.ClosingJournalNumber);
+        Assert.Equal(6_000m, finalizedView.NetResult);
+
         var closedYear = await fixture.Db.FiscalYears
             .AsNoTracking()
             .SingleAsync(x => x.Id == fiscalYear.Id);
@@ -846,6 +859,15 @@ public sealed class DetailAccountSyncTests
             .SingleAsync(x => x.Id == fiscalYear.Id);
 
         Assert.False(reopenedYear.IsClosed);
+
+        var reopenedYearView = (await service.GetFiscalYearsAsync(
+            fixture.Company.Id))
+            .Single(x => x.Id == fiscalYear.Id);
+
+        Assert.False(reopenedYearView.IsFinalized);
+        Assert.Null(reopenedYearView.ClosingJournalNumber);
+        Assert.Null(reopenedYearView.NetResult);
+
         Assert.False(
             await fixture.Db.FiscalYearClosings
                 .AsNoTracking()
