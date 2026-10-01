@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
 import '../../core/sync/accounting_sync_service.dart';
 import 'audit_trail_page.dart';
+import 'new_journal_page.dart';
 
 class LocalDocumentsPage extends StatefulWidget {
   const LocalDocumentsPage({
@@ -85,6 +86,29 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
         setState(() => _syncing = false);
       }
     }
+  }
+
+  Future<void> _editDraft(
+    LocalAccountingDocument document,
+  ) async {
+    if (document.status != 'Draft' ||
+        document.syncStatus != 'LocalOnly' ||
+        document.serverId != null) {
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NewJournalPage(
+          companyId: widget.companyId,
+          localDatabase: widget.localDatabase,
+          draft: document,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    setState(_reload);
   }
 
   Future<void> _reverseJournal(
@@ -357,6 +381,22 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                       ),
                     ),
                     children: [
+                      if (document.status == 'Draft' &&
+                          document.syncStatus == 'LocalOnly' &&
+                          document.serverId == null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton.tonalIcon(
+                              onPressed: _syncing
+                                  ? null
+                                  : () => _editDraft(document),
+                              icon: const Icon(Icons.edit_outlined),
+                              label: const Text('ویرایش پیش‌نویس'),
+                            ),
+                          ),
+                        ),
                       if (document.syncError != null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
