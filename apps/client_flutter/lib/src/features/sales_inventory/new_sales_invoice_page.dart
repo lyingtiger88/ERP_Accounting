@@ -230,6 +230,22 @@ class _NewSalesInvoicePageState
     setState(() {});
   }
 
+  Future<void> _pickExpiry(
+    _InvoiceRowEditor row,
+  ) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate:
+          row.expiryDate ?? DateTime.now().add(const Duration(days: 365)),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2200),
+    );
+
+    if (picked != null && mounted) {
+      setState(() => row.expiryDate = picked);
+    }
+  }
+
   Future<void> _save() async {
     final fiscalYearId = _fiscalYearId;
     final warehouseId = _warehouseId;
@@ -264,6 +280,25 @@ class _NewSalesInvoicePageState
       final product = _product(row.productId);
       final defaultPrice =
           reportNumber(product?['salesPrice']);
+      final tracking =
+          product?['trackingMode']?.toString() ?? 'None';
+
+      if (tracking == 'Lot' && row.lot.text.trim().isEmpty) {
+        _message('برای کالای لات‌دار، شماره لات الزامی است.');
+        return;
+      }
+
+      if (tracking == 'Serial') {
+        if (row.serial.text.trim().isEmpty) {
+          _message('برای کالای سریالی، شماره سریال الزامی است.');
+          return;
+        }
+
+        if (quantity != 1) {
+          _message('هر ردیف کالای سریالی باید تعداد ۱ داشته باشد.');
+          return;
+        }
+      }
 
       lines.add({
         'productId': row.productId,
@@ -273,6 +308,15 @@ class _NewSalesInvoicePageState
             : _number(row.unitPrice.text),
         'discountAmount': _number(row.discount.text),
         'taxAmount': _number(row.tax.text),
+        'lotNumber': row.lot.text.trim().isEmpty
+            ? null
+            : row.lot.text.trim(),
+        'serialNumber': row.serial.text.trim().isEmpty
+            ? null
+            : row.serial.text.trim(),
+        'expiryDate': row.expiryDate == null
+            ? null
+            : _dateOnly(row.expiryDate!),
       });
     }
 
@@ -308,6 +352,14 @@ class _NewSalesInvoicePageState
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String _dateOnly(DateTime value) {
+    return value.year.toString().padLeft(4, '0') +
+        '-' +
+        value.month.toString().padLeft(2, '0') +
+        '-' +
+        value.day.toString().padLeft(2, '0');
   }
 
   void _message(String value) {
@@ -550,6 +602,8 @@ class _NewSalesInvoicePageState
                                   ),
                                   onChanged: () =>
                                       setState(() {}),
+                                  onPickExpiry: () =>
+                                      _pickExpiry(_rows[index]),
                                   onRemove: () =>
                                       _removeRow(index),
                                 ),
@@ -650,6 +704,7 @@ class _InvoiceLineCard extends StatelessWidget {
     required this.saving,
     required this.onProductChanged,
     required this.onChanged,
+    required this.onPickExpiry,
     required this.onRemove,
   });
 
@@ -658,10 +713,23 @@ class _InvoiceLineCard extends StatelessWidget {
   final bool saving;
   final ValueChanged<String?> onProductChanged;
   final VoidCallback onChanged;
+  final VoidCallback onPickExpiry;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
+    Map<String, dynamic>? selectedProduct;
+
+    for (final product in products) {
+      if (product['id'].toString() == row.productId) {
+        selectedProduct = product;
+        break;
+      }
+    }
+
+    final tracking =
+        selectedProduct?['trackingMode']?.toString() ?? 'None';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -717,6 +785,38 @@ class _InvoiceLineCard extends StatelessWidget {
               width: 130,
               onChanged: onChanged,
             ),
+            if (tracking == 'Lot')
+              SizedBox(
+                width: 150,
+                child: TextField(
+                  controller: row.lot,
+                  textDirection: TextDirection.ltr,
+                  decoration: const InputDecoration(
+                    labelText: 'شماره لات',
+                  ),
+                ),
+              ),
+            if (tracking == 'Serial')
+              SizedBox(
+                width: 170,
+                child: TextField(
+                  controller: row.serial,
+                  textDirection: TextDirection.ltr,
+                  decoration: const InputDecoration(
+                    labelText: 'شماره سریال',
+                  ),
+                ),
+              ),
+            if (tracking == 'Lot')
+              OutlinedButton.icon(
+                onPressed: saving ? null : onPickExpiry,
+                icon: const Icon(Icons.event_outlined),
+                label: Text(
+                  row.expiryDate == null
+                      ? 'انقضا'
+                      : formatReportDate(row.expiryDate),
+                ),
+              ),
             IconButton(
               tooltip: 'حذف ردیف',
               onPressed: saving ? null : onRemove,
@@ -768,11 +868,16 @@ class _InvoiceRowEditor {
   final unitPrice = TextEditingController();
   final discount = TextEditingController(text: '0');
   final tax = TextEditingController(text: '0');
+  final lot = TextEditingController();
+  final serial = TextEditingController();
+  DateTime? expiryDate;
 
   void dispose() {
     quantity.dispose();
     unitPrice.dispose();
     discount.dispose();
     tax.dispose();
+    lot.dispose();
+    serial.dispose();
   }
 }
