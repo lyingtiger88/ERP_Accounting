@@ -101,6 +101,101 @@ class OutboxSyncService {
           );
         }
 
+        if (item.operation == 'Create' &&
+            item.entityType == 'StoreSalesInvoiceDraft') {
+          final payload = item.payload;
+
+          final result = await apiClient.createSalesInvoice(
+            bearerToken: bearerToken,
+            fiscalYearId: payload['fiscalYearId'].toString(),
+            documentDate:
+                DateTime.parse(payload['documentDate'].toString()),
+            warehouseId: payload['warehouseId'].toString(),
+            customerDetailAccountId:
+                payload['customerDetailAccountId']?.toString(),
+            paymentType: payload['paymentType'].toString(),
+            description: payload['description']?.toString(),
+            lines: (payload['lines'] as List<dynamic>)
+                .map(
+                  (line) => Map<String, dynamic>.from(line as Map),
+                )
+                .toList(growable: false),
+          );
+
+          await localDatabase.markStoreDraftSynced(
+            outboxId: item.id,
+            localId: item.entityId,
+            serverEntity: result,
+          );
+
+          processed++;
+          synced++;
+          continue;
+        }
+
+        if (item.operation == 'Create' &&
+            item.entityType == 'StorePurchaseReceiptDraft') {
+          final payload = item.payload;
+
+          final result = await apiClient.createPurchaseReceipt(
+            bearerToken: bearerToken,
+            fiscalYearId: payload['fiscalYearId'].toString(),
+            documentDate:
+                DateTime.parse(payload['documentDate'].toString()),
+            warehouseId: payload['warehouseId'].toString(),
+            supplierDetailAccountId:
+                payload['supplierDetailAccountId']?.toString(),
+            paymentType: payload['paymentType'].toString(),
+            description: payload['description']?.toString(),
+            lines: (payload['lines'] as List<dynamic>)
+                .map(
+                  (line) => Map<String, dynamic>.from(line as Map),
+                )
+                .toList(growable: false),
+          );
+
+          await localDatabase.markStoreDraftSynced(
+            outboxId: item.id,
+            localId: item.entityId,
+            serverEntity: result,
+          );
+
+          processed++;
+          synced++;
+          continue;
+        }
+
+        if (item.operation == 'Create' &&
+            item.entityType == 'StoreWarehouseTransferDraft') {
+          final payload = item.payload;
+
+          final result = await apiClient.createWarehouseTransfer(
+            bearerToken: bearerToken,
+            documentDate:
+                DateTime.parse(payload['documentDate'].toString()),
+            fromWarehouseId:
+                payload['fromWarehouseId'].toString(),
+            toWarehouseId:
+                payload['toWarehouseId'].toString(),
+            description: payload['description']?.toString(),
+            lines: (payload['lines'] as List<dynamic>)
+                .map(
+                  (line) => Map<String, dynamic>.from(line as Map),
+                )
+                .toList(growable: false),
+          );
+
+          await localDatabase.markStoreDraftSynced(
+            outboxId: item.id,
+            localId: item.entityId,
+            serverEntity: result,
+          );
+
+          processed++;
+          synced++;
+          continue;
+        }
+
         await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error:
@@ -124,6 +219,13 @@ class OutboxSyncService {
           );
         }
 
+        if (item.entityType.startsWith('Store')) {
+          await localDatabase.markStoreDraftSyncError(
+            localId: item.entityId,
+            error: error.message,
+          );
+        }
+
         processed++;
         failed++;
 
@@ -142,6 +244,13 @@ class OutboxSyncService {
         if (item.entityType == 'DetailAccount') {
           await localDatabase.markDetailAccountSyncError(
             entityId: item.entityId,
+            error: error.toString(),
+          );
+        }
+
+        if (item.entityType.startsWith('Store')) {
+          await localDatabase.markStoreDraftSyncError(
+            localId: item.entityId,
             error: error.toString(),
           );
         }
