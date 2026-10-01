@@ -421,6 +421,88 @@ accounting.MapPost("/fiscal-periods/{periodId:guid}/state", async (
     }
 });
 
+accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/finalize", async (
+    HttpRequest request,
+    Guid fiscalYearId,
+    FinalizeFiscalYearRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.FinalizeFiscalYearAsync(
+            user.CompanyId,
+            user.Id,
+            fiscalYearId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/reopen-finalized", async (
+    HttpRequest request,
+    Guid fiscalYearId,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.ReopenFinalizedFiscalYearAsync(
+            user.CompanyId,
+            user.Id,
+            fiscalYearId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
 accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/state", async (
     HttpRequest request,
     Guid fiscalYearId,
