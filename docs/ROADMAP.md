@@ -64,16 +64,19 @@
 
 ## Phase 3 — Commercial Operations
 - [ ] Customers and suppliers
-- [ ] Sales invoices
+- [x] Sales invoices
 - [ ] Purchase invoices
 - [ ] Payments and receipts
 - [ ] Cash and bank accounts
 - [ ] Cheques
-- [ ] Tax and discounts
+- [x] Sales invoice tax and discounts
 
 ## Phase 4 — Inventory & Resources
-- [ ] Multi-warehouse inventory
-- [ ] Stock movements
+- [x] Products and services
+- [x] Real-time stock balances
+- [x] Moving-average inventory valuation
+- [x] Multi-warehouse inventory
+- [x] Sales issues and manual stock movements
 - [ ] Transfers
 - [ ] Barcode / QR support
 - [ ] Batch / serial tracking
