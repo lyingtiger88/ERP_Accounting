@@ -395,6 +395,91 @@ public sealed class DetailAccountSyncTests
                 to));
     }
 
+    [Fact]
+    public async Task ClosedFiscalPeriod_BlocksPosting_UntilReopened()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+
+        await service.SeedDefaultAccountsAsync(fixture.Company.Id);
+        var fiscalYear = await service.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+
+        var periods = await service.GetFiscalPeriodsAsync(
+            fixture.Company.Id,
+            fiscalYear.Id);
+
+        Assert.Equal(12, periods.Count);
+
+        var firstPeriod = periods[0];
+
+        await service.SetFiscalPeriodClosedAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            firstPeriod.Id,
+            true);
+
+        var cash = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "1110");
+
+        var revenue = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "4100");
+
+        var request = new CreateJournalRequest(
+            null,
+            firstPeriod.StartDate,
+            "سند داخل دوره بسته",
+            new[]
+            {
+                new CreateJournalLineRequest(
+                    cash.Id,
+                    null,
+                    500m,
+                    0m),
+                new CreateJournalLineRequest(
+                    revenue.Id,
+                    null,
+                    0m,
+                    500m)
+            },
+            fiscalYear.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.PostJournalAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                request));
+
+        await service.SetFiscalPeriodClosedAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            firstPeriod.Id,
+            false);
+
+        var posted = await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            request);
+
+        Assert.Equal(
+            firstPeriod.StartDate,
+            posted.DocumentDate);
+
+        var audit = await service.GetAuditLogsAsync(
+            fixture.Company.Id);
+
+        Assert.Contains(
+            audit,
+            x => x.EntityId == firstPeriod.Id &&
+                 x.Action == "FISCAL_PERIOD_CLOSE");
+        Assert.Contains(
+            audit,
+            x => x.EntityId == firstPeriod.Id &&
+                 x.Action == "FISCAL_PERIOD_REOPEN");
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
