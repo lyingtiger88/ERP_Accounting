@@ -27,6 +27,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<DetailAccountServerChange> DetailAccountServerChanges => Set<DetailAccountServerChange>();
     public DbSet<JournalReversalLink> JournalReversalLinks => Set<JournalReversalLink>();
     public DbSet<AccountingAuditLog> AccountingAuditLogs => Set<AccountingAuditLog>();
+    public DbSet<StoreProduct> StoreProducts => Set<StoreProduct>();
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<SalesInventorySettings> SalesInventorySettings => Set<SalesInventorySettings>();
+    public DbSet<SalesInvoice> SalesInvoices => Set<SalesInvoice>();
+    public DbSet<SalesInvoiceLine> SalesInvoiceLines => Set<SalesInvoiceLine>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -368,6 +374,168 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<JournalEntry>()
                 .WithOne()
                 .HasForeignKey<JournalReversalLink>(x => x.ReversalJournalEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<StoreProduct>(entity =>
+        {
+            entity.ToTable("store_products");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Sku).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
+            entity.Property(x => x.Barcode).HasMaxLength(120);
+            entity.Property(x => x.UnitName).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.SalesPrice).HasPrecision(20, 4);
+            entity.Property(x => x.DefaultPurchasePrice).HasPrecision(20, 4);
+            entity.HasIndex(x => new { x.CompanyId, x.Sku }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.Barcode });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Warehouse>(entity =>
+        {
+            entity.ToTable("warehouses");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SalesInventorySettings>(entity =>
+        {
+            entity.ToTable("sales_inventory_settings");
+            entity.HasKey(x => x.CompanyId);
+            entity.HasOne<Company>()
+                .WithOne()
+                .HasForeignKey<SalesInventorySettings>(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.ReceivablesAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.CashAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.SalesRevenueAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.InventoryAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.CostOfGoodsSoldAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<LedgerAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.SalesTaxPayableAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SalesInvoice>(entity =>
+        {
+            entity.ToTable("sales_invoices");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Number).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.PaymentType).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.Property(x => x.Subtotal).HasPrecision(20, 4);
+            entity.Property(x => x.DiscountTotal).HasPrecision(20, 4);
+            entity.Property(x => x.TaxTotal).HasPrecision(20, 4);
+            entity.Property(x => x.GrandTotal).HasPrecision(20, 4);
+            entity.Property(x => x.CostTotal).HasPrecision(20, 4);
+            entity.HasIndex(x => new { x.CompanyId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.DocumentDate });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<FiscalYear>()
+                .WithMany()
+                .HasForeignKey(x => x.FiscalYearId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<DetailAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.CustomerDetailAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>()
+                .WithMany()
+                .HasForeignKey(x => x.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntry>()
+                .WithMany()
+                .HasForeignKey(x => x.AccountingJournalEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<JournalEntry>()
+                .WithMany()
+                .HasForeignKey(x => x.ReversalJournalEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Lines)
+                .WithOne()
+                .HasForeignKey(x => x.SalesInvoiceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SalesInvoiceLine>(entity =>
+        {
+            entity.ToTable("sales_invoice_lines");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Quantity).HasPrecision(20, 4);
+            entity.Property(x => x.UnitPrice).HasPrecision(20, 4);
+            entity.Property(x => x.DiscountAmount).HasPrecision(20, 4);
+            entity.Property(x => x.TaxAmount).HasPrecision(20, 4);
+            entity.Property(x => x.NetAmount).HasPrecision(20, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(20, 4);
+            entity.Property(x => x.CostAmount).HasPrecision(20, 4);
+            entity.HasIndex(x => x.ProductId);
+            entity.HasOne<StoreProduct>()
+                .WithMany()
+                .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<StockMovement>(entity =>
+        {
+            entity.ToTable("stock_movements");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(30);
+            entity.Property(x => x.Quantity).HasPrecision(20, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(20, 4);
+            entity.Property(x => x.ReferenceType).HasMaxLength(80);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.HasIndex(x => new { x.CompanyId, x.WarehouseId, x.ProductId, x.DocumentDate });
+            entity.HasIndex(x => new { x.ReferenceType, x.ReferenceId });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Warehouse>()
+                .WithMany()
+                .HasForeignKey(x => x.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<StoreProduct>()
+                .WithMany()
+                .HasForeignKey(x => x.ProductId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<AppUser>()
                 .WithMany()
