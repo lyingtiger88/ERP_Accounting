@@ -47,6 +47,18 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
         return 'برگشت سند';
       case 'REVERSAL_POST':
         return 'ثبت سند معکوس';
+      case 'FISCAL_YEAR_CLOSE':
+        return 'بستن سال مالی';
+      case 'FISCAL_YEAR_REOPEN':
+        return 'بازگشایی سال مالی';
+      case 'FISCAL_PERIOD_CLOSE':
+        return 'بستن دوره مالی';
+      case 'FISCAL_PERIOD_REOPEN':
+        return 'بازگشایی دوره مالی';
+      case 'DETAIL_CREATE_SYNC':
+        return 'ایجاد تفصیلی شناور';
+      case 'DETAIL_UPDATE_SYNC':
+        return 'ویرایش تفصیلی شناور';
       default:
         return action;
     }
@@ -61,6 +73,16 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
         return Icons.undo_outlined;
       case 'REVERSAL_POST':
         return Icons.history_outlined;
+      case 'FISCAL_YEAR_CLOSE':
+      case 'FISCAL_PERIOD_CLOSE':
+        return Icons.lock_outline;
+      case 'FISCAL_YEAR_REOPEN':
+      case 'FISCAL_PERIOD_REOPEN':
+        return Icons.lock_open_outlined;
+      case 'DETAIL_CREATE_SYNC':
+        return Icons.person_add_alt_outlined;
+      case 'DETAIL_UPDATE_SYNC':
+        return Icons.edit_outlined;
       default:
         return Icons.history_toggle_off_outlined;
     }
