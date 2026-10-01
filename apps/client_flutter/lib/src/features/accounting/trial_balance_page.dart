@@ -111,10 +111,15 @@ class _TrialBalancePageState extends State<TrialBalancePage> {
 
     final visibleRows = _hideZero
         ? _rows.where((row) {
+            final opening =
+                reportNumber(row['openingBalance']);
             final debit = reportNumber(row['debitTurnover']);
             final credit = reportNumber(row['creditTurnover']);
             final balance = reportNumber(row['balance']);
-            return debit != 0 || credit != 0 || balance != 0;
+            return opening != 0 ||
+                debit != 0 ||
+                credit != 0 ||
+                balance != 0;
           }).toList(growable: false)
         : _rows;
 
@@ -269,6 +274,10 @@ class _TrialBalanceTable extends StatelessWidget {
             DataColumn(label: Text('نام حساب')),
             DataColumn(
               numeric: true,
+              label: Text('مانده افتتاحیه'),
+            ),
+            DataColumn(
+              numeric: true,
               label: Text('گردش بدهکار'),
             ),
             DataColumn(
@@ -277,7 +286,7 @@ class _TrialBalanceTable extends StatelessWidget {
             ),
             DataColumn(
               numeric: true,
-              label: Text('مانده'),
+              label: Text('مانده پایان'),
             ),
           ],
           rows: [
@@ -286,6 +295,13 @@ class _TrialBalanceTable extends StatelessWidget {
                 cells: [
                   DataCell(Text(row['accountCode'].toString())),
                   DataCell(Text(row['accountName'].toString())),
+                  DataCell(
+                    Text(
+                      formatReportMoney(
+                        reportNumber(row['openingBalance']),
+                      ),
+                    ),
+                  ),
                   DataCell(
                     Text(
                       formatReportMoney(
