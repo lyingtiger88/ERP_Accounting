@@ -293,6 +293,41 @@ class ApiClient {
     return Map<String, dynamic>.from(payload as Map);
   }
 
+  Future<Map<String, dynamic>> finalizeFiscalYear({
+    required String bearerToken,
+    required String fiscalYearId,
+    required String retainedEarningsAccountId,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/fiscal-years/' +
+          fiscalYearId +
+          '/finalize',
+      bearerToken: bearerToken,
+      body: {
+        'retainedEarningsAccountId':
+            retainedEarningsAccountId,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> reopenFinalizedFiscalYear({
+    required String bearerToken,
+    required String fiscalYearId,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/fiscal-years/' +
+          fiscalYearId +
+          '/reopen-finalized',
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
   Future<Map<String, dynamic>> setFiscalYearClosed({
     required String bearerToken,
     required String fiscalYearId,
