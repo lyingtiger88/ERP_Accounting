@@ -59,39 +59,70 @@ class _NewSalesInvoicePageState
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([
-        _apiClient.getStoreProducts(
-          bearerToken: widget.accessToken,
-        ),
-        _apiClient.getWarehouses(
-          bearerToken: widget.accessToken,
-        ),
-        widget.localDatabase
-            .getCachedFiscalYears(widget.companyId),
-        widget.localDatabase
-            .getCachedDetailAccounts(widget.companyId),
-      ]);
+      List<Map<String, dynamic>> products;
+      List<Map<String, dynamic>> warehouses;
+
+      try {
+        final results = await Future.wait([
+          _apiClient.getStoreProducts(
+            bearerToken: widget.accessToken,
+          ),
+          _apiClient.getWarehouses(
+            bearerToken: widget.accessToken,
+          ),
+        ]);
+
+        products = results[0];
+        warehouses = results[1];
+
+        await widget.localDatabase.replaceStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StoreProduct',
+          items: products,
+        );
+        await widget.localDatabase.replaceStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'Warehouse',
+          items: warehouses,
+        );
+      } on ApiException catch (error) {
+        if (error.statusCode != null) rethrow;
+
+        products = await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StoreProduct',
+        );
+        warehouses = await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'Warehouse',
+        );
+      }
+
+      final fiscalYears =
+          await widget.localDatabase.getCachedFiscalYears(
+        widget.companyId,
+      );
+      final detailAccounts =
+          await widget.localDatabase.getCachedDetailAccounts(
+        widget.companyId,
+      );
 
       if (!mounted) return;
 
-      final products = (results[0] as List<Map<String, dynamic>>)
+      products = products
           .where((x) => x['isActive'] as bool? ?? true)
           .toList(growable: false);
-      final warehouses =
-          (results[1] as List<Map<String, dynamic>>)
-              .where((x) => x['isActive'] as bool? ?? true)
-              .toList(growable: false);
-      final fiscalYears =
-          results[2] as List<CachedFiscalYear>;
-      final customers =
-          (results[3] as List<CachedDetailAccount>)
-              .where(
-                (x) =>
-                    x.isActive &&
-                    (x.type == 'Customer' ||
-                        x.type == 'Person'),
-              )
-              .toList(growable: false);
+      warehouses = warehouses
+          .where((x) => x['isActive'] as bool? ?? true)
+          .toList(growable: false);
+      final customers = detailAccounts
+          .where(
+            (x) =>
+                x.isActive &&
+                (x.type == 'Customer' ||
+                    x.type == 'Person'),
+          )
+          .toList(growable: false);
 
       CachedFiscalYear? selectedYear;
       for (final year in fiscalYears) {
@@ -348,7 +379,38 @@ class _NewSalesInvoicePageState
         invoice,
       );
     } on ApiException catch (error) {
-      _message(error.message);
+      if (error.statusCode == null) {
+        final localId =
+            await widget.localDatabase.saveLocalStoreDraft(
+          companyId: widget.companyId,
+          entityType: 'StoreSalesInvoiceDraft',
+          payload: {
+            'fiscalYearId': fiscalYearId,
+            'documentDate': _dateOnly(_documentDate),
+            'warehouseId': warehouseId,
+            'customerDetailAccountId': _customerId,
+            'paymentType': _paymentType,
+            'description': _description.text.trim().isEmpty
+                ? null
+                : _description.text.trim(),
+            'lines': lines,
+          },
+        );
+
+        if (!mounted) return;
+
+        Navigator.pop(
+          context,
+          {
+            'id': localId,
+            'number': 'LOCAL-' +
+                localId.substring(0, 8).toUpperCase(),
+            'status': 'LocalPending',
+          },
+        );
+      } else {
+        _message(error.message);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
