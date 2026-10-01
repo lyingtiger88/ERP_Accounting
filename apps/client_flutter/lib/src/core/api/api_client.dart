@@ -429,7 +429,7 @@ class ApiClient {
         .toList(growable: false);
   }
 
-  Future<List<Map<String, dynamic>>> getGeneralLedger({
+  Future<Map<String, dynamic>> getGeneralLedger({
     required String bearerToken,
     String? accountId,
     DateTime? from,
@@ -449,11 +449,7 @@ class ApiClient {
       bearerToken: bearerToken,
     );
 
-    return (response as List<dynamic>)
-        .map(
-          (item) => Map<String, dynamic>.from(item as Map),
-        )
-        .toList(growable: false);
+    return Map<String, dynamic>.from(response as Map);
   }
 
   Future<List<Map<String, dynamic>>> getTrialBalance({
