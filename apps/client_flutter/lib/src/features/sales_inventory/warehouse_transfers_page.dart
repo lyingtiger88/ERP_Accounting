@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/database/local_database.dart';
 import '../accounting/report_support.dart';
 import 'new_warehouse_transfer_page.dart';
 
 class WarehouseTransfersPage extends StatefulWidget {
   const WarehouseTransfersPage({
     super.key,
+    required this.companyId,
     required this.accessToken,
+    required this.localDatabase,
   });
 
+  final String companyId;
   final String accessToken;
+  final LocalDatabase localDatabase;
 
   @override
   State<WarehouseTransfersPage> createState() =>
@@ -30,16 +35,110 @@ class _WarehouseTransfersPageState
   }
 
   void _reload() {
-    _future = _apiClient.getWarehouseTransfers(
-      bearerToken: widget.accessToken,
+    _future = _loadTransfers();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadTransfers() async {
+    List<Map<String, dynamic>> serverItems;
+
+    try {
+      serverItems = await _apiClient.getWarehouseTransfers(
+        bearerToken: widget.accessToken,
+      );
+
+      await widget.localDatabase.replaceStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'WarehouseTransfer',
+        items: serverItems,
+      );
+    } on ApiException catch (error) {
+      if (error.statusCode != null) rethrow;
+
+      serverItems =
+          await widget.localDatabase.getCachedStoreEntities(
+        companyId: widget.companyId,
+        entityType: 'WarehouseTransfer',
+      );
+    }
+
+    final drafts = await widget.localDatabase.getLocalStoreDrafts(
+      companyId: widget.companyId,
+      entityType: 'StoreWarehouseTransferDraft',
     );
+    final products =
+        await widget.localDatabase.getCachedStoreEntities(
+      companyId: widget.companyId,
+      entityType: 'StoreProduct',
+    );
+    final warehouses =
+        await widget.localDatabase.getCachedStoreEntities(
+      companyId: widget.companyId,
+      entityType: 'Warehouse',
+    );
+
+    final productMap = {
+      for (final item in products)
+        item['id'].toString(): item,
+    };
+    final warehouseMap = {
+      for (final item in warehouses)
+        item['id'].toString(): item,
+    };
+
+    final localItems = drafts
+        .where((draft) => draft.syncStatus != 'Synced')
+        .map((draft) {
+          final payload = draft.payload;
+          final lines =
+              (payload['lines'] as List<dynamic>? ?? const [])
+                  .map((raw) {
+            final line = Map<String, dynamic>.from(raw as Map);
+            final product =
+                productMap[line['productId']?.toString()];
+
+            return <String, dynamic>{
+              ...line,
+              'id': draft.id + ':' +
+                  line['productId'].toString(),
+              'sku': product?['sku']?.toString() ?? '?',
+              'productName':
+                  product?['name']?.toString() ?? 'کالای محلی',
+              'unitCost': 0,
+            };
+          }).toList(growable: false);
+
+          return <String, dynamic>{
+            'id': draft.id,
+            'number': 'LOCAL-' +
+                draft.id.substring(0, 8).toUpperCase(),
+            'documentDate': payload['documentDate'],
+            'fromWarehouseName': warehouseMap[
+                        payload['fromWarehouseId']?.toString()]
+                    ?['name']
+                    ?.toString() ??
+                'انبار مبدا',
+            'toWarehouseName': warehouseMap[
+                        payload['toWarehouseId']?.toString()]
+                    ?['name']
+                    ?.toString() ??
+                'انبار مقصد',
+            'status': 'LocalPending',
+            'syncError': draft.lastError,
+            'lines': lines,
+          };
+        })
+        .toList(growable: false);
+
+    return [...localItems, ...serverItems];
   }
 
   Future<void> _create() async {
     final result = await Navigator.of(context).push<dynamic>(
       MaterialPageRoute<dynamic>(
         builder: (_) => NewWarehouseTransferPage(
+          companyId: widget.companyId,
           accessToken: widget.accessToken,
+          localDatabase: widget.localDatabase,
         ),
       ),
     );
@@ -137,10 +236,25 @@ class _WarehouseTransfersPageState
                       label: Text(
                         item['status'].toString() == 'Posted'
                             ? 'قطعی'
-                            : 'پیش‌نویس',
+                            : item['status'].toString() ==
+                                    'LocalPending'
+                                ? 'منتظر Sync'
+                                : 'پیش‌نویس',
                       ),
                     ),
                     children: [
+                      if (item['syncError'] != null)
+                        Padding(
+                          padding:
+                              const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              'خطای Sync: ' +
+                                  item['syncError'].toString(),
+                            ),
+                          ),
+                        ),
                       for (final raw in lines)
                         Builder(
                           builder: (context) {
