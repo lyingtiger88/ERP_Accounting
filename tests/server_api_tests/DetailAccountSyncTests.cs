@@ -337,24 +337,33 @@ public sealed class DetailAccountSyncTests
         var ledger = await service.GetGeneralLedgerAsync(
             fixture.Company.Id,
             cash.Id,
-            firstDate,
-            firstDate);
+            secondDate,
+            secondDate);
 
-        Assert.Single(ledger);
-        Assert.Equal(1_000m, ledger[0].Debit);
-        Assert.Equal(1_000m, ledger[0].RunningBalance);
+        Assert.Single(ledger.Rows);
+        Assert.Equal(1_000m, ledger.OpeningBalance);
+        Assert.Equal(2_000m, ledger.DebitTurnover);
+        Assert.Equal(3_000m, ledger.ClosingBalance);
+        Assert.Equal(2_000m, ledger.Rows[0].Debit);
+        Assert.Equal(3_000m, ledger.Rows[0].RunningBalance);
 
         var trial = await service.GetTrialBalanceAsync(
             fixture.Company.Id,
-            firstDate,
-            firstDate);
+            secondDate,
+            secondDate);
 
-        Assert.Equal(
-            1_000m,
-            trial.Single(x => x.AccountId == cash.Id).DebitTurnover);
-        Assert.Equal(
-            1_000m,
-            trial.Single(x => x.AccountId == revenue.Id).CreditTurnover);
+        var cashTrial =
+            trial.Single(x => x.AccountId == cash.Id);
+        var revenueTrial =
+            trial.Single(x => x.AccountId == revenue.Id);
+
+        Assert.Equal(1_000m, cashTrial.OpeningBalance);
+        Assert.Equal(2_000m, cashTrial.DebitTurnover);
+        Assert.Equal(3_000m, cashTrial.Balance);
+
+        Assert.Equal(-1_000m, revenueTrial.OpeningBalance);
+        Assert.Equal(2_000m, revenueTrial.CreditTurnover);
+        Assert.Equal(-3_000m, revenueTrial.Balance);
     }
 
     [Fact]
