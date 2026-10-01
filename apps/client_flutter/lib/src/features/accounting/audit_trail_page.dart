@@ -59,6 +59,16 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
         return 'ایجاد تفصیلی شناور';
       case 'DETAIL_UPDATE_SYNC':
         return 'ویرایش تفصیلی شناور';
+      case 'YEAR_END_CLOSING_POST':
+        return 'ثبت سند اختتام سال';
+      case 'YEAR_END_CLOSING_REVERSE':
+        return 'برگشت سند اختتام سال';
+      case 'YEAR_END_REOPEN_POST':
+        return 'ثبت سند بازگشایی اختتام';
+      case 'FISCAL_YEAR_FINALIZE':
+        return 'بستن نهایی سال مالی';
+      case 'FISCAL_YEAR_FINALIZATION_REOPEN':
+        return 'بازگشایی بستن نهایی سال';
       default:
         return action;
     }
@@ -83,6 +93,13 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
         return Icons.person_add_alt_outlined;
       case 'DETAIL_UPDATE_SYNC':
         return Icons.edit_outlined;
+      case 'YEAR_END_CLOSING_POST':
+      case 'FISCAL_YEAR_FINALIZE':
+        return Icons.inventory_2_outlined;
+      case 'YEAR_END_CLOSING_REVERSE':
+      case 'YEAR_END_REOPEN_POST':
+      case 'FISCAL_YEAR_FINALIZATION_REOPEN':
+        return Icons.restore_outlined;
       default:
         return Icons.history_toggle_off_outlined;
     }
