@@ -2,6 +2,7 @@ using ERPAccounting.Api.Accounting;
 using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
+using ERPAccounting.Api.SalesInventory;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -914,6 +915,169 @@ public sealed class DetailAccountSyncTests
             audit,
             x => x.EntityId == fiscalYear.Id &&
                  x.Action == "FISCAL_YEAR_FINALIZATION_REOPEN");
+    }
+
+    [Fact]
+    public async Task PostedSale_UpdatesStock_AndCreatesBalancedAccountingJournal()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "SKU-001",
+                "کالای تست",
+                "626000000001",
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                15_000m,
+                10_000m));
+
+        var saleDate = fiscalYear.StartDate.AddDays(5);
+
+        await store.AdjustStockAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateStockAdjustmentRequest(
+                warehouse.Id,
+                product.Id,
+                saleDate,
+                10m,
+                10_000m,
+                "موجودی اولیه تست"));
+
+        var invoice = await store.CreateSalesInvoiceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateSalesInvoiceRequest(
+                fiscalYear.Id,
+                saleDate,
+                warehouse.Id,
+                null,
+                SalesPaymentType.Cash,
+                "فروش نقدی تست",
+                new[]
+                {
+                    new SalesInvoiceLineRequest(
+                        product.Id,
+                        2m,
+                        15_000m,
+                        0m,
+                        3_000m)
+                }));
+
+        Assert.Equal(SalesInvoiceStatus.Draft, invoice.Status);
+        Assert.Equal(33_000m, invoice.GrandTotal);
+
+        var posted = await store.PostSalesInvoiceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            invoice.Id);
+
+        Assert.Equal(33_000m, posted.GrandTotal);
+        Assert.Equal(20_000m, posted.CostTotal);
+
+        var savedInvoice = await fixture.Db.SalesInvoices
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == invoice.Id);
+
+        Assert.Equal(
+            SalesInvoiceStatus.Posted,
+            savedInvoice.Status);
+        Assert.Equal(
+            posted.AccountingJournalEntryId,
+            savedInvoice.AccountingJournalEntryId);
+
+        var stock = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(8m, stock.Quantity);
+        Assert.Equal(10_000m, stock.AverageCost);
+        Assert.Equal(80_000m, stock.InventoryValue);
+
+        var journal = await fixture.Db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .SingleAsync(
+                x => x.Id == posted.AccountingJournalEntryId);
+
+        Assert.Equal(JournalStatus.Posted, journal.Status);
+        Assert.Equal(
+            journal.Lines.Sum(x => x.Debit),
+            journal.Lines.Sum(x => x.Credit));
+
+        Assert.Equal(
+            53_000m,
+            journal.Lines.Sum(x => x.Debit));
+        Assert.Equal(
+            53_000m,
+            journal.Lines.Sum(x => x.Credit));
+
+        var settings = await fixture.Db.SalesInventorySettings
+            .AsNoTracking()
+            .SingleAsync(
+                x => x.CompanyId == fixture.Company.Id);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.CashAccountId &&
+                x.Debit == 33_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.SalesRevenueAccountId &&
+                x.Credit == 30_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.SalesTaxPayableAccountId &&
+                x.Credit == 3_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.CostOfGoodsSoldAccountId &&
+                x.Debit == 20_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.InventoryAccountId &&
+                x.Credit == 20_000m);
+
+        var audit = await accounting.GetAuditLogsAsync(
+            fixture.Company.Id,
+            limit: 500);
+
+        Assert.Contains(
+            audit,
+            x =>
+                x.EntityId == invoice.Id &&
+                x.Action == "SALES_INVOICE_POST");
     }
 
     private sealed class TestFixture : IAsyncDisposable
