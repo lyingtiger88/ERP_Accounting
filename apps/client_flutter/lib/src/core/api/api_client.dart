@@ -408,6 +408,85 @@ class ApiClient {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getJournals({
+    required String bearerToken,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final query = _reportQuery(from: from, to: to);
+
+    final response = await _request(
+      'GET',
+      '/api/accounting/journals' +
+          (query.isEmpty ? '' : '?' + query),
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> getGeneralLedger({
+    required String bearerToken,
+    String? accountId,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final parts = <String>[
+      if (accountId != null && accountId.isNotEmpty)
+        'accountId=' + Uri.encodeQueryComponent(accountId),
+      if (from != null) 'from=' + _dateOnly(from),
+      if (to != null) 'to=' + _dateOnly(to),
+    ];
+
+    final response = await _request(
+      'GET',
+      '/api/accounting/general-ledger' +
+          (parts.isEmpty ? '' : '?' + parts.join('&')),
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> getTrialBalance({
+    required String bearerToken,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final query = _reportQuery(from: from, to: to);
+
+    final response = await _request(
+      'GET',
+      '/api/accounting/trial-balance' +
+          (query.isEmpty ? '' : '?' + query),
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  static String _reportQuery({
+    DateTime? from,
+    DateTime? to,
+  }) {
+    return <String>[
+      if (from != null) 'from=' + _dateOnly(from),
+      if (to != null) 'to=' + _dateOnly(to),
+    ].join('&');
+  }
+
   Future<List<Map<String, dynamic>>> getAccountingAudit({
     required String bearerToken,
     String? entityId,
