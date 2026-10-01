@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/database/local_database.dart';
 import '../accounting/report_support.dart';
 
 class NewWarehouseTransferPage extends StatefulWidget {
   const NewWarehouseTransferPage({
     super.key,
+    required this.companyId,
     required this.accessToken,
+    required this.localDatabase,
   });
 
+  final String companyId;
   final String accessToken;
+  final LocalDatabase localDatabase;
 
   @override
   State<NewWarehouseTransferPage> createState() =>
@@ -48,30 +53,59 @@ class _NewWarehouseTransferPageState
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([
-        _apiClient.getWarehouses(
-          bearerToken: widget.accessToken,
-        ),
-        _apiClient.getStoreProducts(
-          bearerToken: widget.accessToken,
-        ),
-      ]);
+      List<Map<String, dynamic>> warehouses;
+      List<Map<String, dynamic>> products;
+
+      try {
+        final results = await Future.wait([
+          _apiClient.getWarehouses(
+            bearerToken: widget.accessToken,
+          ),
+          _apiClient.getStoreProducts(
+            bearerToken: widget.accessToken,
+          ),
+        ]);
+
+        warehouses = results[0];
+        products = results[1];
+
+        await widget.localDatabase.replaceStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'Warehouse',
+          items: warehouses,
+        );
+        await widget.localDatabase.replaceStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StoreProduct',
+          items: products,
+        );
+      } on ApiException catch (error) {
+        if (error.statusCode != null) rethrow;
+
+        warehouses =
+            await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'Warehouse',
+        );
+        products =
+            await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StoreProduct',
+        );
+      }
 
       if (!mounted) return;
 
-      final warehouses =
-          (results[0] as List<Map<String, dynamic>>)
-              .where((x) => x['isActive'] as bool? ?? true)
-              .toList(growable: false);
-
-      final products =
-          (results[1] as List<Map<String, dynamic>>)
-              .where(
-                (x) =>
-                    (x['isActive'] as bool? ?? true) &&
-                    (x['trackInventory'] as bool? ?? false),
-              )
-              .toList(growable: false);
+      warehouses = warehouses
+          .where((x) => x['isActive'] as bool? ?? true)
+          .toList(growable: false);
+      products = products
+          .where(
+            (x) =>
+                (x['isActive'] as bool? ?? true) &&
+                (x['trackInventory'] as bool? ?? false),
+          )
+          .toList(growable: false);
 
       setState(() {
         _warehouses = warehouses;
@@ -207,7 +241,36 @@ class _NewWarehouseTransferPageState
       if (!mounted) return;
       Navigator.pop(context, result);
     } on ApiException catch (error) {
-      _message(error.message);
+      if (error.statusCode == null) {
+        final localId =
+            await widget.localDatabase.saveLocalStoreDraft(
+          companyId: widget.companyId,
+          entityType: 'StoreWarehouseTransferDraft',
+          payload: {
+            'documentDate': _dateOnly(_date),
+            'fromWarehouseId': _fromWarehouseId,
+            'toWarehouseId': _toWarehouseId,
+            'description': _description.text.trim().isEmpty
+                ? null
+                : _description.text.trim(),
+            'lines': lines,
+          },
+        );
+
+        if (!mounted) return;
+
+        Navigator.pop(
+          context,
+          {
+            'id': localId,
+            'number': 'LOCAL-' +
+                localId.substring(0, 8).toUpperCase(),
+            'status': 'LocalPending',
+          },
+        );
+      } else {
+        _message(error.message);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
