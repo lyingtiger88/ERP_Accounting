@@ -804,6 +804,64 @@ accounting.MapGet("/sync/journals", async (
     }
 });
 
+accounting.MapGet("/profit-loss", async (
+    HttpRequest request,
+    DateOnly? from,
+    DateOnly? to,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.GetProfitLossAsync(
+            user.CompanyId,
+            from,
+            to,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/balance-sheet", async (
+    HttpRequest request,
+    DateOnly? asOf,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var reportDate =
+        asOf ?? DateOnly.FromDateTime(DateTime.Today);
+
+    return Results.Ok(await accountingService.GetBalanceSheetAsync(
+        user.CompanyId,
+        reportDate,
+        cancellationToken));
+});
+
 accounting.MapGet("/trial-balance", async (
     HttpRequest request,
     DateOnly? from,
