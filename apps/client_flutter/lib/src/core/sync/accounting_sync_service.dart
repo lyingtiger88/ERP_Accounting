@@ -3,6 +3,7 @@ import '../database/local_database.dart';
 import 'detail_account_pull_sync_service.dart';
 import 'journal_pull_sync_service.dart';
 import 'outbox_sync_service.dart';
+import 'sales_inventory_cache_sync_service.dart';
 
 class AccountingSyncRunResult {
   const AccountingSyncRunResult({
@@ -93,6 +94,18 @@ class AccountingSyncService {
         startCursor: currentCursor,
         endCursor: currentCursor,
       );
+    }
+
+    try {
+      await SalesInventoryCacheSyncService(
+        localDatabase: localDatabase,
+        apiClient: apiClient,
+      ).refresh(
+        companyId: companyId,
+        bearerToken: bearerToken,
+      );
+    } catch (_) {
+      // Store cache refresh is best-effort and must not block accounting sync.
     }
 
     await DetailAccountPullSyncService(
