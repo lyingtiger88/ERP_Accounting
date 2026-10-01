@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
+    public DbSet<FiscalPeriod> FiscalPeriods => Set<FiscalPeriod>();
     public DbSet<DetailAccount> DetailAccounts => Set<DetailAccount>();
     public DbSet<JournalEntryFiscalYear> JournalEntryFiscalYears => Set<JournalEntryFiscalYear>();
     public DbSet<JournalLineDimension> JournalLineDimensions => Set<JournalLineDimension>();
@@ -135,6 +136,23 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<Company>()
                 .WithMany()
                 .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FiscalPeriod>(entity =>
+        {
+            entity.ToTable("fiscal_periods");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.HasIndex(x => new { x.FiscalYearId, x.PeriodNumber }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.StartDate, x.EndDate });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<FiscalYear>()
+                .WithMany()
+                .HasForeignKey(x => x.FiscalYearId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
