@@ -509,6 +509,37 @@ class ApiClient {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<Map<String, dynamic>> getProfitLoss({
+    required String bearerToken,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final query = _reportQuery(from: from, to: to);
+
+    final response = await _request(
+      'GET',
+      '/api/accounting/profit-loss' +
+          (query.isEmpty ? '' : '?' + query),
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> getBalanceSheet({
+    required String bearerToken,
+    required DateTime asOf,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/accounting/balance-sheet?asOf=' +
+          _dateOnly(asOf),
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getTrialBalance({
     required String bearerToken,
     DateTime? from,
