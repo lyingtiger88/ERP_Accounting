@@ -1730,6 +1730,218 @@ public sealed class AccountingService(AppDbContext db)
             rows);
     }
 
+    public async Task<ProfitLossReportResponse> GetProfitLossAsync(
+        Guid companyId,
+        DateOnly? from = null,
+        DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateDateRange(from, to);
+
+        var accounts = await db.Accounts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                (x.Type == AccountType.Revenue ||
+                 x.Type == AccountType.Expense))
+            .OrderBy(x => x.Code)
+            .ToArrayAsync(cancellationToken);
+
+        var journalQuery = db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Status == JournalStatus.Posted);
+
+        if (from is DateOnly fromDate)
+        {
+            journalQuery = journalQuery.Where(
+                x => x.DocumentDate >= fromDate);
+        }
+
+        if (to is DateOnly toDate)
+        {
+            journalQuery = journalQuery.Where(
+                x => x.DocumentDate <= toDate);
+        }
+
+        var journals = await journalQuery
+            .ToArrayAsync(cancellationToken);
+
+        var rows = new List<ProfitLossRow>();
+        decimal revenueTotal = 0;
+        decimal expenseTotal = 0;
+
+        foreach (var account in accounts)
+        {
+            var lines = journals
+                .SelectMany(x => x.Lines)
+                .Where(x => x.AccountId == account.Id)
+                .ToArray();
+
+            decimal amount;
+
+            if (account.Type == AccountType.Revenue)
+            {
+                amount = lines.Sum(x => x.Credit - x.Debit);
+                revenueTotal += amount;
+            }
+            else
+            {
+                amount = lines.Sum(x => x.Debit - x.Credit);
+                expenseTotal += amount;
+            }
+
+            if (amount == 0)
+            {
+                continue;
+            }
+
+            rows.Add(new ProfitLossRow(
+                account.Id,
+                account.Code,
+                account.Name,
+                account.Type == AccountType.Revenue
+                    ? "Revenue"
+                    : "Expense",
+                amount));
+        }
+
+        return new ProfitLossReportResponse(
+            from,
+            to,
+            revenueTotal,
+            expenseTotal,
+            revenueTotal - expenseTotal,
+            rows);
+    }
+
+    public async Task<BalanceSheetReportResponse> GetBalanceSheetAsync(
+        Guid companyId,
+        DateOnly asOf,
+        CancellationToken cancellationToken = default)
+    {
+        var accounts = await db.Accounts
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderBy(x => x.Code)
+            .ToArrayAsync(cancellationToken);
+
+        var journals = await db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Status == JournalStatus.Posted &&
+                x.DocumentDate <= asOf)
+            .ToArrayAsync(cancellationToken);
+
+        var rows = new List<BalanceSheetRow>();
+        decimal assetTotal = 0;
+        decimal liabilityTotal = 0;
+        decimal equityTotal = 0;
+        decimal revenueResult = 0;
+        decimal expenseResult = 0;
+
+        foreach (var account in accounts)
+        {
+            var lines = journals
+                .SelectMany(x => x.Lines)
+                .Where(x => x.AccountId == account.Id)
+                .ToArray();
+
+            if (lines.Length == 0)
+            {
+                continue;
+            }
+
+            switch (account.Type)
+            {
+                case AccountType.Asset:
+                {
+                    var amount = lines.Sum(
+                        x => x.Debit - x.Credit);
+
+                    if (amount != 0)
+                    {
+                        assetTotal += amount;
+                        rows.Add(new BalanceSheetRow(
+                            account.Id,
+                            account.Code,
+                            account.Name,
+                            "Asset",
+                            amount));
+                    }
+
+                    break;
+                }
+
+                case AccountType.Liability:
+                {
+                    var amount = lines.Sum(
+                        x => x.Credit - x.Debit);
+
+                    if (amount != 0)
+                    {
+                        liabilityTotal += amount;
+                        rows.Add(new BalanceSheetRow(
+                            account.Id,
+                            account.Code,
+                            account.Name,
+                            "Liability",
+                            amount));
+                    }
+
+                    break;
+                }
+
+                case AccountType.Equity:
+                {
+                    var amount = lines.Sum(
+                        x => x.Credit - x.Debit);
+
+                    if (amount != 0)
+                    {
+                        equityTotal += amount;
+                        rows.Add(new BalanceSheetRow(
+                            account.Id,
+                            account.Code,
+                            account.Name,
+                            "Equity",
+                            amount));
+                    }
+
+                    break;
+                }
+
+                case AccountType.Revenue:
+                    revenueResult += lines.Sum(
+                        x => x.Credit - x.Debit);
+                    break;
+
+                case AccountType.Expense:
+                    expenseResult += lines.Sum(
+                        x => x.Debit - x.Credit);
+                    break;
+            }
+        }
+
+        var accumulatedResult = revenueResult - expenseResult;
+        var rightSide =
+            liabilityTotal + equityTotal + accumulatedResult;
+
+        return new BalanceSheetReportResponse(
+            asOf,
+            assetTotal,
+            liabilityTotal,
+            equityTotal,
+            accumulatedResult,
+            rightSide,
+            assetTotal - rightSide,
+            rows);
+    }
+
     public async Task SeedDefaultAccountsAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
