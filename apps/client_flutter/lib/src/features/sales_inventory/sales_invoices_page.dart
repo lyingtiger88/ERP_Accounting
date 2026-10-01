@@ -128,6 +128,202 @@ class _SalesInvoicesPageState
     }
   }
 
+  Future<void> _returnInvoice(
+    Map<String, dynamic> invoice,
+  ) async {
+    if (_busy || invoice['status'].toString() != 'Posted') {
+      return;
+    }
+
+    final rawLines =
+        invoice['lines'] as List<dynamic>? ?? const [];
+    final lines = rawLines
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+
+    final controllers = <String, TextEditingController>{
+      for (final line in lines)
+        line['id'].toString():
+            TextEditingController(text: '0'),
+    };
+    final reason = TextEditingController();
+    var date = DateTime.now();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                'برگشت از ' + invoice['number'].toString(),
+              ),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final line in lines)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  line['sku'].toString() +
+                                      ' — ' +
+                                      line['productName'].toString() +
+                                      ' • فروش: ' +
+                                      formatReportMoney(
+                                        reportNumber(
+                                          line['quantity'],
+                                        ),
+                                      ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 130,
+                                child: TextField(
+                                  controller: controllers[
+                                      line['id'].toString()],
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  textDirection: TextDirection.ltr,
+                                  decoration: const InputDecoration(
+                                    labelText: 'تعداد برگشت',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      TextField(
+                        controller: reason,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'علت برگشت',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: date,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+
+                          if (picked != null) {
+                            setDialogState(() => date = picked);
+                          }
+                        },
+                        icon: const Icon(
+                          Icons.calendar_month_outlined,
+                        ),
+                        label: Text(formatReportDate(date)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, false),
+                  child: const Text('انصراف'),
+                ),
+                FilledButton.icon(
+                  onPressed: () {
+                    if (reason.text.trim().isEmpty) return;
+                    final hasQuantity = controllers.values.any(
+                      (controller) =>
+                          (num.tryParse(
+                                controller.text
+                                    .replaceAll(',', '')
+                                    .trim(),
+                              ) ??
+                              0) >
+                          0,
+                    );
+                    if (!hasQuantity) return;
+
+                    Navigator.pop(context, true);
+                  },
+                  icon: const Icon(
+                    Icons.assignment_return_outlined,
+                  ),
+                  label: const Text('ثبت برگشت'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+      reason.dispose();
+      return;
+    }
+
+    final requestLines = <Map<String, dynamic>>[];
+    for (final line in lines) {
+      final value = num.tryParse(
+            controllers[line['id'].toString()]!
+                .text
+                .replaceAll(',', '')
+                .trim(),
+          ) ??
+          0;
+
+      if (value > 0) {
+        requestLines.add({
+          'salesInvoiceLineId': line['id'].toString(),
+          'quantity': value,
+        });
+      }
+    }
+
+    setState(() => _busy = true);
+
+    try {
+      final result = await _apiClient.createSalesReturn(
+        bearerToken: widget.accessToken,
+        invoiceId: invoice['id'].toString(),
+        documentDate: date,
+        reason: reason.text.trim(),
+        lines: requestLines,
+      );
+
+      if (!mounted) return;
+      setState(_reload);
+
+      _message(
+        'برگشت ' +
+            result['number'].toString() +
+            ' ثبت شد • سند: ' +
+            result['accountingJournalNumber'].toString(),
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+      reason.dispose();
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _message(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -249,6 +445,7 @@ class _SalesInvoicesPageState
                     statusText: _statusText,
                     paymentText: _paymentText,
                     onPost: () => _post(invoice),
+                    onReturn: () => _returnInvoice(invoice),
                   ),
                   const SizedBox(height: 10),
                 ],
@@ -268,6 +465,7 @@ class _InvoiceCard extends StatelessWidget {
     required this.statusText,
     required this.paymentText,
     required this.onPost,
+    required this.onReturn,
   });
 
   final Map<String, dynamic> invoice;
@@ -275,6 +473,7 @@ class _InvoiceCard extends StatelessWidget {
   final String Function(String) statusText;
   final String Function(String) paymentText;
   final VoidCallback onPost;
+  final VoidCallback onReturn;
 
   @override
   Widget build(BuildContext context) {
@@ -426,6 +625,14 @@ class _InvoiceCard extends StatelessWidget {
                       Icons.check_circle_outline,
                     ),
                     label: const Text('ثبت قطعی'),
+                  ),
+                if (status == 'Posted')
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : onReturn,
+                    icon: const Icon(
+                      Icons.assignment_return_outlined,
+                    ),
+                    label: const Text('برگشت از فروش'),
                   ),
                 if (invoice['accountingJournalNumber'] !=
                     null)
