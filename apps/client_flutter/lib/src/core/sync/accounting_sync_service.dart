@@ -53,6 +53,21 @@ class AccountingSyncService {
       companyId: companyId,
       fiscalYears: fiscalYears,
     );
+
+    for (final fiscalYear in fiscalYears) {
+      final fiscalYearId = fiscalYear['id'] as String;
+      final periods = await apiClient.getFiscalPeriods(
+        bearerToken: bearerToken,
+        fiscalYearId: fiscalYearId,
+      );
+
+      await localDatabase.replaceFiscalPeriods(
+        companyId: companyId,
+        fiscalYearId: fiscalYearId,
+        periods: periods,
+      );
+    }
+
     await localDatabase.backfillLegacyJournalFiscalYears(
       companyId,
     );
