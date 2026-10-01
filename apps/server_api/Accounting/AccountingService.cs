@@ -2860,6 +2860,51 @@ public sealed class AccountingService(AppDbContext db)
         }
     }
 
+    private async Task<bool> TemporaryAccountsHaveBalanceAsync(
+        Guid companyId,
+        FiscalYear fiscalYear,
+        CancellationToken cancellationToken)
+    {
+        var temporaryAccountIds = await db.Accounts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                (x.Type == AccountType.Revenue ||
+                 x.Type == AccountType.Expense))
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken);
+
+        if (temporaryAccountIds.Length == 0)
+        {
+            return false;
+        }
+
+        var journals = await db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Status == JournalStatus.Posted &&
+                x.DocumentDate >= fiscalYear.StartDate &&
+                x.DocumentDate <= fiscalYear.EndDate)
+            .ToArrayAsync(cancellationToken);
+
+        var balances = temporaryAccountIds.ToDictionary(
+            x => x,
+            _ => 0m);
+
+        foreach (var line in journals.SelectMany(x => x.Lines))
+        {
+            if (balances.ContainsKey(line.AccountId))
+            {
+                balances[line.AccountId] +=
+                    line.Debit - line.Credit;
+            }
+        }
+
+        return balances.Values.Any(x => x != 0);
+    }
+
     private static HashSet<Guid> GetDescendantAccountIds(
         Guid rootAccountId,
         IReadOnlyList<LedgerAccount> accounts)
