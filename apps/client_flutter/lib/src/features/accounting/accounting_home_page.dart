@@ -5,6 +5,7 @@ import 'audit_trail_page.dart';
 import 'balance_sheet_page.dart';
 import 'cached_accounts_page.dart';
 import 'detail_accounts_page.dart';
+import 'detail_ledger_page.dart';
 import 'fiscal_years_page.dart';
 import 'general_ledger_page.dart';
 import 'journal_report_page.dart';
@@ -154,6 +155,19 @@ class AccountingHomePage extends StatelessWidget {
                   onTap: () => _open(
                     context,
                     GeneralLedgerPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'گردش تفصیلی شناور',
+                  subtitle: 'مانده مشتری، فروشنده و سایر تفصیلی‌ها',
+                  icon: Icons.person_search_outlined,
+                  onTap: () => _open(
+                    context,
+                    DetailLedgerPage(
                       companyId: companyId,
                       accessToken: accessToken,
                       localDatabase: localDatabase,
