@@ -458,8 +458,9 @@ class _SalesInventoryHomePageState
                       icon: Icons.warehouse_outlined,
                       onTap: () => _open(
                         WarehousesPage(
-                          accessToken:
-                              widget.accessToken,
+                          companyId: widget.companyId,
+                          accessToken: widget.accessToken,
+                          localDatabase: widget.localDatabase,
                         ),
                       ),
                     ),
