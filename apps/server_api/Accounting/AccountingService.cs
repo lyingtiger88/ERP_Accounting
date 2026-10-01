@@ -1730,6 +1730,133 @@ public sealed class AccountingService(AppDbContext db)
             rows);
     }
 
+    public async Task<DetailLedgerReportResponse> GetDetailLedgerAsync(
+        Guid companyId,
+        Guid detailAccountId,
+        DateOnly? from = null,
+        DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateDateRange(from, to);
+
+        var detail = await db.DetailAccounts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == detailAccountId &&
+                    x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Detail account does not exist in this company.");
+
+        var accountLookup = await db.Accounts
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var journalQuery = db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Status == JournalStatus.Posted);
+
+        if (to is DateOnly toDate)
+        {
+            journalQuery = journalQuery.Where(
+                x => x.DocumentDate <= toDate);
+        }
+
+        var journals = await journalQuery
+            .OrderBy(x => x.DocumentDate)
+            .ThenBy(x => x.CreatedAt)
+            .ToArrayAsync(cancellationToken);
+
+        var lineIds = journals
+            .SelectMany(x => x.Lines)
+            .Select(x => x.Id)
+            .ToArray();
+
+        var matchingLineIds = lineIds.Length == 0
+            ? new HashSet<Guid>()
+            : (await db.JournalLineDimensions
+                .AsNoTracking()
+                .Where(x =>
+                    lineIds.Contains(x.JournalLineId) &&
+                    x.DetailAccountId == detailAccountId)
+                .Select(x => x.JournalLineId)
+                .ToArrayAsync(cancellationToken))
+                .ToHashSet();
+
+        decimal openingBalance = 0;
+        decimal runningBalance = 0;
+        decimal debitTurnover = 0;
+        decimal creditTurnover = 0;
+        var rows = new List<DetailLedgerRow>();
+
+        foreach (var journal in journals)
+        {
+            foreach (var line in journal.Lines)
+            {
+                if (!matchingLineIds.Contains(line.Id))
+                {
+                    continue;
+                }
+
+                var movement = line.Debit - line.Credit;
+
+                if (from is DateOnly fromDate &&
+                    journal.DocumentDate < fromDate)
+                {
+                    openingBalance += movement;
+                    continue;
+                }
+
+                runningBalance =
+                    openingBalance +
+                    debitTurnover -
+                    creditTurnover +
+                    movement;
+
+                debitTurnover += line.Debit;
+                creditTurnover += line.Credit;
+
+                if (!accountLookup.TryGetValue(
+                        line.AccountId,
+                        out var account))
+                {
+                    continue;
+                }
+
+                rows.Add(new DetailLedgerRow(
+                    journal.Id,
+                    journal.Number,
+                    journal.DocumentDate,
+                    account.Id,
+                    account.Code,
+                    account.Name,
+                    detail.Id,
+                    detail.Code,
+                    detail.Name,
+                    line.Description ?? journal.Description,
+                    line.Debit,
+                    line.Credit,
+                    runningBalance));
+            }
+        }
+
+        var closingBalance =
+            openingBalance + debitTurnover - creditTurnover;
+
+        return new DetailLedgerReportResponse(
+            detail.Id,
+            openingBalance,
+            debitTurnover,
+            creditTurnover,
+            closingBalance,
+            rows);
+    }
+
     public async Task<ProfitLossReportResponse> GetProfitLossAsync(
         Guid companyId,
         DateOnly? from = null,
