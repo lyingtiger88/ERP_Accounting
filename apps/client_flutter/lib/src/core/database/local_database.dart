@@ -1304,6 +1304,229 @@ class LocalDatabase {
     return documentId;
   }
 
+  Future<void> updateLocalJournalDraft({
+    required String documentId,
+    required String companyId,
+    required String? fiscalYearId,
+    required DateTime documentDate,
+    required String description,
+    required List<LocalJournalLineInput> lines,
+    required bool queueForSync,
+  }) async {
+    final effectiveLines = lines
+        .where((line) => line.debit > 0 || line.credit > 0)
+        .toList(growable: false);
+
+    if (effectiveLines.isEmpty) {
+      throw ArgumentError(
+        'حداقل یک ردیف دارای مبلغ برای سند لازم است.',
+      );
+    }
+
+    for (final line in effectiveLines) {
+      if (line.debit < 0 || line.credit < 0) {
+        throw ArgumentError(
+          'مبلغ بدهکار و بستانکار نمی‌تواند منفی باشد.',
+        );
+      }
+
+      if (line.debit > 0 && line.credit > 0) {
+        throw ArgumentError(
+          'در هر ردیف فقط یکی از بدهکار یا بستانکار می‌تواند مبلغ داشته باشد.',
+        );
+      }
+    }
+
+    final debitTotal = effectiveLines.fold<int>(
+      0,
+      (sum, line) => sum + line.debit,
+    );
+    final creditTotal = effectiveLines.fold<int>(
+      0,
+      (sum, line) => sum + line.credit,
+    );
+
+    final dateOnly = _dateOnly(documentDate);
+
+    if (queueForSync) {
+      if (fiscalYearId == null || fiscalYearId.isEmpty) {
+        throw ArgumentError(
+          'سال مالی برای سند آماده همگام‌سازی الزامی است.',
+        );
+      }
+
+      final periodRows = await _db.query(
+        'cached_fiscal_periods',
+        where: 'company_id = ? AND fiscal_year_id = ?',
+        whereArgs: [companyId, fiscalYearId],
+      );
+
+      if (periodRows.isNotEmpty) {
+        Map<String, Object?>? matchingPeriod;
+
+        for (final row in periodRows) {
+          final start = row['start_date'] as String;
+          final end = row['end_date'] as String;
+
+          if (dateOnly.compareTo(start) >= 0 &&
+              dateOnly.compareTo(end) <= 0) {
+            matchingPeriod = row;
+            break;
+          }
+        }
+
+        if (matchingPeriod == null) {
+          throw ArgumentError(
+            'برای تاریخ سند، دوره مالی معتبری پیدا نشد.',
+          );
+        }
+
+        if ((matchingPeriod['is_closed'] as int) == 1) {
+          throw ArgumentError(
+            'دوره مالی «' +
+                matchingPeriod['name'].toString() +
+                '» بسته است.',
+          );
+        }
+      }
+
+      if (effectiveLines.length < 2) {
+        throw ArgumentError(
+          'سند آماده همگام‌سازی حداقل دو ردیف نیاز دارد.',
+        );
+      }
+
+      if (debitTotal <= 0 || debitTotal != creditTotal) {
+        throw ArgumentError(
+          'برای ثبت، جمع بدهکار و بستانکار باید برابر و بزرگ‌تر از صفر باشد.',
+        );
+      }
+    }
+
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      final documents = await txn.query(
+        'local_accounting_documents',
+        columns: [
+          'id',
+          'status',
+          'sync_status',
+          'server_id',
+        ],
+        where: 'id = ? AND company_id = ?',
+        whereArgs: [documentId, companyId],
+        limit: 1,
+      );
+
+      if (documents.isEmpty) {
+        throw StateError('پیش‌نویس موردنظر پیدا نشد.');
+      }
+
+      final document = documents.first;
+
+      if (document['status'] != 'Draft' ||
+          document['sync_status'] != 'LocalOnly' ||
+          document['server_id'] != null) {
+        throw StateError(
+          'فقط پیش‌نویس محلی قابل ویرایش مستقیم است.',
+        );
+      }
+
+      final pendingOutbox = await txn.query(
+        'sync_outbox',
+        columns: ['id'],
+        where: 'entity_type = ? AND entity_id = ? AND sent_at IS NULL',
+        whereArgs: ['AccountingDocument', documentId],
+        limit: 1,
+      );
+
+      if (pendingOutbox.isNotEmpty) {
+        throw StateError(
+          'این سند قبلاً وارد صف همگام‌سازی شده و قابل ویرایش مستقیم نیست.',
+        );
+      }
+
+      await txn.update(
+        'local_accounting_documents',
+        {
+          'fiscal_year_id': fiscalYearId,
+          'document_date': dateOnly,
+          'description': description.trim(),
+          'status': queueForSync ? 'PendingSync' : 'Draft',
+          'sync_status': queueForSync ? 'Pending' : 'LocalOnly',
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [documentId],
+      );
+
+      await txn.delete(
+        'local_document_lines',
+        where: 'document_id = ?',
+        whereArgs: [documentId],
+      );
+
+      var sortOrder = 0;
+
+      for (final line in effectiveLines) {
+        await txn.insert(
+          'local_document_lines',
+          {
+            'id': _newId(),
+            'document_id': documentId,
+            'account_id': line.accountId,
+            'detail_account_id': line.detailAccountId,
+            'description': line.description.trim(),
+            'debit': line.debit,
+            'credit': line.credit,
+            'sort_order': sortOrder++,
+          },
+        );
+      }
+
+      if (!queueForSync) {
+        return;
+      }
+
+      final payload = <String, dynamic>{
+        'localDocumentId': documentId,
+        'companyId': companyId,
+        'fiscalYearId': fiscalYearId,
+        'documentDate': dateOnly,
+        'description': description.trim(),
+        'currency': 'IRR',
+        'debitTotal': debitTotal,
+        'creditTotal': creditTotal,
+        'lines': effectiveLines
+            .map(
+              (line) => {
+                'accountId': line.accountId,
+                'detailAccountId': line.detailAccountId,
+                'description': line.description.trim(),
+                'debit': line.debit,
+                'credit': line.credit,
+              },
+            )
+            .toList(growable: false),
+      };
+
+      await txn.insert(
+        'sync_outbox',
+        {
+          'change_id': _newId(),
+          'company_id': companyId,
+          'entity_type': 'AccountingDocument',
+          'entity_id': documentId,
+          'operation': 'Create',
+          'payload_json': jsonEncode(payload),
+          'created_at': now,
+          'attempt_count': 0,
+        },
+      );
+    });
+  }
+
   Future<int> getDetailAccountPullCursor(
     String companyId,
   ) async {
@@ -1535,6 +1758,7 @@ class LocalDatabase {
         LocalAccountingDocument(
           id: document['id'] as String,
           companyId: document['company_id'] as String,
+          fiscalYearId: document['fiscal_year_id'] as String?,
           documentDate: document['document_date'] as String,
           description: document['description'] as String? ?? '',
           status: document['status'] as String,
@@ -1814,6 +2038,7 @@ class LocalAccountingDocument {
   const LocalAccountingDocument({
     required this.id,
     required this.companyId,
+    required this.fiscalYearId,
     required this.documentDate,
     required this.description,
     required this.status,
@@ -1831,6 +2056,7 @@ class LocalAccountingDocument {
 
   final String id;
   final String companyId;
+  final String? fiscalYearId;
   final String documentDate;
   final String description;
   final String status;
