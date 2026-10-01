@@ -314,6 +314,113 @@ accounting.MapPost("/fiscal-years", async (
     }
 });
 
+accounting.MapGet("/fiscal-years/{fiscalYearId:guid}/periods", async (
+    HttpRequest request,
+    Guid fiscalYearId,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.GetFiscalPeriodsAsync(
+            user.CompanyId,
+            fiscalYearId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/periods/ensure-standard", async (
+    HttpRequest request,
+    Guid fiscalYearId,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.EnsureStandardFiscalPeriodsAsync(
+            user.CompanyId,
+            fiscalYearId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapPost("/fiscal-periods/{periodId:guid}/state", async (
+    HttpRequest request,
+    Guid periodId,
+    SetFiscalPeriodStateRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.SetFiscalPeriodClosedAsync(
+            user.CompanyId,
+            user.Id,
+            periodId,
+            payload.IsClosed,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/state", async (
     HttpRequest request,
     Guid fiscalYearId,
