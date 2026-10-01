@@ -653,6 +653,226 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<void> ensureSalesInventoryDefaults({
+    required String bearerToken,
+  }) async {
+    await _request(
+      'POST',
+      '/api/sales-inventory/defaults/ensure',
+      bearerToken: bearerToken,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getStoreProducts({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/sales-inventory/products',
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createStoreProduct({
+    required String bearerToken,
+    required String sku,
+    required String name,
+    String? barcode,
+    required String unitName,
+    required String kind,
+    required bool trackInventory,
+    required num salesPrice,
+    required num defaultPurchasePrice,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/products',
+      bearerToken: bearerToken,
+      body: {
+        'sku': sku,
+        'name': name,
+        'barcode': barcode,
+        'unitName': unitName,
+        'kind': kind,
+        'trackInventory': trackInventory,
+        'salesPrice': salesPrice,
+        'defaultPurchasePrice': defaultPurchasePrice,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getWarehouses({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/sales-inventory/warehouses',
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createWarehouse({
+    required String bearerToken,
+    required String code,
+    required String name,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/warehouses',
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getStockBalances({
+    required String bearerToken,
+    String? warehouseId,
+  }) async {
+    final query = warehouseId == null || warehouseId.isEmpty
+        ? ''
+        : '?warehouseId=' + Uri.encodeQueryComponent(warehouseId);
+
+    final response = await _request(
+      'GET',
+      '/api/sales-inventory/stock' + query,
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> adjustStock({
+    required String bearerToken,
+    required String warehouseId,
+    required String productId,
+    required DateTime documentDate,
+    required num quantityDelta,
+    num? unitCost,
+    required String reason,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/stock/adjust',
+      bearerToken: bearerToken,
+      body: {
+        'warehouseId': warehouseId,
+        'productId': productId,
+        'documentDate': _dateOnly(documentDate),
+        'quantityDelta': quantityDelta,
+        'unitCost': unitCost,
+        'reason': reason,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> getSalesInventorySettings({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/sales-inventory/settings',
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> updateSalesInventorySettings({
+    required String bearerToken,
+    required Map<String, dynamic> settings,
+  }) async {
+    final response = await _request(
+      'PUT',
+      '/api/sales-inventory/settings',
+      bearerToken: bearerToken,
+      body: settings,
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getSalesInvoices({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/sales-inventory/invoices',
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createSalesInvoice({
+    required String bearerToken,
+    required String fiscalYearId,
+    required DateTime documentDate,
+    required String warehouseId,
+    String? customerDetailAccountId,
+    required String paymentType,
+    String? description,
+    required List<Map<String, dynamic>> lines,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/invoices',
+      bearerToken: bearerToken,
+      body: {
+        'fiscalYearId': fiscalYearId,
+        'documentDate': _dateOnly(documentDate),
+        'warehouseId': warehouseId,
+        'customerDetailAccountId': customerDetailAccountId,
+        'paymentType': paymentType,
+        'description': description,
+        'lines': lines,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> postSalesInvoice({
+    required String bearerToken,
+    required String invoiceId,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/invoices/' + invoiceId + '/post',
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<dynamic> _request(
     String method,
     String path, {
