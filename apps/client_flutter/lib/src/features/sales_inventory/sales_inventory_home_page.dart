@@ -446,8 +446,9 @@ class _SalesInventoryHomePageState
                       icon: Icons.inventory_outlined,
                       onTap: () => _open(
                         StockPage(
-                          accessToken:
-                              widget.accessToken,
+                          companyId: widget.companyId,
+                          accessToken: widget.accessToken,
+                          localDatabase: widget.localDatabase,
                         ),
                       ),
                     ),
