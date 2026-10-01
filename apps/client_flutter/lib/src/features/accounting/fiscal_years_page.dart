@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
 import '../../core/date/jalali_date.dart';
+import '../../core/sync/accounting_sync_service.dart';
 import 'fiscal_periods_page.dart';
 
 class FiscalYearsPage extends StatefulWidget {
@@ -173,6 +174,216 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
     }
   }
 
+  Future<void> _finalizeYear(
+    CachedFiscalYear fiscalYear,
+  ) async {
+    if (_busy || fiscalYear.isClosed) return;
+
+    final accounts =
+        await widget.localDatabase.getCachedAccounts(widget.companyId);
+
+    final equityAccounts = accounts
+        .where(
+          (account) =>
+              account.isActive &&
+              account.isPostable &&
+              account.type == 'Equity',
+        )
+        .toList(growable: false);
+
+    if (equityAccounts.isEmpty) {
+      _message(
+        'حساب حقوق مالکانه قابل‌ثبت برای انتقال نتیجه سال پیدا نشد.',
+      );
+      return;
+    }
+
+    var selectedId = equityAccounts
+        .where((account) => account.code == '3200')
+        .map((account) => account.id)
+        .firstOrNull;
+
+    selectedId ??= equityAccounts.first.id;
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        var dialogValue = selectedId!;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('بستن نهایی ' + fiscalYear.name),
+              content: SizedBox(
+                width: 520,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'سیستم مانده حساب‌های درآمد و هزینه را صفر می‌کند، نتیجه عملکرد را به حساب حقوق مالکانه انتخابی منتقل می‌کند، سند اختتام رسمی می‌سازد و تمام دوره‌های این سال را می‌بندد.',
+                    ),
+                    const SizedBox(height: 18),
+                    DropdownButtonFormField<String>(
+                      initialValue: dialogValue,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText:
+                            'حساب انتقال سود/زیان انباشته',
+                        prefixIcon: Icon(
+                          Icons.account_balance_outlined,
+                        ),
+                      ),
+                      items: [
+                        for (final account in equityAccounts)
+                          DropdownMenuItem(
+                            value: account.id,
+                            child: Text(
+                              account.code +
+                                  ' — ' +
+                                  account.name,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(
+                            () => dialogValue = value,
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'این عملیات حذف مستقیم انجام نمی‌دهد. برای بازگشایی بعدی، سند اختتام با یک سند معکوس رسمی برگشت داده می‌شود.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('انصراف'),
+                ),
+                FilledButton.icon(
+                  onPressed: () =>
+                      Navigator.pop(context, dialogValue),
+                  icon: const Icon(Icons.lock_outline),
+                  label: const Text('بستن نهایی سال'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (selected == null) return;
+
+    setState(() => _busy = true);
+
+    try {
+      final response = await _apiClient.finalizeFiscalYear(
+        bearerToken: widget.accessToken,
+        fiscalYearId: fiscalYear.id,
+        retainedEarningsAccountId: selected,
+      );
+
+      await AccountingSyncService(
+        localDatabase: widget.localDatabase,
+        apiClient: _apiClient,
+      ).syncAll(
+        companyId: widget.companyId,
+        bearerToken: widget.accessToken,
+      );
+
+      if (!mounted) return;
+      setState(_reloadLocal);
+
+      final number = response['closingJournalNumber']?.toString();
+      final netResult = response['netResult']?.toString() ?? '0';
+
+      _message(
+        number == null
+            ? 'سال مالی بسته شد؛ مانده حساب‌های موقت صفر بود. نتیجه: ' +
+                netResult +
+                ' ریال'
+            : 'سال مالی بسته شد. سند اختتام: ' +
+                number +
+                ' • نتیجه: ' +
+                netResult +
+                ' ریال',
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reopenFinalizedYear(
+    CachedFiscalYear fiscalYear,
+  ) async {
+    if (_busy || !fiscalYear.isClosed) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('بازگشایی ' + fiscalYear.name),
+        content: const Text(
+          'اگر سال با فرآیند بستن نهایی بسته شده باشد، سیستم سند اختتام را با یک سند معکوس رسمی برگشت می‌دهد و آخرین دوره مالی را باز می‌کند.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('بازگشایی بستن نهایی'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+
+    try {
+      final response =
+          await _apiClient.reopenFinalizedFiscalYear(
+        bearerToken: widget.accessToken,
+        fiscalYearId: fiscalYear.id,
+      );
+
+      await AccountingSyncService(
+        localDatabase: widget.localDatabase,
+        apiClient: _apiClient,
+      ).syncAll(
+        companyId: widget.companyId,
+        bearerToken: widget.accessToken,
+      );
+
+      if (!mounted) return;
+      setState(_reloadLocal);
+
+      final number =
+          response['reversalJournalNumber']?.toString();
+
+      _message(
+        number == null
+            ? 'بستن نهایی سال بازگشایی شد.'
+            : 'سال بازگشایی شد. سند معکوس اختتام: ' +
+                number,
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _message(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -268,6 +479,10 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
                           onSelected: (value) {
                             if (value == 'toggle') {
                               _setClosed(item, !item.isClosed);
+                            } else if (value == 'finalize') {
+                              _finalizeYear(item);
+                            } else if (value == 'reopenFinalized') {
+                              _reopenFinalizedYear(item);
                             } else if (value == 'periods') {
                               Navigator.of(context).push(
                                 MaterialPageRoute<void>(
@@ -286,6 +501,18 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
                               value: 'periods',
                               child: Text('دوره‌های مالی'),
                             ),
+                            if (!item.isClosed)
+                              const PopupMenuItem(
+                                value: 'finalize',
+                                child: Text('بستن نهایی سال مالی'),
+                              ),
+                            if (item.isClosed)
+                              const PopupMenuItem(
+                                value: 'reopenFinalized',
+                                child: Text(
+                                  'بازگشایی بستن نهایی',
+                                ),
+                              ),
                             PopupMenuItem(
                               value: 'toggle',
                               child: Text(
@@ -306,5 +533,14 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
         ),
       ),
     );
+  }
+}
+
+
+extension _FirstOrNullFiscalYear<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    if (!iterator.moveNext()) return null;
+    return iterator.current;
   }
 }
