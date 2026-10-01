@@ -261,6 +261,131 @@ public sealed class DetailAccountSyncTests
                     fiscalYear.Id)));
     }
 
+    [Fact]
+    public async Task Reports_RespectDateRange()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+
+        await service.SeedDefaultAccountsAsync(fixture.Company.Id);
+        var fiscalYear = await service.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+
+        var cash = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "1110");
+
+        var revenue = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id &&
+                 x.Code == "4100");
+
+        var firstDate = fiscalYear.StartDate.AddDays(10);
+        var secondDate = fiscalYear.StartDate.AddDays(20);
+
+        await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                firstDate,
+                "سند اول",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        cash.Id,
+                        null,
+                        1_000m,
+                        0m),
+                    new CreateJournalLineRequest(
+                        revenue.Id,
+                        null,
+                        0m,
+                        1_000m)
+                },
+                fiscalYear.Id));
+
+        await service.PostJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateJournalRequest(
+                null,
+                secondDate,
+                "سند دوم",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        cash.Id,
+                        null,
+                        2_000m,
+                        0m),
+                    new CreateJournalLineRequest(
+                        revenue.Id,
+                        null,
+                        0m,
+                        2_000m)
+                },
+                fiscalYear.Id));
+
+        var journals = await service.GetJournalEntriesAsync(
+            fixture.Company.Id,
+            firstDate,
+            firstDate);
+
+        Assert.Single(journals);
+        Assert.Equal("سند اول", journals[0].Description);
+
+        var ledger = await service.GetGeneralLedgerAsync(
+            fixture.Company.Id,
+            cash.Id,
+            firstDate,
+            firstDate);
+
+        Assert.Single(ledger);
+        Assert.Equal(1_000m, ledger[0].Debit);
+        Assert.Equal(1_000m, ledger[0].RunningBalance);
+
+        var trial = await service.GetTrialBalanceAsync(
+            fixture.Company.Id,
+            firstDate,
+            firstDate);
+
+        Assert.Equal(
+            1_000m,
+            trial.Single(x => x.AccountId == cash.Id).DebitTurnover);
+        Assert.Equal(
+            1_000m,
+            trial.Single(x => x.AccountId == revenue.Id).CreditTurnover);
+    }
+
+    [Fact]
+    public async Task InvalidReportDateRange_IsRejected()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+
+        var from = new DateOnly(2026, 2, 2);
+        var to = new DateOnly(2026, 2, 1);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.GetJournalEntriesAsync(
+                fixture.Company.Id,
+                from,
+                to));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.GetTrialBalanceAsync(
+                fixture.Company.Id,
+                from,
+                to));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.GetGeneralLedgerAsync(
+                fixture.Company.Id,
+                null,
+                from,
+                to));
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
