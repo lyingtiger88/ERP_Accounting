@@ -14,7 +14,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 7;
+  static const _databaseVersion = 8;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -197,6 +197,22 @@ class LocalDatabase {
     if (oldVersion < 7) {
       await _createMasterDataSchema(db);
     }
+
+    if (oldVersion < 8) {
+      if (oldVersion >= 4) {
+        await db.execute(
+          "ALTER TABLE cached_fiscal_years ADD COLUMN is_finalized INTEGER NOT NULL DEFAULT 0",
+        );
+        await db.execute(
+          "ALTER TABLE cached_fiscal_years ADD COLUMN closing_journal_number TEXT",
+        );
+        await db.execute(
+          "ALTER TABLE cached_fiscal_years ADD COLUMN net_result REAL",
+        );
+      }
+
+      await _createMasterDataSchema(db);
+    }
   }
 
   Future<void> _createMasterDataSchema(Database db) async {
@@ -210,6 +226,9 @@ class LocalDatabase {
         end_date TEXT NOT NULL,
         is_default INTEGER NOT NULL DEFAULT 0,
         is_closed INTEGER NOT NULL DEFAULT 0,
+        is_finalized INTEGER NOT NULL DEFAULT 0,
+        closing_journal_number TEXT,
+        net_result REAL,
         updated_at TEXT NOT NULL
       )
     ''');
@@ -457,6 +476,12 @@ class LocalDatabase {
             'end_date': fiscalYear['endDate'] as String,
             'is_default': (fiscalYear['isDefault'] as bool? ?? false) ? 1 : 0,
             'is_closed': (fiscalYear['isClosed'] as bool? ?? false) ? 1 : 0,
+            'is_finalized':
+                (fiscalYear['isFinalized'] as bool? ?? false) ? 1 : 0,
+            'closing_journal_number':
+                fiscalYear['closingJournalNumber'] as String?,
+            'net_result':
+                (fiscalYear['netResult'] as num?)?.toDouble(),
             'updated_at': now,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
@@ -558,6 +583,10 @@ class LocalDatabase {
             endDate: row['end_date'] as String,
             isDefault: (row['is_default'] as int) == 1,
             isClosed: (row['is_closed'] as int) == 1,
+            isFinalized: (row['is_finalized'] as int) == 1,
+            closingJournalNumber:
+                row['closing_journal_number'] as String?,
+            netResult: (row['net_result'] as num?)?.toDouble(),
           ),
         )
         .toList(growable: false);
@@ -2166,6 +2195,9 @@ class CachedFiscalYear {
     required this.endDate,
     required this.isDefault,
     required this.isClosed,
+    required this.isFinalized,
+    required this.closingJournalNumber,
+    required this.netResult,
   });
 
   final String id;
@@ -2176,6 +2208,9 @@ class CachedFiscalYear {
   final String endDate;
   final bool isDefault;
   final bool isClosed;
+  final bool isFinalized;
+  final String? closingJournalNumber;
+  final double? netResult;
 
   bool contains(DateTime date) {
     final value = LocalDatabase._dateOnly(date);
