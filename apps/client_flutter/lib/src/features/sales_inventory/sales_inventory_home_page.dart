@@ -411,7 +411,9 @@ class _SalesInventoryHomePageState
                       icon: Icons.assignment_return_outlined,
                       onTap: () => _open(
                         SalesReturnsPage(
+                          companyId: widget.companyId,
                           accessToken: widget.accessToken,
+                          localDatabase: widget.localDatabase,
                         ),
                       ),
                     ),
