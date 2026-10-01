@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
 import '../../core/date/jalali_date.dart';
+import 'fiscal_periods_page.dart';
 
 class FiscalYearsPage extends StatefulWidget {
   const FiscalYearsPage({
@@ -227,6 +228,18 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
 
                 return Card(
                   child: ListTile(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => FiscalPeriodsPage(
+                            companyId: widget.companyId,
+                            accessToken: widget.accessToken,
+                            localDatabase: widget.localDatabase,
+                            fiscalYear: item,
+                          ),
+                        ),
+                      );
+                    },
                     leading: CircleAvatar(
                       child: Text(item.persianYear.toString().substring(2)),
                     ),
@@ -255,9 +268,24 @@ class _FiscalYearsPageState extends State<FiscalYearsPage> {
                           onSelected: (value) {
                             if (value == 'toggle') {
                               _setClosed(item, !item.isClosed);
+                            } else if (value == 'periods') {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => FiscalPeriodsPage(
+                                    companyId: widget.companyId,
+                                    accessToken: widget.accessToken,
+                                    localDatabase: widget.localDatabase,
+                                    fiscalYear: item,
+                                  ),
+                                ),
+                              );
                             }
                           },
                           itemBuilder: (_) => [
+                            const PopupMenuItem(
+                              value: 'periods',
+                              child: Text('دوره‌های مالی'),
+                            ),
                             PopupMenuItem(
                               value: 'toggle',
                               child: Text(
