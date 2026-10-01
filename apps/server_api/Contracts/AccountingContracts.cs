@@ -167,3 +167,19 @@ public sealed record AccountingAuditView(
     Guid UserId,
     string UserDisplayName,
     DateTimeOffset CreatedAt);
+
+
+public sealed record FinalizeFiscalYearRequest(
+    Guid RetainedEarningsAccountId);
+
+public sealed record FinalizeFiscalYearResponse(
+    Guid FiscalYearId,
+    Guid? ClosingJournalEntryId,
+    string? ClosingJournalNumber,
+    decimal NetResult,
+    bool AlreadyFinalized);
+
+public sealed record ReopenFinalizedFiscalYearResponse(
+    Guid FiscalYearId,
+    Guid? ReversalJournalEntryId,
+    string? ReversalJournalNumber);
