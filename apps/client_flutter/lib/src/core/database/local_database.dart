@@ -1304,6 +1304,59 @@ class LocalDatabase {
     return documentId;
   }
 
+  Future<void> deleteLocalJournalDraft({
+    required String documentId,
+    required String companyId,
+  }) async {
+    await _db.transaction((txn) async {
+      final documents = await txn.query(
+        'local_accounting_documents',
+        columns: [
+          'status',
+          'sync_status',
+          'server_id',
+        ],
+        where: 'id = ? AND company_id = ?',
+        whereArgs: [documentId, companyId],
+        limit: 1,
+      );
+
+      if (documents.isEmpty) {
+        return;
+      }
+
+      final document = documents.first;
+
+      if (document['status'] != 'Draft' ||
+          document['sync_status'] != 'LocalOnly' ||
+          document['server_id'] != null) {
+        throw StateError(
+          'فقط پیش‌نویس محلی قابل حذف مستقیم است.',
+        );
+      }
+
+      final pendingOutbox = await txn.query(
+        'sync_outbox',
+        columns: ['id'],
+        where: 'entity_type = ? AND entity_id = ? AND sent_at IS NULL',
+        whereArgs: ['AccountingDocument', documentId],
+        limit: 1,
+      );
+
+      if (pendingOutbox.isNotEmpty) {
+        throw StateError(
+          'سند دارای تغییر منتظر همگام‌سازی است و قابل حذف مستقیم نیست.',
+        );
+      }
+
+      await txn.delete(
+        'local_accounting_documents',
+        where: 'id = ?',
+        whereArgs: [documentId],
+      );
+    });
+  }
+
   Future<void> updateLocalJournalDraft({
     required String documentId,
     required String companyId,
