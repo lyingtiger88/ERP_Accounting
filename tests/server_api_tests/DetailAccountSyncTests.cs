@@ -1714,6 +1714,200 @@ public sealed class DetailAccountSyncTests
             reversedCashPosition.RevaluedBaseBalance);
     }
 
+    [Fact]
+    public async Task ForeignTrade_PurchaseAndSale_KeepInventoryAtHistoricalBaseCost()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var currencies = new CurrencyAccountingService(
+            fixture.Db,
+            accounting);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+        await currencies.EnsureDefaultsAsync(
+            fixture.Company.Id);
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var usd = (await currencies.GetCurrenciesAsync(
+            fixture.Company.Id))
+            .Single(x => x.Code == "USD");
+
+        var supplier = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "SUP-FX",
+                "تامین‌کننده خارجی",
+                DetailAccountType.Supplier,
+                null));
+
+        var customer = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "CUS-FX",
+                "مشتری خارجی",
+                DetailAccountType.Customer,
+                null));
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "FX-001",
+                "کالای تجارت خارجی",
+                null,
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                0m,
+                0m));
+
+        var purchaseDate = fiscalYear.StartDate.AddDays(20);
+        var saleDate = purchaseDate.AddDays(1);
+
+        await currencies.SaveRateAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateCurrencyRateRequest(
+                usd.Id,
+                purchaseDate,
+                590_000m,
+                610_000m,
+                600_000m,
+                "Test"));
+
+        var purchase = await store.CreatePurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseReceiptRequest(
+                fiscalYear.Id,
+                purchaseDate,
+                warehouse.Id,
+                supplier.Id,
+                PurchasePaymentType.Credit,
+                "خرید خارجی",
+                new[]
+                {
+                    new PurchaseReceiptLineRequest(
+                        product.Id,
+                        10m,
+                        10m,
+                        0m,
+                        0m)
+                },
+                usd.Id,
+                null));
+
+        Assert.Equal("USD", purchase.CurrencyCode);
+        Assert.Equal(600_000m, purchase.ExchangeRate);
+        Assert.Equal(100m, purchase.GrandTotal);
+
+        await store.PostPurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            purchase.Id);
+
+        var stockAfterPurchase = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(10m, stockAfterPurchase.Quantity);
+        Assert.Equal(6_000_000m, stockAfterPurchase.AverageCost);
+        Assert.Equal(60_000_000m, stockAfterPurchase.InventoryValue);
+
+        await currencies.SaveRateAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateCurrencyRateRequest(
+                usd.Id,
+                saleDate,
+                640_000m,
+                660_000m,
+                650_000m,
+                "Test"));
+
+        var sale = await store.CreateSalesInvoiceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateSalesInvoiceRequest(
+                fiscalYear.Id,
+                saleDate,
+                warehouse.Id,
+                customer.Id,
+                SalesPaymentType.Credit,
+                "فروش خارجی",
+                new[]
+                {
+                    new SalesInvoiceLineRequest(
+                        product.Id,
+                        2m,
+                        15m,
+                        0m,
+                        0m)
+                },
+                usd.Id,
+                null));
+
+        Assert.Equal("USD", sale.CurrencyCode);
+        Assert.Equal(650_000m, sale.ExchangeRate);
+        Assert.Equal(30m, sale.GrandTotal);
+
+        var postedSale = await store.PostSalesInvoiceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            sale.Id);
+
+        Assert.Equal(12_000_000m, postedSale.CostTotal);
+
+        var stockAfterSale = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(8m, stockAfterSale.Quantity);
+        Assert.Equal(6_000_000m, stockAfterSale.AverageCost);
+        Assert.Equal(48_000_000m, stockAfterSale.InventoryValue);
+
+        var settings = await fixture.Db.SalesInventorySettings
+            .AsNoTracking()
+            .SingleAsync(x => x.CompanyId == fixture.Company.Id);
+
+        var position = await currencies.GetCurrencyPositionAsync(
+            fixture.Company.Id,
+            saleDate);
+
+        var receivable = position.Rows.Single(
+            x =>
+                x.CurrencyId == usd.Id &&
+                x.AccountId == settings.ReceivablesAccountId);
+
+        Assert.Equal(30m, receivable.ForeignBalance);
+        Assert.Equal(19_500_000m, receivable.HistoricalBaseBalance);
+        Assert.Equal(19_500_000m, receivable.RevaluedBaseBalance);
+
+        var payableAccountId = settings.PayablesAccountId!.Value;
+        var payable = position.Rows.Single(
+            x =>
+                x.CurrencyId == usd.Id &&
+                x.AccountId == payableAccountId);
+
+        Assert.Equal(-100m, payable.ForeignBalance);
+        Assert.Equal(-60_000_000m, payable.HistoricalBaseBalance);
+        Assert.Equal(-65_000_000m, payable.RevaluedBaseBalance);
+        Assert.Equal(-5_000_000m, payable.UnrealizedDifference);
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
