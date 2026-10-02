@@ -144,6 +144,9 @@ class _SalesInvoicesPageState
             'warehouseName':
                 warehouse?['name']?.toString() ?? 'انبار محلی',
             'paymentType': payload['paymentType'],
+            'currencyCode':
+                payload['currencyCode']?.toString() ?? 'BASE',
+            'exchangeRate': payload['exchangeRate'] ?? 1,
             'customerName': null,
             'status': 'LocalPending',
             'description': payload['description'],
@@ -621,7 +624,8 @@ class _InvoiceCard extends StatelessWidget {
               formatReportMoney(
                 reportNumber(invoice['grandTotal']),
               ) +
-              ' ریال',
+              ' ' +
+              (invoice['currencyCode']?.toString() ?? 'BASE'),
         ),
         subtitle: Text(
           formatReportDate(
