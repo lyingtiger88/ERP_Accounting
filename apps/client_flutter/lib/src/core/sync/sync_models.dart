@@ -2,24 +2,42 @@ class JournalPullLine {
   const JournalPullLine({
     required this.accountId,
     required this.detailAccountId,
+    required this.costCenterId,
+    required this.projectId,
     required this.description,
     required this.debit,
     required this.credit,
+    required this.currencyId,
+    required this.foreignDebit,
+    required this.foreignCredit,
+    required this.exchangeRate,
   });
 
   final String accountId;
   final String? detailAccountId;
+  final String? costCenterId;
+  final String? projectId;
   final String? description;
   final int debit;
   final int credit;
+  final String? currencyId;
+  final num? foreignDebit;
+  final num? foreignCredit;
+  final num? exchangeRate;
 
   factory JournalPullLine.fromJson(Map<String, dynamic> json) {
     return JournalPullLine(
       accountId: json['accountId'] as String,
       detailAccountId: json['detailAccountId'] as String?,
+      costCenterId: json['costCenterId'] as String?,
+      projectId: json['projectId'] as String?,
       description: json['description'] as String?,
       debit: _wholeAmount(json['debit'], 'debit'),
       credit: _wholeAmount(json['credit'], 'credit'),
+      currencyId: json['currencyId'] as String?,
+      foreignDebit: json['foreignDebit'] as num?,
+      foreignCredit: json['foreignCredit'] as num?,
+      exchangeRate: json['exchangeRate'] as num?,
     );
   }
 }
