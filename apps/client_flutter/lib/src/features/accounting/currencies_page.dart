@@ -134,7 +134,7 @@ class _CurrenciesPageState extends State<CurrenciesPage> {
       builder: (context) => AlertDialog(
         title: const Text('تغییر ارز پایه'),
         content: Text(
-          'ارز پایه به \${item['code']} تغییر کند؟\n\n'
+          'ارز پایه به ' + item['code'].toString() + ' تغییر کند؟\n\n'
           'این تغییر فقط قبل از ایجاد تاریخچه اسناد حسابداری مجاز است تا مبالغ تاریخی بازتفسیر نشوند.',
         ),
         actions: [
@@ -264,8 +264,7 @@ class _CurrenciesPageState extends State<CurrenciesPage> {
                           item['name'].toString(),
                     ),
                     subtitle: Text(
-                      'اعشار: \${item['decimalPlaces']}'
-                      '\${isBase ? ' • ارز پایه شرکت' : ''}',
+                      'اعشار: ' + item['decimalPlaces'].toString() + (isBase ? ' • ارز پایه شرکت' : ''),
                     ),
                     trailing: Wrap(
                       spacing: 8,
