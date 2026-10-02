@@ -559,6 +559,20 @@ public sealed class CurrencyAccountingService(
             .Where(x => lineIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
+        var accountIds = journalLines.Values
+            .Select(x => x.AccountId)
+            .Distinct()
+            .ToArray();
+
+        var accounts = await db.Accounts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                accountIds.Contains(x.Id) &&
+                (x.Type == AccountType.Asset ||
+                 x.Type == AccountType.Liability))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
         var journalIds = journalLines.Values
             .Select(x => x.JournalEntryId)
             .Distinct()
@@ -574,30 +588,34 @@ public sealed class CurrencyAccountingService(
             .Select(x => x.Id)
             .ToHashSetAsync(cancellationToken);
 
+        var currencyLookup = currencies.ToDictionary(x => x.Id);
+        var grouped = currencyLines
+            .Where(x =>
+                journalLines.TryGetValue(
+                    x.JournalLineId,
+                    out var line) &&
+                eligibleJournalIds.Contains(line.JournalEntryId) &&
+                accounts.ContainsKey(line.AccountId))
+            .GroupBy(x => new
+            {
+                x.CurrencyId,
+                AccountId = journalLines[x.JournalLineId].AccountId
+            })
+            .OrderBy(x => currencyLookup[x.Key.CurrencyId].Code)
+            .ThenBy(x => accounts[x.Key.AccountId].Code)
+            .ToArray();
+
         var rows = new List<CurrencyPositionRow>();
 
-        foreach (var currency in currencies
-                     .Where(x => !x.IsBase)
-                     .OrderBy(x => x.Code))
+        foreach (var group in grouped)
         {
-            var tagged = currencyLines
-                .Where(x => x.CurrencyId == currency.Id)
-                .Where(x =>
-                    journalLines.TryGetValue(
-                        x.JournalLineId,
-                        out var line) &&
-                    eligibleJournalIds.Contains(line.JournalEntryId))
-                .ToArray();
+            var currency = currencyLookup[group.Key.CurrencyId];
+            var account = accounts[group.Key.AccountId];
 
-            if (tagged.Length == 0)
-            {
-                continue;
-            }
-
-            var foreignBalance = tagged.Sum(
+            var foreignBalance = group.Sum(
                 x => x.ForeignDebit - x.ForeignCredit);
 
-            var historicalBase = tagged.Sum(x =>
+            var historicalBase = group.Sum(x =>
             {
                 var line = journalLines[x.JournalLineId];
                 return line.Debit - line.Credit;
@@ -617,6 +635,9 @@ public sealed class CurrencyAccountingService(
                 currency.Id,
                 currency.Code,
                 currency.Name,
+                account.Id,
+                account.Code,
+                account.Name,
                 foreignBalance,
                 historicalBase,
                 currentRate,
