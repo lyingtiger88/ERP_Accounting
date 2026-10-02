@@ -106,7 +106,11 @@ public sealed record ServerJournalLineView(
     Guid? ProjectId,
     string? Description,
     decimal Debit,
-    decimal Credit);
+    decimal Credit,
+    Guid? CurrencyId = null,
+    decimal? ForeignDebit = null,
+    decimal? ForeignCredit = null,
+    decimal? ExchangeRate = null);
 
 public sealed record ServerJournalChangeView(
     long Cursor,
