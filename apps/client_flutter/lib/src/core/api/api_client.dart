@@ -1129,6 +1129,8 @@ class ApiClient {
     required String paymentType,
     String? description,
     required List<Map<String, dynamic>> lines,
+    String? currencyId,
+    num? exchangeRate,
   }) async {
     final response = await _request(
       'POST',
@@ -1142,6 +1144,8 @@ class ApiClient {
         'paymentType': paymentType,
         'description': description,
         'lines': lines,
+        'currencyId': currencyId,
+        'exchangeRate': exchangeRate,
       },
     );
 
@@ -1304,6 +1308,8 @@ class ApiClient {
     required String paymentType,
     String? description,
     required List<Map<String, dynamic>> lines,
+    String? currencyId,
+    num? exchangeRate,
   }) async {
     final response = await _request(
       'POST',
@@ -1317,6 +1323,8 @@ class ApiClient {
         'paymentType': paymentType,
         'description': description,
         'lines': lines,
+        'currencyId': currencyId,
+        'exchangeRate': exchangeRate,
       },
     );
 
