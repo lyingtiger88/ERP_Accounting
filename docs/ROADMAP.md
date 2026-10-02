@@ -39,6 +39,11 @@
 - [x] Profit & loss
 - [x] Balance sheet
 - [x] Floating-detail ledger
+- [x] Multi-currency accounting
+- [x] International currency definitions / base currency
+- [x] Historical FX buy/sell/accounting rates
+- [x] Foreign-currency journal posting
+- [x] Currency position and revaluation report
 - [x] Accounting audit log
 - [x] PostgreSQL persistence
 - [x] Initial SQLite client persistence layer
