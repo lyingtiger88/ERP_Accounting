@@ -2431,6 +2431,18 @@ public sealed class SalesInventoryService(
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
+        string? currencyCode = null;
+        if (invoice.CurrencyId is Guid invoiceCurrencyId)
+        {
+            currencyCode = await db.Currencies
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == invoiceCurrencyId &&
+                    x.CompanyId == companyId)
+                .Select(x => x.Code)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         var lines = invoice.Lines
             .OrderBy(x => x.Id)
             .Select(line =>
@@ -2461,6 +2473,9 @@ public sealed class SalesInventoryService(
             invoice.FiscalYearId,
             invoice.Number,
             invoice.DocumentDate,
+            invoice.CurrencyId,
+            currencyCode,
+            invoice.ExchangeRate,
             invoice.CustomerDetailAccountId,
             customerName,
             invoice.WarehouseId,
@@ -2691,6 +2706,18 @@ public sealed class SalesInventoryService(
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
+        string? currencyCode = null;
+        if (receipt.CurrencyId is Guid receiptCurrencyId)
+        {
+            currencyCode = await db.Currencies
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == receiptCurrencyId &&
+                    x.CompanyId == companyId)
+                .Select(x => x.Code)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         var lines = receipt.Lines
             .Select(line =>
             {
@@ -2718,6 +2745,9 @@ public sealed class SalesInventoryService(
             receipt.FiscalYearId,
             receipt.Number,
             receipt.DocumentDate,
+            receipt.CurrencyId,
+            currencyCode,
+            receipt.ExchangeRate,
             receipt.SupplierDetailAccountId,
             supplierName,
             receipt.WarehouseId,
