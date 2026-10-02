@@ -2443,6 +2443,10 @@ public sealed class SalesInventoryService(
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
+        currencyCode ??= await GetBaseCurrencyCodeAsync(
+            companyId,
+            cancellationToken);
+
         var lines = invoice.Lines
             .OrderBy(x => x.Id)
             .Select(line =>
@@ -2718,6 +2722,10 @@ public sealed class SalesInventoryService(
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
+        currencyCode ??= await GetBaseCurrencyCodeAsync(
+            companyId,
+            cancellationToken);
+
         var lines = receipt.Lines
             .Select(line =>
             {
@@ -2903,11 +2911,42 @@ public sealed class SalesInventoryService(
                 line.CostAmount);
         }).ToArray();
 
+        var sourceInvoice = await db.SalesInvoices
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == salesReturn.SalesInvoiceId &&
+                x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.CurrencyId,
+                x.ExchangeRate
+            })
+            .SingleAsync(cancellationToken);
+
+        string? returnCurrencyCode = null;
+        if (sourceInvoice.CurrencyId is Guid returnCurrencyId)
+        {
+            returnCurrencyCode = await db.Currencies
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == returnCurrencyId &&
+                    x.CompanyId == companyId)
+                .Select(x => x.Code)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        returnCurrencyCode ??= await GetBaseCurrencyCodeAsync(
+            companyId,
+            cancellationToken);
+
         return new SalesReturnView(
             salesReturn.Id,
             salesReturn.SalesInvoiceId,
             salesReturn.Number,
             salesReturn.DocumentDate,
+            sourceInvoice.CurrencyId,
+            returnCurrencyCode,
+            sourceInvoice.ExchangeRate,
             salesReturn.WarehouseId,
             warehouseName,
             salesReturn.Status,
@@ -2980,6 +3019,20 @@ public sealed class SalesInventoryService(
             settings.SalesTaxPayableAccountId,
             settings.PurchaseTaxReceivableAccountId,
             settings.PreventNegativeStock);
+    }
+
+    private async Task<string> GetBaseCurrencyCodeAsync(
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        return await db.Currencies
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsBase)
+            .Select(x => x.Code)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? "BASE";
     }
 
     private async Task<(Guid? CurrencyId, decimal ExchangeRate)>
