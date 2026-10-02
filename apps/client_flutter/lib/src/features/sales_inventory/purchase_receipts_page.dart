@@ -146,6 +146,9 @@ class _PurchaseReceiptsPageState
             'warehouseName':
                 warehouse?['name']?.toString() ?? 'انبار محلی',
             'supplierName': null,
+            'currencyCode':
+                payload['currencyCode']?.toString() ?? 'BASE',
+            'exchangeRate': payload['exchangeRate'] ?? 1,
             'status': 'LocalPending',
             'subtotal': subtotal,
             'discountTotal': discount,
@@ -289,7 +292,8 @@ class _PurchaseReceiptsPageState
                           formatReportMoney(
                             reportNumber(item['grandTotal']),
                           ) +
-                          ' ریال',
+                          ' ' +
+                          (item['currencyCode']?.toString() ?? 'BASE'),
                     ),
                     subtitle: Text(
                       formatReportDate(
@@ -363,7 +367,8 @@ class _PurchaseReceiptsPageState
                                       reportNumber(line['netAmount']) +
                                           reportNumber(line['taxAmount']),
                                     ) +
-                                    ' ریال',
+                                    ' ' +
+                                    (item['currencyCode']?.toString() ?? 'BASE'),
                               ),
                             );
                           },
