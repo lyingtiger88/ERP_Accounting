@@ -69,7 +69,11 @@ public sealed record CreateJournalLineRequest(
     decimal Credit,
     Guid? DetailAccountId = null,
     Guid? CostCenterId = null,
-    Guid? ProjectId = null);
+    Guid? ProjectId = null,
+    Guid? CurrencyId = null,
+    decimal? ForeignDebit = null,
+    decimal? ForeignCredit = null,
+    decimal? ExchangeRate = null);
 
 public sealed record CreateJournalRequest(
     string? Number,
