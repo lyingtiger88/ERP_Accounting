@@ -1608,12 +1608,24 @@ public sealed class AccountingService(AppDbContext db)
                     x => x.JournalLineId,
                     cancellationToken);
 
+        var currencyAmounts = lineIds.Length == 0
+            ? new Dictionary<Guid, JournalLineCurrency>()
+            : await db.JournalLineCurrencies
+                .AsNoTracking()
+                .Where(x => lineIds.Contains(x.JournalLineId))
+                .ToDictionaryAsync(
+                    x => x.JournalLineId,
+                    cancellationToken);
+
         var reversalLines = original.Lines
             .Select(line =>
             {
                 dimensions.TryGetValue(
                     line.Id,
                     out var dimension);
+                currencyAmounts.TryGetValue(
+                    line.Id,
+                    out var currencyAmount);
 
                 return new CreateJournalLineRequest(
                     line.AccountId,
@@ -1622,7 +1634,11 @@ public sealed class AccountingService(AppDbContext db)
                     line.Debit,
                     dimension?.DetailAccountId,
                     dimension?.CostCenterId,
-                    dimension?.ProjectId);
+                    dimension?.ProjectId,
+                    currencyAmount?.CurrencyId,
+                    currencyAmount?.ForeignCredit,
+                    currencyAmount?.ForeignDebit,
+                    currencyAmount?.ExchangeRate);
             })
             .ToArray();
 
@@ -1837,6 +1853,125 @@ public sealed class AccountingService(AppDbContext db)
             }
         }
 
+        var costCenterIds = request.Lines
+            .Where(x => x.CostCenterId.HasValue)
+            .Select(x => x.CostCenterId!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (costCenterIds.Length > 0)
+        {
+            var validCount = await db.CostCenters.CountAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.IsActive &&
+                    costCenterIds.Contains(x.Id),
+                cancellationToken);
+
+            if (validCount != costCenterIds.Length)
+            {
+                throw new ArgumentException(
+                    "One or more cost centers are unavailable.");
+            }
+        }
+
+        var projectIds = request.Lines
+            .Where(x => x.ProjectId.HasValue)
+            .Select(x => x.ProjectId!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (projectIds.Length > 0)
+        {
+            var validCount = await db.AccountingProjects.CountAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.IsActive &&
+                    projectIds.Contains(x.Id),
+                cancellationToken);
+
+            if (validCount != projectIds.Length)
+            {
+                throw new ArgumentException(
+                    "One or more accounting projects are unavailable.");
+            }
+        }
+
+        var currencyIds = request.Lines
+            .Where(x => x.CurrencyId.HasValue)
+            .Select(x => x.CurrencyId!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (currencyIds.Length > 0)
+        {
+            var validCurrencies = await db.Currencies
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    x.IsActive &&
+                    currencyIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+            if (validCurrencies.Count != currencyIds.Length)
+            {
+                throw new ArgumentException(
+                    "One or more currencies are unavailable.");
+            }
+
+            foreach (var line in request.Lines.Where(
+                         x => x.CurrencyId.HasValue))
+            {
+                if (line.ForeignDebit is null ||
+                    line.ForeignCredit is null ||
+                    line.ExchangeRate is null)
+                {
+                    throw new ArgumentException(
+                        "Foreign-currency journal lines require foreign debit, foreign credit and exchange rate.");
+                }
+
+                var foreignDebit = line.ForeignDebit.Value;
+                var foreignCredit = line.ForeignCredit.Value;
+                var exchangeRate = line.ExchangeRate.Value;
+
+                if (foreignDebit < 0 ||
+                    foreignCredit < 0 ||
+                    exchangeRate <= 0 ||
+                    (foreignDebit > 0 && foreignCredit > 0) ||
+                    (foreignDebit == 0 && foreignCredit == 0))
+                {
+                    throw new ArgumentException(
+                        "Foreign-currency amounts or exchange rate are invalid.");
+                }
+
+                var expectedDebit = Math.Round(
+                    foreignDebit * exchangeRate,
+                    4,
+                    MidpointRounding.AwayFromZero);
+                var expectedCredit = Math.Round(
+                    foreignCredit * exchangeRate,
+                    4,
+                    MidpointRounding.AwayFromZero);
+
+                if (Math.Abs(expectedDebit - line.Debit) > 0.0001m ||
+                    Math.Abs(expectedCredit - line.Credit) > 0.0001m)
+                {
+                    throw new ArgumentException(
+                        "Base-currency amount does not match foreign amount multiplied by exchange rate.");
+                }
+            }
+        }
+
+        if (request.Lines.Any(x =>
+                !x.CurrencyId.HasValue &&
+                (x.ForeignDebit.HasValue ||
+                 x.ForeignCredit.HasValue ||
+                 x.ExchangeRate.HasValue)))
+        {
+            throw new ArgumentException(
+                "Foreign amounts cannot be supplied without a currency.");
+        }
+
         var accountIds = request.Lines
             .Select(x => x.AccountId)
             .Distinct()
@@ -1920,17 +2055,32 @@ public sealed class AccountingService(AppDbContext db)
         for (var index = 0; index < request.Lines.Count; index++)
         {
             var requestLine = request.Lines[index];
+            var journalLine = entry.Lines[index];
 
-            if (requestLine.DetailAccountId is not Guid detailAccountId)
+            if (requestLine.DetailAccountId.HasValue ||
+                requestLine.CostCenterId.HasValue ||
+                requestLine.ProjectId.HasValue)
             {
-                continue;
+                db.JournalLineDimensions.Add(new JournalLineDimension
+                {
+                    JournalLineId = journalLine.Id,
+                    DetailAccountId = requestLine.DetailAccountId,
+                    CostCenterId = requestLine.CostCenterId,
+                    ProjectId = requestLine.ProjectId
+                });
             }
 
-            db.JournalLineDimensions.Add(new JournalLineDimension
+            if (requestLine.CurrencyId is Guid currencyId)
             {
-                JournalLineId = entry.Lines[index].Id,
-                DetailAccountId = detailAccountId
-            });
+                db.JournalLineCurrencies.Add(new JournalLineCurrency
+                {
+                    JournalLineId = journalLine.Id,
+                    CurrencyId = currencyId,
+                    ForeignDebit = requestLine.ForeignDebit!.Value,
+                    ForeignCredit = requestLine.ForeignCredit!.Value,
+                    ExchangeRate = requestLine.ExchangeRate!.Value
+                });
+            }
         }
 
         db.JournalServerChanges.Add(new JournalServerChange
