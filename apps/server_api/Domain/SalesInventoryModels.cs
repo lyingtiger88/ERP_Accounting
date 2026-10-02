@@ -114,6 +114,8 @@ public sealed class SalesInvoice
     public required Guid FiscalYearId { get; set; }
     public required string Number { get; set; }
     public required DateOnly DocumentDate { get; set; }
+    public Guid? CurrencyId { get; set; }
+    public decimal ExchangeRate { get; set; } = 1m;
     public Guid? CustomerDetailAccountId { get; set; }
     public required Guid WarehouseId { get; set; }
     public SalesPaymentType PaymentType { get; set; } = SalesPaymentType.Credit;
@@ -156,6 +158,8 @@ public sealed class PurchaseReceipt
     public required Guid FiscalYearId { get; set; }
     public required string Number { get; set; }
     public required DateOnly DocumentDate { get; set; }
+    public Guid? CurrencyId { get; set; }
+    public decimal ExchangeRate { get; set; } = 1m;
     public Guid? SupplierDetailAccountId { get; set; }
     public required Guid WarehouseId { get; set; }
     public PurchasePaymentType PaymentType { get; set; } = PurchasePaymentType.Credit;
