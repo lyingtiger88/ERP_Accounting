@@ -179,7 +179,9 @@ public sealed record CreateSalesInvoiceRequest(
     Guid? CustomerDetailAccountId,
     SalesPaymentType PaymentType,
     string? Description,
-    IReadOnlyList<SalesInvoiceLineRequest> Lines);
+    IReadOnlyList<SalesInvoiceLineRequest> Lines,
+    Guid? CurrencyId = null,
+    decimal? ExchangeRate = null);
 
 public sealed record SalesInvoiceLineView(
     Guid Id,
@@ -203,6 +205,9 @@ public sealed record SalesInvoiceView(
     Guid FiscalYearId,
     string Number,
     DateOnly DocumentDate,
+    Guid? CurrencyId,
+    string? CurrencyCode,
+    decimal ExchangeRate,
     Guid? CustomerDetailAccountId,
     string? CustomerName,
     Guid WarehouseId,
@@ -246,7 +251,9 @@ public sealed record CreatePurchaseReceiptRequest(
     Guid? SupplierDetailAccountId,
     PurchasePaymentType PaymentType,
     string? Description,
-    IReadOnlyList<PurchaseReceiptLineRequest> Lines);
+    IReadOnlyList<PurchaseReceiptLineRequest> Lines,
+    Guid? CurrencyId = null,
+    decimal? ExchangeRate = null);
 
 public sealed record PurchaseReceiptLineView(
     Guid Id,
@@ -268,6 +275,9 @@ public sealed record PurchaseReceiptView(
     Guid FiscalYearId,
     string Number,
     DateOnly DocumentDate,
+    Guid? CurrencyId,
+    string? CurrencyCode,
+    decimal ExchangeRate,
     Guid? SupplierDetailAccountId,
     string? SupplierName,
     Guid WarehouseId,
