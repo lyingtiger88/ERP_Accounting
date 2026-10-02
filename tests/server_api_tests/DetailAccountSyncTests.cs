@@ -1606,11 +1606,13 @@ public sealed class DetailAccountSyncTests
 
         Assert.Equal(2, journal.Lines.Count);
 
+        var journalLineIds = journal.Lines
+            .Select(line => line.Id)
+            .ToArray();
+
         var currencyRows = await fixture.Db.JournalLineCurrencies
             .AsNoTracking()
-            .Where(x =>
-                journal.Lines.Select(line => line.Id)
-                    .Contains(x.JournalLineId))
+            .Where(x => journalLineIds.Contains(x.JournalLineId))
             .ToArrayAsync();
 
         Assert.Equal(2, currencyRows.Length);
