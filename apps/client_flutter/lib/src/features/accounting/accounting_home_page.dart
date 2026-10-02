@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/database/local_database.dart';
 import 'audit_trail_page.dart';
 import 'balance_sheet_page.dart';
+import 'currency_accounting_home_page.dart';
 import 'cached_accounts_page.dart';
 import 'detail_accounts_page.dart';
 import 'detail_ledger_page.dart';
@@ -118,6 +119,19 @@ class AccountingHomePage extends StatelessWidget {
                   onTap: () => _open(
                     context,
                     DetailAccountsPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'حسابداری ارزی',
+                  subtitle: 'ارزها، نرخ‌ها، اسناد ارزی و تسعیر',
+                  icon: Icons.currency_exchange_outlined,
+                  onTap: () => _open(
+                    context,
+                    CurrencyAccountingHomePage(
                       companyId: companyId,
                       accessToken: accessToken,
                       localDatabase: localDatabase,
