@@ -2160,6 +2160,15 @@ public sealed class AccountingService(AppDbContext db)
                     x => x.JournalLineId,
                     cancellationToken);
 
+        var currencyAmounts = lineIds.Length == 0
+            ? new Dictionary<Guid, JournalLineCurrency>()
+            : await db.JournalLineCurrencies
+                .AsNoTracking()
+                .Where(x => lineIds.Contains(x.JournalLineId))
+                .ToDictionaryAsync(
+                    x => x.JournalLineId,
+                    cancellationToken);
+
         var reversalOf = await db.JournalReversalLinks
             .AsNoTracking()
             .Where(x => journalIds.Contains(x.ReversalJournalEntryId))
@@ -2183,6 +2192,9 @@ public sealed class AccountingService(AppDbContext db)
                 .Select(line =>
                 {
                     dimensions.TryGetValue(line.Id, out var dimension);
+                    currencyAmounts.TryGetValue(
+                        line.Id,
+                        out var currencyAmount);
 
                     return new ServerJournalLineView(
                         line.AccountId,
@@ -2191,7 +2203,11 @@ public sealed class AccountingService(AppDbContext db)
                         dimension?.ProjectId,
                         line.Description,
                         line.Debit,
-                        line.Credit);
+                        line.Credit,
+                        currencyAmount?.CurrencyId,
+                        currencyAmount?.ForeignDebit,
+                        currencyAmount?.ForeignCredit,
+                        currencyAmount?.ExchangeRate);
                 })
                 .ToArray();
 
