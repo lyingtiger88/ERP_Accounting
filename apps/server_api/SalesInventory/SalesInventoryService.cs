@@ -679,6 +679,13 @@ public sealed class SalesInventoryService(
                 "One or more invoice products do not exist or are inactive.");
         }
 
+        var tradeCurrency = await ResolveTradeCurrencyAsync(
+            companyId,
+            request.CurrencyId,
+            request.ExchangeRate,
+            request.DocumentDate,
+            cancellationToken);
+
         var invoiceNumber = await GenerateInvoiceNumberAsync(
             companyId,
             fiscalYear.PersianYear,
@@ -691,6 +698,8 @@ public sealed class SalesInventoryService(
             FiscalYearId = request.FiscalYearId,
             Number = invoiceNumber,
             DocumentDate = request.DocumentDate,
+            CurrencyId = tradeCurrency.CurrencyId,
+            ExchangeRate = tradeCurrency.ExchangeRate,
             CustomerDetailAccountId = request.CustomerDetailAccountId,
             WarehouseId = warehouse.Id,
             PaymentType = request.PaymentType,
@@ -722,7 +731,11 @@ public sealed class SalesInventoryService(
                 requestedLine.SerialNumber);
 
             var unitPrice = requestedLine.UnitPrice ??
-                product.SalesPrice;
+                (tradeCurrency.CurrencyId.HasValue
+                    ? ConvertFromBase(
+                        product.SalesPrice,
+                        tradeCurrency.ExchangeRate)
+                    : product.SalesPrice);
 
             if (unitPrice < 0)
             {
@@ -995,13 +1008,31 @@ public sealed class SalesInventoryService(
                 "Credit sale requires a customer detail account.");
         }
 
+        var rate = invoice.ExchangeRate <= 0
+            ? 1m
+            : invoice.ExchangeRate;
+
+        var settlementBase = ConvertToBase(
+            invoice.GrandTotal,
+            rate);
+
         journalLines.Add(new CreateJournalLineRequest(
             settlementAccountId,
             $"فاکتور فروش {invoice.Number}",
-            invoice.GrandTotal,
+            settlementBase,
             0,
             invoice.PaymentType == SalesPaymentType.Credit
                 ? invoice.CustomerDetailAccountId
+                : null,
+            CurrencyId: invoice.CurrencyId,
+            ForeignDebit: invoice.CurrencyId.HasValue
+                ? invoice.GrandTotal
+                : null,
+            ForeignCredit: invoice.CurrencyId.HasValue
+                ? 0m
+                : null,
+            ExchangeRate: invoice.CurrencyId.HasValue
+                ? rate
                 : null));
 
         var netSales = invoice.Subtotal - invoice.DiscountTotal;
@@ -1012,7 +1043,7 @@ public sealed class SalesInventoryService(
                 settings.SalesRevenueAccountId,
                 $"درآمد فروش فاکتور {invoice.Number}",
                 0,
-                netSales));
+                ConvertToBase(netSales, rate)));
         }
 
         if (invoice.TaxTotal > 0)
@@ -1021,7 +1052,7 @@ public sealed class SalesInventoryService(
                 settings.SalesTaxPayableAccountId,
                 $"مالیات و عوارض فاکتور {invoice.Number}",
                 0,
-                invoice.TaxTotal));
+                ConvertToBase(invoice.TaxTotal, rate)));
         }
 
         if (totalCost > 0)
@@ -1277,6 +1308,13 @@ public sealed class SalesInventoryService(
                 "Purchase receipt only accepts active inventory-tracked products.");
         }
 
+        var tradeCurrency = await ResolveTradeCurrencyAsync(
+            companyId,
+            request.CurrencyId,
+            request.ExchangeRate,
+            request.DocumentDate,
+            cancellationToken);
+
         var receipt = new PurchaseReceipt
         {
             CompanyId = companyId,
@@ -1287,6 +1325,8 @@ public sealed class SalesInventoryService(
                 fiscalYear.Id,
                 cancellationToken),
             DocumentDate = request.DocumentDate,
+            CurrencyId = tradeCurrency.CurrencyId,
+            ExchangeRate = tradeCurrency.ExchangeRate,
             SupplierDetailAccountId = request.SupplierDetailAccountId,
             WarehouseId = request.WarehouseId,
             PaymentType = request.PaymentType,
@@ -1310,7 +1350,11 @@ public sealed class SalesInventoryService(
                 requestedLine.SerialNumber);
 
             var unitCost = requestedLine.UnitCost ??
-                product.DefaultPurchasePrice;
+                (tradeCurrency.CurrencyId.HasValue
+                    ? ConvertFromBase(
+                        product.DefaultPurchasePrice,
+                        tradeCurrency.ExchangeRate)
+                    : product.DefaultPurchasePrice);
 
             if (unitCost < 0 ||
                 requestedLine.DiscountAmount < 0 ||
@@ -1471,7 +1515,9 @@ public sealed class SalesInventoryService(
                 DocumentDate = receipt.DocumentDate,
                 Type = StockMovementType.PurchaseReceipt,
                 Quantity = line.Quantity,
-                UnitCost = line.NetAmount / line.Quantity,
+                UnitCost = ConvertToBase(
+                    line.NetAmount,
+                    receipt.ExchangeRate) / line.Quantity,
                 LotNumber = line.LotNumber,
                 SerialNumber = line.SerialNumber,
                 ExpiryDate = line.ExpiryDate,
@@ -1482,7 +1528,9 @@ public sealed class SalesInventoryService(
             });
 
             product.DefaultPurchasePrice =
-                line.NetAmount / line.Quantity;
+                ConvertToBase(
+                    line.NetAmount,
+                    receipt.ExchangeRate) / line.Quantity;
         }
 
         var inventoryNet = receipt.Subtotal - receipt.DiscountTotal;
@@ -1490,13 +1538,16 @@ public sealed class SalesInventoryService(
             receipt.PaymentType == PurchasePaymentType.Cash
                 ? settings.CashAccountId
                 : payablesAccountId;
+        var rate = receipt.ExchangeRate <= 0
+            ? 1m
+            : receipt.ExchangeRate;
 
         var journalLines = new List<CreateJournalLineRequest>
         {
             new(
                 settings.InventoryAccountId,
                 $"خرید کالا {receipt.Number}",
-                inventoryNet,
+                ConvertToBase(inventoryNet, rate),
                 0)
         };
 
@@ -1505,7 +1556,7 @@ public sealed class SalesInventoryService(
             journalLines.Add(new CreateJournalLineRequest(
                 purchaseTaxAccountId,
                 $"مالیات خرید {receipt.Number}",
-                receipt.TaxTotal,
+                ConvertToBase(receipt.TaxTotal, rate),
                 0));
         }
 
@@ -1513,9 +1564,19 @@ public sealed class SalesInventoryService(
             settlementAccount,
             $"تسویه خرید {receipt.Number}",
             0,
-            receipt.GrandTotal,
+            ConvertToBase(receipt.GrandTotal, rate),
             receipt.PaymentType == PurchasePaymentType.Credit
                 ? receipt.SupplierDetailAccountId
+                : null,
+            CurrencyId: receipt.CurrencyId,
+            ForeignDebit: receipt.CurrencyId.HasValue
+                ? 0m
+                : null,
+            ForeignCredit: receipt.CurrencyId.HasValue
+                ? receipt.GrandTotal
+                : null,
+            ExchangeRate: receipt.CurrencyId.HasValue
+                ? rate
                 : null));
 
         var journal = await accountingService
@@ -1980,13 +2041,16 @@ public sealed class SalesInventoryService(
         var journalLines = new List<CreateJournalLineRequest>();
 
         var netSales = salesReturn.GrandTotal - salesReturn.TaxTotal;
+        var rate = invoice.ExchangeRate <= 0
+            ? 1m
+            : invoice.ExchangeRate;
 
         if (netSales > 0)
         {
             journalLines.Add(new CreateJournalLineRequest(
                 settings.SalesRevenueAccountId,
                 $"برگشت درآمد فروش {salesReturn.Number}",
-                netSales,
+                ConvertToBase(netSales, rate),
                 0));
         }
 
@@ -1995,7 +2059,7 @@ public sealed class SalesInventoryService(
             journalLines.Add(new CreateJournalLineRequest(
                 settings.SalesTaxPayableAccountId,
                 $"برگشت مالیات فروش {salesReturn.Number}",
-                salesReturn.TaxTotal,
+                ConvertToBase(salesReturn.TaxTotal, rate),
                 0));
         }
 
@@ -2003,9 +2067,19 @@ public sealed class SalesInventoryService(
             settlementAccount,
             $"تسویه برگشت از فروش {salesReturn.Number}",
             0,
-            salesReturn.GrandTotal,
+            ConvertToBase(salesReturn.GrandTotal, rate),
             invoice.PaymentType == SalesPaymentType.Credit
                 ? invoice.CustomerDetailAccountId
+                : null,
+            CurrencyId: invoice.CurrencyId,
+            ForeignDebit: invoice.CurrencyId.HasValue
+                ? 0m
+                : null,
+            ForeignCredit: invoice.CurrencyId.HasValue
+                ? salesReturn.GrandTotal
+                : null,
+            ExchangeRate: invoice.CurrencyId.HasValue
+                ? rate
                 : null));
 
         if (salesReturn.CostTotal > 0)
@@ -2876,6 +2950,93 @@ public sealed class SalesInventoryService(
             settings.SalesTaxPayableAccountId,
             settings.PurchaseTaxReceivableAccountId,
             settings.PreventNegativeStock);
+    }
+
+    private async Task<(Guid? CurrencyId, decimal ExchangeRate)>
+        ResolveTradeCurrencyAsync(
+            Guid companyId,
+            Guid? requestedCurrencyId,
+            decimal? requestedRate,
+            DateOnly documentDate,
+            CancellationToken cancellationToken)
+    {
+        if (requestedCurrencyId is not Guid currencyId)
+        {
+            return (null, 1m);
+        }
+
+        var currency = await db.Currencies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == currencyId &&
+                    x.CompanyId == companyId &&
+                    x.IsActive,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Transaction currency does not exist or is inactive.");
+
+        if (currency.IsBase)
+        {
+            if (requestedRate.HasValue &&
+                requestedRate.Value != 1m)
+            {
+                throw new ArgumentException(
+                    "Base-currency exchange rate must equal 1.");
+            }
+
+            return (null, 1m);
+        }
+
+        var rate = requestedRate;
+
+        if (!rate.HasValue)
+        {
+            rate = await db.CurrencyExchangeRates
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    x.CurrencyId == currency.Id &&
+                    x.RateDate <= documentDate)
+                .OrderByDescending(x => x.RateDate)
+                .ThenByDescending(x => x.CreatedAt)
+                .Select(x => (decimal?)x.AccountingRate)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (!rate.HasValue || rate.Value <= 0)
+        {
+            throw new InvalidOperationException(
+                $"No accounting exchange rate is available for {currency.Code} on or before {documentDate:yyyy-MM-dd}.");
+        }
+
+        return (currency.Id, rate.Value);
+    }
+
+    private static decimal ConvertToBase(
+        decimal transactionAmount,
+        decimal exchangeRate)
+    {
+        return Math.Round(
+            transactionAmount * exchangeRate,
+            4,
+            MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal ConvertFromBase(
+        decimal baseAmount,
+        decimal exchangeRate)
+    {
+        if (exchangeRate <= 0)
+        {
+            throw new ArgumentException(
+                "Exchange rate must be positive.");
+        }
+
+        return Math.Round(
+            baseAmount / exchangeRate,
+            4,
+            MidpointRounding.AwayFromZero);
     }
 
     private static string? NullIfBlank(string? value)
