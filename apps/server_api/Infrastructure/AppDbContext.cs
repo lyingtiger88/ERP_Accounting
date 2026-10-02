@@ -535,12 +535,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.TaxTotal).HasPrecision(20, 4);
             entity.Property(x => x.GrandTotal).HasPrecision(20, 4);
             entity.Property(x => x.CostTotal).HasPrecision(20, 4);
+            entity.Property(x => x.ExchangeRate).HasPrecision(24, 8);
             entity.HasIndex(x => new { x.CompanyId, x.Number }).IsUnique();
             entity.HasIndex(x => new { x.CompanyId, x.DocumentDate });
             entity.HasOne<Company>()
                 .WithMany()
                 .HasForeignKey(x => x.CompanyId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CurrencyDefinition>()
+                .WithMany()
+                .HasForeignKey(x => x.CurrencyId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalYear>()
                 .WithMany()
                 .HasForeignKey(x => x.FiscalYearId)
@@ -604,9 +609,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.DiscountTotal).HasPrecision(20, 4);
             entity.Property(x => x.TaxTotal).HasPrecision(20, 4);
             entity.Property(x => x.GrandTotal).HasPrecision(20, 4);
+            entity.Property(x => x.ExchangeRate).HasPrecision(24, 8);
             entity.HasIndex(x => new { x.CompanyId, x.Number }).IsUnique();
             entity.HasIndex(x => new { x.CompanyId, x.DocumentDate });
             entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CurrencyDefinition>().WithMany().HasForeignKey(x => x.CurrencyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<DetailAccount>().WithMany().HasForeignKey(x => x.SupplierDetailAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
