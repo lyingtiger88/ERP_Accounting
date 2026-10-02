@@ -109,7 +109,7 @@ class _CurrencyRatesPageState extends State<CurrencyRatesPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(
-            'نرخ \${currency['code']}',
+            'نرخ ' + currency['code'].toString(),
           ),
           content: SizedBox(
             width: 480,
