@@ -14,7 +14,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 9;
+  static const _databaseVersion = 10;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -218,6 +218,27 @@ class LocalDatabase {
     if (oldVersion < 9) {
       await _createSalesInventoryCacheSchema(db);
     }
+
+    if (oldVersion < 10 && oldVersion >= 2) {
+      await db.execute(
+        "ALTER TABLE local_document_lines ADD COLUMN cost_center_id TEXT",
+      );
+      await db.execute(
+        "ALTER TABLE local_document_lines ADD COLUMN project_id TEXT",
+      );
+      await db.execute(
+        "ALTER TABLE local_document_lines ADD COLUMN currency_id TEXT",
+      );
+      await db.execute(
+        "ALTER TABLE local_document_lines ADD COLUMN foreign_debit REAL",
+      );
+      await db.execute(
+        "ALTER TABLE local_document_lines ADD COLUMN foreign_credit REAL",
+      );
+      await db.execute(
+        "ALTER TABLE local_document_lines ADD COLUMN exchange_rate REAL",
+      );
+    }
   }
 
   Future<void> _createMasterDataSchema(Database db) async {
@@ -348,6 +369,12 @@ class LocalDatabase {
         document_id TEXT NOT NULL,
         account_id TEXT NOT NULL,
         detail_account_id TEXT,
+        cost_center_id TEXT,
+        project_id TEXT,
+        currency_id TEXT,
+        foreign_debit REAL,
+        foreign_credit REAL,
+        exchange_rate REAL,
         description TEXT,
         debit INTEGER NOT NULL DEFAULT 0,
         credit INTEGER NOT NULL DEFAULT 0,
@@ -2011,6 +2038,12 @@ class LocalDatabase {
               'document_id': localDocumentId,
               'account_id': line.accountId,
               'detail_account_id': line.detailAccountId,
+              'cost_center_id': line.costCenterId,
+              'project_id': line.projectId,
+              'currency_id': line.currencyId,
+              'foreign_debit': line.foreignDebit,
+              'foreign_credit': line.foreignCredit,
+              'exchange_rate': line.exchangeRate,
               'description': line.description ?? '',
               'debit': line.debit,
               'credit': line.credit,
@@ -2109,6 +2142,12 @@ class LocalDatabase {
         l.document_id,
         l.account_id,
         l.detail_account_id,
+        l.cost_center_id,
+        l.project_id,
+        l.currency_id,
+        l.foreign_debit,
+        l.foreign_credit,
+        l.exchange_rate,
         l.description,
         l.debit,
         l.credit,
@@ -2136,6 +2175,12 @@ class LocalDatabase {
             detailAccountId: row['detail_account_id'] as String?,
             detailCode: row['detail_code'] as String?,
             detailName: row['detail_name'] as String?,
+            costCenterId: row['cost_center_id'] as String?,
+            projectId: row['project_id'] as String?,
+            currencyId: row['currency_id'] as String?,
+            foreignDebit: row['foreign_debit'] as num?,
+            foreignCredit: row['foreign_credit'] as num?,
+            exchangeRate: row['exchange_rate'] as num?,
             description: row['description'] as String? ?? '',
             debit: (row['debit'] as num).toInt(),
             credit: (row['credit'] as num).toInt(),
@@ -2423,6 +2468,12 @@ class LocalJournalLine {
     required this.detailAccountId,
     required this.detailCode,
     required this.detailName,
+    required this.costCenterId,
+    required this.projectId,
+    required this.currencyId,
+    required this.foreignDebit,
+    required this.foreignCredit,
+    required this.exchangeRate,
     required this.description,
     required this.debit,
     required this.credit,
@@ -2436,6 +2487,12 @@ class LocalJournalLine {
   final String? detailAccountId;
   final String? detailCode;
   final String? detailName;
+  final String? costCenterId;
+  final String? projectId;
+  final String? currencyId;
+  final num? foreignDebit;
+  final num? foreignCredit;
+  final num? exchangeRate;
   final String description;
   final int debit;
   final int credit;
