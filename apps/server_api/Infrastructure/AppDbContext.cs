@@ -27,6 +27,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<DetailAccountServerChange> DetailAccountServerChanges => Set<DetailAccountServerChange>();
     public DbSet<JournalReversalLink> JournalReversalLinks => Set<JournalReversalLink>();
     public DbSet<AccountingAuditLog> AccountingAuditLogs => Set<AccountingAuditLog>();
+    public DbSet<CurrencyDefinition> Currencies => Set<CurrencyDefinition>();
+    public DbSet<CurrencyExchangeRate> CurrencyExchangeRates => Set<CurrencyExchangeRate>();
+    public DbSet<JournalLineCurrency> JournalLineCurrencies => Set<JournalLineCurrency>();
     public DbSet<StoreProduct> StoreProducts => Set<StoreProduct>();
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<SalesInventorySettings> SalesInventorySettings => Set<SalesInventorySettings>();
@@ -384,6 +387,62 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<AppUser>()
                 .WithMany()
                 .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CurrencyDefinition>(entity =>
+        {
+            entity.ToTable("currencies");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(12).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Symbol).HasMaxLength(20);
+            entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
+            entity.HasIndex(x => new { x.CompanyId, x.IsBase });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CurrencyExchangeRate>(entity =>
+        {
+            entity.ToTable("currency_exchange_rates");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Source).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.BuyRate).HasPrecision(24, 8);
+            entity.Property(x => x.SellRate).HasPrecision(24, 8);
+            entity.Property(x => x.AccountingRate).HasPrecision(24, 8);
+            entity.HasIndex(x => new { x.CompanyId, x.CurrencyId, x.RateDate });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CurrencyDefinition>()
+                .WithMany()
+                .HasForeignKey(x => x.CurrencyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<JournalLineCurrency>(entity =>
+        {
+            entity.ToTable("journal_line_currencies");
+            entity.HasKey(x => x.JournalLineId);
+            entity.Property(x => x.ForeignDebit).HasPrecision(24, 8);
+            entity.Property(x => x.ForeignCredit).HasPrecision(24, 8);
+            entity.Property(x => x.ExchangeRate).HasPrecision(24, 8);
+            entity.HasIndex(x => x.CurrencyId);
+            entity.HasOne<JournalLine>()
+                .WithOne()
+                .HasForeignKey<JournalLineCurrency>(x => x.JournalLineId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CurrencyDefinition>()
+                .WithMany()
+                .HasForeignKey(x => x.CurrencyId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
