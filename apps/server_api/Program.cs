@@ -62,6 +62,7 @@ builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AccountingService>();
+builder.Services.AddScoped<CurrencyAccountingService>();
 builder.Services.AddScoped<SalesInventoryService>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -79,6 +80,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.EnsureCreatedAsync();
     await AccountingSchemaBootstrapper.EnsureExtensionsAsync(db);
+    await CurrencySchemaBootstrapper.EnsureAsync(db);
     await SalesInventorySchemaBootstrapper.EnsureAsync(db);
 }
 
@@ -112,6 +114,7 @@ auth.MapPost("/bootstrap", async (
     BootstrapRequest request,
     AuthService authService,
     AccountingService accountingService,
+    CurrencyAccountingService currencyService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -124,6 +127,9 @@ auth.MapPost("/bootstrap", async (
             created.Company.Id,
             cancellationToken);
         await accountingService.EnsureDefaultFiscalYearAsync(
+            created.Company.Id,
+            cancellationToken);
+        await currencyService.EnsureDefaultsAsync(
             created.Company.Id,
             cancellationToken);
 
@@ -149,6 +155,7 @@ auth.MapPost("/login", async (
     LoginRequest request,
     AuthService authService,
     AccountingService accountingService,
+    CurrencyAccountingService currencyService,
     CancellationToken cancellationToken) =>
 {
     var result = await authService.LoginAsync(
@@ -164,6 +171,9 @@ auth.MapPost("/login", async (
         result.CompanyId,
         cancellationToken);
     await accountingService.EnsureDefaultFiscalYearAsync(
+        result.CompanyId,
+        cancellationToken);
+    await currencyService.EnsureDefaultsAsync(
         result.CompanyId,
         cancellationToken);
 
@@ -968,6 +978,333 @@ store.MapPost("/invoices/{invoiceId:guid}/returns", async (
 
 
 var accounting = app.MapGroup("/api/accounting");
+
+accounting.MapGet("/currencies", async (
+    HttpRequest request,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    await currencyService.EnsureDefaultsAsync(
+        user.CompanyId,
+        cancellationToken);
+
+    return Results.Ok(await currencyService.GetCurrenciesAsync(
+        user.CompanyId,
+        cancellationToken));
+});
+
+accounting.MapPost("/currencies", async (
+    HttpRequest request,
+    CreateCurrencyRequest payload,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await currencyService.CreateCurrencyAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapPost("/currencies/{currencyId:guid}/state", async (
+    HttpRequest request,
+    Guid currencyId,
+    SetCurrencyStateRequest payload,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await currencyService.SetCurrencyStateAsync(
+            user.CompanyId,
+            user.Id,
+            currencyId,
+            payload.IsActive,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapPost("/currencies/base", async (
+    HttpRequest request,
+    SetBaseCurrencyRequest payload,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await currencyService.SetBaseCurrencyAsync(
+            user.CompanyId,
+            user.Id,
+            payload.CurrencyId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/currency-rates", async (
+    HttpRequest request,
+    Guid? currencyId,
+    DateOnly? from,
+    DateOnly? to,
+    int? limit,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await currencyService.GetRatesAsync(
+            user.CompanyId,
+            currencyId,
+            from,
+            to,
+            limit ?? 300,
+            cancellationToken));
+});
+
+accounting.MapPost("/currency-rates", async (
+    HttpRequest request,
+    CreateCurrencyRateRequest payload,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await currencyService.SaveRateAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/currencies/{currencyId:guid}/accounting-rate", async (
+    HttpRequest request,
+    Guid currencyId,
+    DateOnly? date,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        var rateDate = date ?? DateOnly.FromDateTime(DateTime.Today);
+        var rate = await currencyService.ResolveAccountingRateAsync(
+            user.CompanyId,
+            currencyId,
+            rateDate,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            currencyId,
+            date = rateDate,
+            accountingRate = rate
+        });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapPost("/currency-journals", async (
+    HttpRequest request,
+    CreateForeignCurrencyJournalRequest payload,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await currencyService.CreateForeignCurrencyJournalAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/currency-position", async (
+    HttpRequest request,
+    DateOnly? asOf,
+    AuthService authService,
+    CurrencyAccountingService currencyService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await currencyService.GetCurrencyPositionAsync(
+            user.CompanyId,
+            asOf ?? DateOnly.FromDateTime(DateTime.Today),
+            cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
 
 accounting.MapGet("/accounts", async (
     HttpRequest request,
