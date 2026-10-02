@@ -113,7 +113,8 @@ class _SalesReturnsPageState extends State<SalesReturnsPage> {
                           formatReportMoney(
                             reportNumber(item['grandTotal']),
                           ) +
-                          ' ریال',
+                          ' ' +
+                          (item['currencyCode']?.toString() ?? 'BASE'),
                     ),
                     subtitle: Text(
                       formatReportDate(
@@ -163,7 +164,8 @@ class _SalesReturnsPageState extends State<SalesReturnsPage> {
                                       reportNumber(line['netAmount']) +
                                           reportNumber(line['taxAmount']),
                                     ) +
-                                    ' ریال',
+                                    ' ' +
+                                    (item['currencyCode']?.toString() ?? 'BASE'),
                               ),
                             );
                           },
