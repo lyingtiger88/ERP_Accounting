@@ -25,15 +25,18 @@ class _NewSalesInvoicePageState
     extends State<NewSalesInvoicePage> {
   final _apiClient = ApiClient();
   final _description = TextEditingController();
+  final _exchangeRate = TextEditingController(text: '1');
   final List<_InvoiceRowEditor> _rows = [];
 
   List<Map<String, dynamic>> _products = const [];
   List<Map<String, dynamic>> _warehouses = const [];
+  List<Map<String, dynamic>> _currencies = const [];
   List<CachedFiscalYear> _fiscalYears = const [];
   List<CachedDetailAccount> _customers = const [];
 
   String? _warehouseId;
   String? _fiscalYearId;
+  String? _currencyId;
   String? _customerId;
   String _paymentType = 'Cash';
   DateTime _documentDate = DateTime.now();
@@ -51,6 +54,7 @@ class _NewSalesInvoicePageState
   @override
   void dispose() {
     _description.dispose();
+    _exchangeRate.dispose();
     for (final row in _rows) {
       row.dispose();
     }
@@ -98,7 +102,16 @@ class _NewSalesInvoicePageState
         );
       }
 
-      final fiscalYears =
+      List<Map<String, dynamic>> currencies = const [];
+      try {
+        currencies = await _apiClient.getCurrencies(
+          bearerToken: widget.accessToken,
+        );
+      } catch (_) {
+        // Base-currency sales remain available offline.
+      }
+
+            final fiscalYears =
           await widget.localDatabase.getCachedFiscalYears(
         widget.companyId,
       );
@@ -156,6 +169,7 @@ class _NewSalesInvoicePageState
       setState(() {
         _products = products;
         _warehouses = warehouses;
+        _currencies = currencies;
         _fiscalYears = fiscalYears;
         _customers = customers;
         _warehouseId = warehouses.isEmpty
@@ -171,6 +185,72 @@ class _NewSalesInvoicePageState
         _loading = false;
       });
     }
+  }
+
+  Map<String, dynamic>? _currency(String? id) {
+    if (id == null) return null;
+    for (final item in _currencies) {
+      if (item['id'].toString() == id) return item;
+    }
+    return null;
+  }
+
+  String get _currencyCode {
+    if (_currencyId != null) {
+      return _currency(_currencyId)?['code']?.toString() ?? 'FX';
+    }
+
+    for (final item in _currencies) {
+      if (item['isBase'] as bool? ?? false) {
+        return item['code'].toString();
+      }
+    }
+
+    return 'BASE';
+  }
+
+  Future<void> _selectCurrency(String? value) async {
+    setState(() {
+      _currencyId = value;
+      if (value == null) {
+        _exchangeRate.text = '1';
+      }
+    });
+
+    if (value != null) {
+      try {
+        final rate = await _apiClient.getCurrencyAccountingRate(
+          bearerToken: widget.accessToken,
+          currencyId: value,
+          date: _documentDate,
+        );
+
+        if (!mounted) return;
+        setState(() => _exchangeRate.text = rate.toString());
+      } on ApiException catch (error) {
+        if (!mounted) return;
+        setState(() => _exchangeRate.clear());
+        _message(error.message);
+      }
+    }
+
+    _applyDefaultPrices();
+  }
+
+  void _applyDefaultPrices() {
+    final rate = _number(_exchangeRate.text);
+
+    setState(() {
+      for (final row in _rows) {
+        final product = _product(row.productId);
+        if (product == null) continue;
+
+        final basePrice = reportNumber(product['salesPrice']);
+        row.unitPrice.text = _currencyId != null && rate > 0
+            ? (basePrice / rate).toStringAsFixed(4)
+            : basePrice.toString();
+      }
+    });
   }
 
   Map<String, dynamic>? _product(String? id) {
@@ -233,6 +313,10 @@ class _NewSalesInvoicePageState
         }
       }
     });
+
+    if (_currencyId != null) {
+      await _selectCurrency(_currencyId);
+    }
   }
 
   void _selectProduct(
@@ -243,8 +327,12 @@ class _NewSalesInvoicePageState
       row.productId = productId;
       final product = _product(productId);
       if (product != null) {
+        final basePrice = reportNumber(product['salesPrice']);
+        final rate = _number(_exchangeRate.text);
         row.unitPrice.text =
-            reportNumber(product['salesPrice']).toString();
+            _currencyId != null && rate > 0
+                ? (basePrice / rate).toStringAsFixed(4)
+                : basePrice.toString();
       }
     });
   }
@@ -359,8 +447,12 @@ class _NewSalesInvoicePageState
 
     setState(() {
       target!.productId = product!['id'].toString();
+      final basePrice = reportNumber(product['salesPrice']);
+      final rate = _number(_exchangeRate.text);
       target.unitPrice.text =
-          reportNumber(product['salesPrice']).toString();
+          _currencyId != null && rate > 0
+              ? (basePrice / rate).toStringAsFixed(4)
+              : basePrice.toString();
       if (product['trackingMode']?.toString() == 'Serial') {
         target.quantity.text = '1';
       }
@@ -383,6 +475,12 @@ class _NewSalesInvoicePageState
 
     if (_paymentType == 'Credit' && _customerId == null) {
       _message('برای فروش نسیه انتخاب مشتری الزامی است.');
+      return;
+    }
+
+    final exchangeRate = _number(_exchangeRate.text);
+    if (_currencyId != null && exchangeRate <= 0) {
+      _message('برای فروش ارزی، نرخ حسابداری معتبر الزامی است.');
       return;
     }
 
@@ -460,6 +558,9 @@ class _NewSalesInvoicePageState
             ? null
             : _description.text.trim(),
         lines: lines,
+        currencyId: _currencyId,
+        exchangeRate:
+            _currencyId == null ? null : exchangeRate,
       );
 
       if (!mounted) return;
@@ -483,6 +584,9 @@ class _NewSalesInvoicePageState
             'description': _description.text.trim().isEmpty
                 ? null
                 : _description.text.trim(),
+            'currencyId': _currencyId,
+            'exchangeRate':
+                _currencyId == null ? null : exchangeRate,
             'lines': lines,
           },
         );
@@ -628,6 +732,59 @@ class _NewSalesInvoicePageState
                                   ),
                                 ),
                               ),
+                              SizedBox(
+                                width: 220,
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: _currencyId,
+                                  isExpanded: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'ارز معامله',
+                                    prefixIcon: Icon(
+                                      Icons.currency_exchange_outlined,
+                                    ),
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem<String>(
+                                      value: null,
+                                      child: Text('ارز پایه شرکت'),
+                                    ),
+                                    for (final item in _currencies)
+                                      if ((item['isActive'] as bool? ?? true) &&
+                                          !(item['isBase'] as bool? ?? false))
+                                        DropdownMenuItem(
+                                          value: item['id'].toString(),
+                                          child: Text(
+                                            item['code'].toString() +
+                                                ' — ' +
+                                                item['name'].toString(),
+                                          ),
+                                        ),
+                                  ],
+                                  onChanged:
+                                      _saving ? null : _selectCurrency,
+                                ),
+                              ),
+                              SizedBox(
+                                width: 190,
+                                child: TextField(
+                                  controller: _exchangeRate,
+                                  enabled:
+                                      !_saving && _currencyId != null,
+                                  textDirection: TextDirection.ltr,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: 'نرخ حسابداری',
+                                    helperText: _currencyId == null
+                                        ? 'ارز پایه'
+                                        : 'ارز پایه / 1 ' +
+                                            _currencyCode,
+                                  ),
+                                ),
+                              ),
+
                             ],
                           ),
                         ),
@@ -794,28 +951,28 @@ class _NewSalesInvoicePageState
                                     formatReportMoney(
                                       _subtotal,
                                     ) +
-                                    ' ریال',
+                                    ' ' + _currencyCode,
                               ),
                               Text(
                                 'تخفیف: ' +
                                     formatReportMoney(
                                       _discount,
                                     ) +
-                                    ' ریال',
+                                    ' ' + _currencyCode,
                               ),
                               Text(
                                 'مالیات: ' +
                                     formatReportMoney(
                                       _tax,
                                     ) +
-                                    ' ریال',
+                                    ' ' + _currencyCode,
                               ),
                               Text(
                                 'قابل پرداخت: ' +
                                     formatReportMoney(
                                       grandTotal,
                                     ) +
-                                    ' ریال',
+                                    ' ' + _currencyCode,
                                 style: const TextStyle(
                                   fontWeight:
                                       FontWeight.w800,
