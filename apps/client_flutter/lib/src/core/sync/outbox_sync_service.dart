@@ -115,6 +115,8 @@ class OutboxSyncService {
                 payload['customerDetailAccountId']?.toString(),
             paymentType: payload['paymentType'].toString(),
             description: payload['description']?.toString(),
+            currencyId: payload['currencyId']?.toString(),
+            exchangeRate: payload['exchangeRate'] as num?,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
@@ -147,6 +149,8 @@ class OutboxSyncService {
                 payload['supplierDetailAccountId']?.toString(),
             paymentType: payload['paymentType'].toString(),
             description: payload['description']?.toString(),
+            currencyId: payload['currencyId']?.toString(),
+            exchangeRate: payload['exchangeRate'] as num?,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
