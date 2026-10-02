@@ -76,6 +76,11 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Profit & loss
 - [x] Balance sheet
 - [x] Account and floating-detail turnover reports
+- [x] Multi-currency accounting
+- [x] Currency definitions and base-currency control
+- [x] Historical buy / sell / accounting exchange rates
+- [x] Foreign-currency journal posting with preserved original amounts
+- [x] Currency position and revaluation-difference reporting
 
 #### Persistence
 - [x] PostgreSQL server database
@@ -238,6 +243,11 @@ Implemented so far:
 - Fiscal journal, general ledger, trial balance, profit & loss and balance sheet UIs
 - Opening-balance carry-forward in ledger/trial-balance reports
 - Floating-detail ledger with opening/running/closing balances
+- International currencies with IRR default plus USD/EUR/GBP/AED/TRY/CNY/CHF/CAD/JPY presets
+- Historical FX rate table with buy, sell and accounting rates per date/source
+- Foreign-currency journals storing original currency amount, historical exchange rate and base-ledger equivalent
+- Currency-position/revaluation report for foreign monetary assets and liabilities
+- Foreign-currency purchase/sale inventory tests preserving historical base cost
 - Floating detail accounts cached offline and selectable per journal line
 - CI for ASP.NET Core build, sync/revision tests and Flutter analysis
 - Separate Sales & Inventory workspace for products, warehouses, stock and sales invoices
