@@ -69,6 +69,16 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
         return 'بستن نهایی سال مالی';
       case 'FISCAL_YEAR_FINALIZATION_REOPEN':
         return 'بازگشایی بستن نهایی سال';
+      case 'CURRENCY_CREATE':
+        return 'تعریف ارز';
+      case 'CURRENCY_ACTIVATE':
+        return 'فعال‌سازی ارز';
+      case 'CURRENCY_DEACTIVATE':
+        return 'غیرفعال‌سازی ارز';
+      case 'BASE_CURRENCY_SET':
+        return 'تغییر ارز پایه';
+      case 'CURRENCY_RATE_SET':
+        return 'ثبت نرخ ارز';
       default:
         return action;
     }
@@ -100,6 +110,16 @@ class _AuditTrailPageState extends State<AuditTrailPage> {
       case 'YEAR_END_REOPEN_POST':
       case 'FISCAL_YEAR_FINALIZATION_REOPEN':
         return Icons.restore_outlined;
+      case 'CURRENCY_CREATE':
+        return Icons.add_circle_outline;
+      case 'CURRENCY_ACTIVATE':
+        return Icons.check_circle_outline;
+      case 'CURRENCY_DEACTIVATE':
+        return Icons.pause_circle_outline;
+      case 'BASE_CURRENCY_SET':
+        return Icons.home_outlined;
+      case 'CURRENCY_RATE_SET':
+        return Icons.currency_exchange_outlined;
       default:
         return Icons.history_toggle_off_outlined;
     }
