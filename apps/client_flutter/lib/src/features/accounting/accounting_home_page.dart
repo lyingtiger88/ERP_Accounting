@@ -55,7 +55,7 @@ class AccountingHomePage extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'ثبت اسناد به‌صورت Offline-First؛ مبالغ پایه به ریال ذخیره می‌شوند.',
+              'ثبت اسناد به‌صورت Offline-First؛ دفتر کل با ارز پایه شرکت نگهداری می‌شود.',
             ),
             const SizedBox(height: 24),
             Wrap(
