@@ -121,6 +121,8 @@ public static class SalesInventorySchemaBootstrapper
                 "FiscalYearId" TEXT NOT NULL,
                 "Number" TEXT NOT NULL,
                 "DocumentDate" TEXT NOT NULL,
+                "CurrencyId" TEXT NULL,
+                "ExchangeRate" TEXT NOT NULL DEFAULT '1',
                 "CustomerDetailAccountId" TEXT NULL,
                 "WarehouseId" TEXT NOT NULL,
                 "PaymentType" TEXT NOT NULL,
@@ -141,6 +143,9 @@ public static class SalesInventorySchemaBootstrapper
                     ON DELETE CASCADE,
                 CONSTRAINT "FK_sales_invoices_fiscal_years"
                     FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_sales_invoices_currencies"
+                    FOREIGN KEY ("CurrencyId") REFERENCES currencies ("Id")
                     ON DELETE RESTRICT,
                 CONSTRAINT "FK_sales_invoices_detail_accounts"
                     FOREIGN KEY ("CustomerDetailAccountId") REFERENCES detail_accounts ("Id")
@@ -245,6 +250,8 @@ public static class SalesInventorySchemaBootstrapper
                 "FiscalYearId" TEXT NOT NULL,
                 "Number" TEXT NOT NULL,
                 "DocumentDate" TEXT NOT NULL,
+                "CurrencyId" TEXT NULL,
+                "ExchangeRate" TEXT NOT NULL DEFAULT '1',
                 "SupplierDetailAccountId" TEXT NULL,
                 "WarehouseId" TEXT NOT NULL,
                 "PaymentType" TEXT NOT NULL,
@@ -261,6 +268,7 @@ public static class SalesInventorySchemaBootstrapper
                 "PostedAt" TEXT NULL,
                 FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
                 FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CurrencyId") REFERENCES currencies ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("SupplierDetailAccountId") REFERENCES detail_accounts ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
@@ -420,6 +428,23 @@ public static class SalesInventorySchemaBootstrapper
             "ALTER TABLE stock_movements ADD COLUMN \"ExpiryDate\" TEXT NULL;",
             cancellationToken);
 
+        await EnsureSqliteColumnAsync(
+            db, "sales_invoices", "CurrencyId",
+            "ALTER TABLE sales_invoices ADD COLUMN \"CurrencyId\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "sales_invoices", "ExchangeRate",
+            "ALTER TABLE sales_invoices ADD COLUMN \"ExchangeRate\" TEXT NOT NULL DEFAULT '1';",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "purchase_receipts", "CurrencyId",
+            "ALTER TABLE purchase_receipts ADD COLUMN \"CurrencyId\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "purchase_receipts", "ExchangeRate",
+            "ALTER TABLE purchase_receipts ADD COLUMN \"ExchangeRate\" TEXT NOT NULL DEFAULT '1';",
+            cancellationToken);
+
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS \"IX_stock_movements_Company_Product_Lot\" ON stock_movements (\"CompanyId\", \"ProductId\", \"LotNumber\");",
             cancellationToken);
@@ -568,6 +593,8 @@ public static class SalesInventorySchemaBootstrapper
                 "FiscalYearId" uuid NOT NULL,
                 "Number" character varying(80) NOT NULL,
                 "DocumentDate" date NOT NULL,
+                "CurrencyId" uuid NULL,
+                "ExchangeRate" numeric(24,8) NOT NULL DEFAULT 1,
                 "CustomerDetailAccountId" uuid NULL,
                 "WarehouseId" uuid NOT NULL,
                 "PaymentType" character varying(30) NOT NULL,
@@ -686,6 +713,16 @@ public static class SalesInventorySchemaBootstrapper
             ON stock_movements ("ReferenceType", "ReferenceId");
             """,
             """
+            ALTER TABLE sales_invoices
+                ADD COLUMN IF NOT EXISTS "CurrencyId" uuid NULL,
+                ADD COLUMN IF NOT EXISTS "ExchangeRate" numeric(24,8) NOT NULL DEFAULT 1;
+            """,
+            """
+            ALTER TABLE purchase_receipts
+                ADD COLUMN IF NOT EXISTS "CurrencyId" uuid NULL,
+                ADD COLUMN IF NOT EXISTS "ExchangeRate" numeric(24,8) NOT NULL DEFAULT 1;
+            """,
+            """
             ALTER TABLE store_products
                 ADD COLUMN IF NOT EXISTS "TrackingMode" character varying(30) NOT NULL DEFAULT 'None',
                 ADD COLUMN IF NOT EXISTS "MinimumStock" numeric(20,4) NOT NULL DEFAULT 0;
@@ -722,6 +759,8 @@ public static class SalesInventorySchemaBootstrapper
                 "FiscalYearId" uuid NOT NULL,
                 "Number" character varying(80) NOT NULL,
                 "DocumentDate" date NOT NULL,
+                "CurrencyId" uuid NULL,
+                "ExchangeRate" numeric(24,8) NOT NULL DEFAULT 1,
                 "SupplierDetailAccountId" uuid NULL,
                 "WarehouseId" uuid NOT NULL,
                 "PaymentType" character varying(30) NOT NULL,
