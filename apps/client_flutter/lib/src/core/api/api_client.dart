@@ -168,6 +168,191 @@ class ApiClient {
     return LoginResult.fromJson(payload as Map<String, dynamic>);
   }
 
+  Future<List<Map<String, dynamic>>> getCurrencies({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/currencies',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createCurrency({
+    required String bearerToken,
+    required String code,
+    required String name,
+    String? symbol,
+    int decimalPlaces = 2,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/currencies',
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+        'symbol': symbol,
+        'decimalPlaces': decimalPlaces,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> setCurrencyState({
+    required String bearerToken,
+    required String currencyId,
+    required bool isActive,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/currencies/' +
+          currencyId +
+          '/state',
+      bearerToken: bearerToken,
+      body: {
+        'isActive': isActive,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> setBaseCurrency({
+    required String bearerToken,
+    required String currencyId,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/currencies/base',
+      bearerToken: bearerToken,
+      body: {
+        'currencyId': currencyId,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getCurrencyRates({
+    required String bearerToken,
+    String? currencyId,
+    DateTime? from,
+    DateTime? to,
+    int limit = 300,
+  }) async {
+    final parts = <String>[
+      if (currencyId != null && currencyId.isNotEmpty)
+        'currencyId=' + Uri.encodeQueryComponent(currencyId),
+      if (from != null) 'from=' + _dateOnly(from),
+      if (to != null) 'to=' + _dateOnly(to),
+      'limit=' + limit.toString(),
+    ];
+
+    final payload = await _request(
+      'GET',
+      '/api/accounting/currency-rates?' +
+          parts.join('&'),
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> saveCurrencyRate({
+    required String bearerToken,
+    required String currencyId,
+    required DateTime rateDate,
+    required num buyRate,
+    required num sellRate,
+    required num accountingRate,
+    String source = 'Manual',
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/currency-rates',
+      bearerToken: bearerToken,
+      body: {
+        'currencyId': currencyId,
+        'rateDate': _dateOnly(rateDate),
+        'buyRate': buyRate,
+        'sellRate': sellRate,
+        'accountingRate': accountingRate,
+        'source': source,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<num> getCurrencyAccountingRate({
+    required String bearerToken,
+    required String currencyId,
+    required DateTime date,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/currencies/' +
+          currencyId +
+          '/accounting-rate?date=' +
+          _dateOnly(date),
+      bearerToken: bearerToken,
+    );
+
+    return (payload as Map)['accountingRate'] as num;
+  }
+
+  Future<Map<String, dynamic>> createForeignCurrencyJournal({
+    required String bearerToken,
+    required String currencyId,
+    required DateTime documentDate,
+    required String description,
+    required List<Map<String, dynamic>> lines,
+    String? fiscalYearId,
+    num? exchangeRate,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/currency-journals',
+      bearerToken: bearerToken,
+      body: {
+        'currencyId': currencyId,
+        'documentDate': _dateOnly(documentDate),
+        'description': description,
+        'lines': lines,
+        'fiscalYearId': fiscalYearId,
+        'exchangeRate': exchangeRate,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> getCurrencyPosition({
+    required String bearerToken,
+    required DateTime asOf,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/currency-position?asOf=' +
+          _dateOnly(asOf),
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getAccounts({
     required String bearerToken,
   }) async {
