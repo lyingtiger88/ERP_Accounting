@@ -585,6 +585,7 @@ class _NewSalesInvoicePageState
                 ? null
                 : _description.text.trim(),
             'currencyId': _currencyId,
+            'currencyCode': _currencyCode,
             'exchangeRate':
                 _currencyId == null ? null : exchangeRate,
             'lines': lines,
