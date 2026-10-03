@@ -44,6 +44,7 @@
 - [x] Historical FX buy/sell/accounting rates
 - [x] Foreign-currency journal posting
 - [x] Currency position and revaluation report
+- [x] FX revaluation journal posting
 - [x] Accounting audit log
 - [x] PostgreSQL persistence
 - [x] Initial SQLite client persistence layer
