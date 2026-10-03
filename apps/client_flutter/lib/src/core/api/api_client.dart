@@ -407,6 +407,112 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> getCostCenters({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/cost-centers',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createCostCenter({
+    required String bearerToken,
+    required String code,
+    required String name,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/cost-centers',
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> updateCostCenter({
+    required String bearerToken,
+    required String costCenterId,
+    required String code,
+    required String name,
+    required bool isActive,
+  }) async {
+    final payload = await _request(
+      'PUT',
+      '/api/accounting/cost-centers/' + costCenterId,
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+        'isActive': isActive,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getAccountingProjects({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/accounting/projects',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createAccountingProject({
+    required String bearerToken,
+    required String code,
+    required String name,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/projects',
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> updateAccountingProject({
+    required String bearerToken,
+    required String projectId,
+    required String code,
+    required String name,
+    required bool isActive,
+  }) async {
+    final payload = await _request(
+      'PUT',
+      '/api/accounting/projects/' + projectId,
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+        'isActive': isActive,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getDetailAccounts({
     required String bearerToken,
   }) async {
