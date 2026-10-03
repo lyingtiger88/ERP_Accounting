@@ -52,9 +52,33 @@ public sealed record CreateCostCenterRequest(
     string Code,
     string Name);
 
+public sealed record UpdateCostCenterRequest(
+    string Code,
+    string Name,
+    bool IsActive);
+
+public sealed record CostCenterView(
+    Guid Id,
+    Guid CompanyId,
+    string Code,
+    string Name,
+    bool IsActive);
+
 public sealed record CreateAccountingProjectRequest(
     string Code,
     string Name);
+
+public sealed record UpdateAccountingProjectRequest(
+    string Code,
+    string Name,
+    bool IsActive);
+
+public sealed record AccountingProjectView(
+    Guid Id,
+    Guid CompanyId,
+    string Code,
+    string Name,
+    bool IsActive);
 
 public sealed record CreateDetailAccountRequest(
     string Code,
