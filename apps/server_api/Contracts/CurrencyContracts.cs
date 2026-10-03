@@ -87,3 +87,20 @@ public sealed record CurrencyPositionReport(
     DateOnly AsOf,
     string BaseCurrencyCode,
     IReadOnlyList<CurrencyPositionRow> Rows);
+
+
+public sealed record CurrencyRevaluationRequest(
+    DateOnly AsOf,
+    Guid GainAccountId,
+    Guid LossAccountId,
+    Guid? FiscalYearId = null,
+    string? Description = null);
+
+public sealed record CurrencyRevaluationResponse(
+    DateOnly AsOf,
+    Guid? JournalEntryId,
+    string? JournalNumber,
+    int PositionCount,
+    decimal GainTotal,
+    decimal LossTotal,
+    bool NoAdjustmentRequired);
