@@ -353,6 +353,30 @@ class ApiClient {
     return Map<String, dynamic>.from(payload as Map);
   }
 
+  Future<Map<String, dynamic>> postCurrencyRevaluation({
+    required String bearerToken,
+    required DateTime asOf,
+    required String gainAccountId,
+    required String lossAccountId,
+    String? fiscalYearId,
+    String? description,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/currency-revaluation',
+      bearerToken: bearerToken,
+      body: {
+        'asOf': _dateOnly(asOf),
+        'gainAccountId': gainAccountId,
+        'lossAccountId': lossAccountId,
+        'fiscalYearId': fiscalYearId,
+        'description': description,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getAccounts({
     required String bearerToken,
   }) async {
