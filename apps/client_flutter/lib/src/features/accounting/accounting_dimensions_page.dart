@@ -334,7 +334,7 @@ class _AccountingDimensionsPageState
                     (item) => Card(
                       child: ListTile(
                         leading: const Icon(Icons.hub_outlined),
-                        title: Text(item.code + ' — ' + item.name),
+                        title: Text('${item.code} — ${item.name}'),
                         subtitle: Text(
                           item.isActive ? 'فعال' : 'غیرفعال',
                         ),
@@ -362,7 +362,7 @@ class _AccountingDimensionsPageState
                     (item) => Card(
                       child: ListTile(
                         leading: const Icon(Icons.work_outline),
-                        title: Text(item.code + ' — ' + item.name),
+                        title: Text('${item.code} — ${item.name}'),
                         subtitle: Text(
                           item.isActive ? 'فعال' : 'غیرفعال',
                         ),
