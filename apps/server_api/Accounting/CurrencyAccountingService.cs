@@ -266,11 +266,11 @@ public sealed class CurrencyAccountingService(
             query = query.Where(x => x.RateDate <= toDate);
         }
 
-        var rates = await query
+        var rates = (await query.ToArrayAsync(cancellationToken))
             .OrderByDescending(x => x.RateDate)
             .ThenByDescending(x => x.CreatedAt)
             .Take(take)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         var currencyIds = rates
             .Select(x => x.CurrencyId)
@@ -879,16 +879,19 @@ public sealed class CurrencyAccountingService(
             return 1m;
         }
 
-        var rate = await db.CurrencyExchangeRates
+        var rateRows = await db.CurrencyExchangeRates
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
                 x.CurrencyId == currency.Id &&
                 x.RateDate <= date)
+            .ToArrayAsync(cancellationToken);
+
+        var rate = rateRows
             .OrderByDescending(x => x.RateDate)
             .ThenByDescending(x => x.CreatedAt)
             .Select(x => (decimal?)x.AccountingRate)
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefault();
 
         return rate
             ?? throw new InvalidOperationException(
