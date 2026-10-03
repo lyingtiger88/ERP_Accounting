@@ -799,13 +799,22 @@ public sealed class SalesInventoryService(
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        var ids = await db.SalesInvoices
+        var invoiceKeys = await db.SalesInvoices
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.Id,
+                x.DocumentDate,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var ids = invoiceKeys
             .OrderByDescending(x => x.DocumentDate)
             .ThenByDescending(x => x.CreatedAt)
             .Select(x => x.Id)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         var result = new List<SalesInvoiceView>(ids.Length);
 
@@ -1417,13 +1426,22 @@ public sealed class SalesInventoryService(
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        var ids = await db.PurchaseReceipts
+        var purchaseKeys = await db.PurchaseReceipts
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.Id,
+                x.DocumentDate,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var ids = purchaseKeys
             .OrderByDescending(x => x.DocumentDate)
             .ThenByDescending(x => x.CreatedAt)
             .Select(x => x.Id)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         var result = new List<PurchaseReceiptView>(ids.Length);
 
@@ -1728,13 +1746,22 @@ public sealed class SalesInventoryService(
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        var ids = await db.WarehouseTransfers
+        var transferKeys = await db.WarehouseTransfers
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.Id,
+                x.DocumentDate,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var ids = transferKeys
             .OrderByDescending(x => x.DocumentDate)
             .ThenByDescending(x => x.CreatedAt)
             .Select(x => x.Id)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         var result = new List<WarehouseTransferView>(ids.Length);
 
@@ -2169,13 +2196,22 @@ public sealed class SalesInventoryService(
         Guid companyId,
         CancellationToken cancellationToken = default)
     {
-        var ids = await db.SalesReturns
+        var returnKeys = await db.SalesReturns
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.Id,
+                x.DocumentDate,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var ids = returnKeys
             .OrderByDescending(x => x.DocumentDate)
             .ThenByDescending(x => x.CreatedAt)
             .Select(x => x.Id)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         var result = new List<SalesReturnView>(ids.Length);
 
@@ -3075,16 +3111,19 @@ public sealed class SalesInventoryService(
 
         if (!rate.HasValue)
         {
-            rate = await db.CurrencyExchangeRates
+            var rateRows = await db.CurrencyExchangeRates
                 .AsNoTracking()
                 .Where(x =>
                     x.CompanyId == companyId &&
                     x.CurrencyId == currency.Id &&
                     x.RateDate <= documentDate)
+                .ToArrayAsync(cancellationToken);
+
+            rate = rateRows
                 .OrderByDescending(x => x.RateDate)
                 .ThenByDescending(x => x.CreatedAt)
                 .Select(x => (decimal?)x.AccountingRate)
-                .FirstOrDefaultAsync(cancellationToken);
+                .FirstOrDefault();
         }
 
         if (!rate.HasValue || rate.Value <= 0)
