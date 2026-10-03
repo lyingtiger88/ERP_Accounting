@@ -53,6 +53,12 @@ class _NewJournalPageState extends State<NewJournalPage> {
         await widget.localDatabase.getCachedFiscalYears(widget.companyId);
     final detailAccounts =
         await widget.localDatabase.getCachedDetailAccounts(widget.companyId);
+    final costCenters =
+        await widget.localDatabase.getCachedCostCenters(widget.companyId);
+    final projects =
+        await widget.localDatabase.getCachedAccountingProjects(
+      widget.companyId,
+    );
 
     final draft = widget.draft;
 
@@ -65,6 +71,8 @@ class _NewJournalPageState extends State<NewJournalPage> {
           _JournalRowEditor(
             accountId: line.accountId,
             detailAccountId: line.detailAccountId,
+            costCenterId: line.costCenterId,
+            projectId: line.projectId,
             debitValue: line.debit,
             creditValue: line.credit,
             descriptionValue: line.description,
@@ -98,6 +106,8 @@ class _NewJournalPageState extends State<NewJournalPage> {
       accounts: accounts,
       fiscalYears: fiscalYears,
       detailAccounts: detailAccounts,
+      costCenters: costCenters,
+      projects: projects,
     );
   }
 
@@ -233,6 +243,8 @@ class _NewJournalPageState extends State<NewJournalPage> {
           debit: debit,
           credit: credit,
           detailAccountId: row.detailAccountId,
+          costCenterId: row.costCenterId,
+          projectId: row.projectId,
         ),
       );
     }
@@ -334,6 +346,8 @@ class _NewJournalPageState extends State<NewJournalPage> {
                 .toList(growable: false);
             final fiscalYears = masterData.fiscalYears;
             final detailAccounts = masterData.detailAccounts;
+            final costCenters = masterData.costCenters;
+            final projects = masterData.projects;
 
             if (accounts.isEmpty) {
               return const Center(
@@ -408,6 +422,8 @@ class _NewJournalPageState extends State<NewJournalPage> {
                     row: _rows[index],
                     accounts: accounts,
                     detailAccounts: detailAccounts,
+                    costCenters: costCenters,
+                    projects: projects,
                     enabled: !_busy,
                     onChanged: () => setState(() {}),
                     onRemove: () => _removeRow(index),
@@ -517,6 +533,8 @@ class _JournalLineCard extends StatelessWidget {
     required this.row,
     required this.accounts,
     required this.detailAccounts,
+    required this.costCenters,
+    required this.projects,
     required this.enabled,
     required this.onChanged,
     required this.onRemove,
@@ -527,6 +545,8 @@ class _JournalLineCard extends StatelessWidget {
   final _JournalRowEditor row;
   final List<CachedAccount> accounts;
   final List<CachedDetailAccount> detailAccounts;
+  final List<CachedCostCenter> costCenters;
+  final List<CachedAccountingProject> projects;
   final bool enabled;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
@@ -587,6 +607,56 @@ class _JournalLineCard extends StatelessWidget {
                   : null,
             );
 
+            final costCenter = DropdownButtonFormField<String>(
+              initialValue: row.costCenterId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'مرکز هزینه (اختیاری)',
+              ),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('بدون مرکز هزینه'),
+                ),
+                for (final item in costCenters)
+                  DropdownMenuItem(
+                    value: item.id,
+                    child: Text(item.code + ' — ' + item.name),
+                  ),
+              ],
+              onChanged: enabled
+                  ? (value) {
+                      row.costCenterId = value;
+                      onChanged();
+                    }
+                  : null,
+            );
+
+            final project = DropdownButtonFormField<String>(
+              initialValue: row.projectId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'پروژه (اختیاری)',
+              ),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('بدون پروژه'),
+                ),
+                for (final item in projects)
+                  DropdownMenuItem(
+                    value: item.id,
+                    child: Text(item.code + ' — ' + item.name),
+                  ),
+              ],
+              onChanged: enabled
+                  ? (value) {
+                      row.projectId = value;
+                      onChanged();
+                    }
+                  : null,
+            );
+
             final debit = TextField(
               controller: row.debit,
               enabled: enabled,
@@ -624,6 +694,10 @@ class _JournalLineCard extends StatelessWidget {
                   const SizedBox(height: 12),
                   detail,
                   const SizedBox(height: 12),
+                  costCenter,
+                  const SizedBox(height: 12),
+                  project,
+                  const SizedBox(height: 12),
                   debit,
                   const SizedBox(height: 12),
                   credit,
@@ -649,6 +723,10 @@ class _JournalLineCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(flex: 3, child: detail),
                 const SizedBox(width: 12),
+                Expanded(flex: 3, child: costCenter),
+                const SizedBox(width: 12),
+                Expanded(flex: 3, child: project),
+                const SizedBox(width: 12),
                 Expanded(flex: 2, child: debit),
                 const SizedBox(width: 12),
                 Expanded(flex: 2, child: credit),
@@ -673,6 +751,8 @@ class _JournalRowEditor {
   _JournalRowEditor({
     this.accountId,
     this.detailAccountId,
+    this.costCenterId,
+    this.projectId,
     int debitValue = 0,
     int creditValue = 0,
     String descriptionValue = '',
@@ -688,6 +768,8 @@ class _JournalRowEditor {
 
   String? accountId;
   String? detailAccountId;
+  String? costCenterId;
+  String? projectId;
   final TextEditingController debit;
   final TextEditingController credit;
   final TextEditingController description;
@@ -705,11 +787,15 @@ class _JournalMasterData {
     required this.accounts,
     required this.fiscalYears,
     required this.detailAccounts,
+    required this.costCenters,
+    required this.projects,
   });
 
   final List<CachedAccount> accounts;
   final List<CachedFiscalYear> fiscalYears;
   final List<CachedDetailAccount> detailAccounts;
+  final List<CachedCostCenter> costCenters;
+  final List<CachedAccountingProject> projects;
 }
 
 extension _FirstOrNullExtension<T> on Iterable<T> {
