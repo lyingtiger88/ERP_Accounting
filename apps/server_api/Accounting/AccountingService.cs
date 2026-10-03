@@ -827,6 +827,232 @@ public sealed class AccountingService(AppDbContext db)
             cancellationToken);
     }
 
+    public async Task<IReadOnlyList<CostCenterView>> GetCostCentersAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        return await db.CostCenters
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderBy(x => x.Code)
+            .Select(x => new CostCenterView(
+                x.Id,
+                x.CompanyId,
+                x.Code,
+                x.Name,
+                x.IsActive))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<CostCenterView> CreateCostCenterAsync(
+        Guid companyId,
+        Guid userId,
+        CreateCostCenterRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var code = request.Code.Trim();
+        var name = request.Name.Trim();
+        ValidateDimensionFields(code, name, "Cost center");
+
+        if (await db.CostCenters.AnyAsync(
+                x => x.CompanyId == companyId && x.Code == code,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Cost center code already exists.");
+        }
+
+        var entity = new CostCenter
+        {
+            CompanyId = companyId,
+            Code = code,
+            Name = name
+        };
+
+        db.CostCenters.Add(entity);
+        AddAuditLog(
+            companyId,
+            userId,
+            "CostCenter",
+            entity.Id,
+            "COST_CENTER_CREATE",
+            null,
+            new { entity.Code, entity.Name });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new CostCenterView(
+            entity.Id,
+            entity.CompanyId,
+            entity.Code,
+            entity.Name,
+            entity.IsActive);
+    }
+
+    public async Task<CostCenterView> UpdateCostCenterAsync(
+        Guid companyId,
+        Guid userId,
+        Guid costCenterId,
+        UpdateCostCenterRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var code = request.Code.Trim();
+        var name = request.Name.Trim();
+        ValidateDimensionFields(code, name, "Cost center");
+
+        var entity = await db.CostCenters.FirstOrDefaultAsync(
+            x => x.Id == costCenterId && x.CompanyId == companyId,
+            cancellationToken)
+            ?? throw new ArgumentException(
+                "Cost center does not exist in this company.");
+
+        if (await db.CostCenters.AnyAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.Id != costCenterId &&
+                    x.Code == code,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Cost center code already exists.");
+        }
+
+        entity.Code = code;
+        entity.Name = name;
+        entity.IsActive = request.IsActive;
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "CostCenter",
+            entity.Id,
+            "COST_CENTER_UPDATE",
+            null,
+            new { entity.Code, entity.Name, entity.IsActive });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new CostCenterView(
+            entity.Id,
+            entity.CompanyId,
+            entity.Code,
+            entity.Name,
+            entity.IsActive);
+    }
+
+    public async Task<IReadOnlyList<AccountingProjectView>> GetAccountingProjectsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        return await db.AccountingProjects
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderBy(x => x.Code)
+            .Select(x => new AccountingProjectView(
+                x.Id,
+                x.CompanyId,
+                x.Code,
+                x.Name,
+                x.IsActive))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<AccountingProjectView> CreateAccountingProjectAsync(
+        Guid companyId,
+        Guid userId,
+        CreateAccountingProjectRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var code = request.Code.Trim();
+        var name = request.Name.Trim();
+        ValidateDimensionFields(code, name, "Accounting project");
+
+        if (await db.AccountingProjects.AnyAsync(
+                x => x.CompanyId == companyId && x.Code == code,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Accounting project code already exists.");
+        }
+
+        var entity = new AccountingProject
+        {
+            CompanyId = companyId,
+            Code = code,
+            Name = name
+        };
+
+        db.AccountingProjects.Add(entity);
+        AddAuditLog(
+            companyId,
+            userId,
+            "AccountingProject",
+            entity.Id,
+            "PROJECT_CREATE",
+            null,
+            new { entity.Code, entity.Name });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new AccountingProjectView(
+            entity.Id,
+            entity.CompanyId,
+            entity.Code,
+            entity.Name,
+            entity.IsActive);
+    }
+
+    public async Task<AccountingProjectView> UpdateAccountingProjectAsync(
+        Guid companyId,
+        Guid userId,
+        Guid projectId,
+        UpdateAccountingProjectRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var code = request.Code.Trim();
+        var name = request.Name.Trim();
+        ValidateDimensionFields(code, name, "Accounting project");
+
+        var entity = await db.AccountingProjects.FirstOrDefaultAsync(
+            x => x.Id == projectId && x.CompanyId == companyId,
+            cancellationToken)
+            ?? throw new ArgumentException(
+                "Accounting project does not exist in this company.");
+
+        if (await db.AccountingProjects.AnyAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.Id != projectId &&
+                    x.Code == code,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Accounting project code already exists.");
+        }
+
+        entity.Code = code;
+        entity.Name = name;
+        entity.IsActive = request.IsActive;
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "AccountingProject",
+            entity.Id,
+            "PROJECT_UPDATE",
+            null,
+            new { entity.Code, entity.Name, entity.IsActive });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new AccountingProjectView(
+            entity.Id,
+            entity.CompanyId,
+            entity.Code,
+            entity.Name,
+            entity.IsActive);
+    }
+
     public async Task<IReadOnlyList<DetailAccountView>> GetDetailAccountsAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
@@ -3247,6 +3473,31 @@ public sealed class AccountingService(AppDbContext db)
         {
             throw new ArgumentException(
                 "Report start date cannot be after end date.");
+        }
+    }
+
+    private static void ValidateDimensionFields(
+        string code,
+        string name,
+        string title)
+    {
+        if (string.IsNullOrWhiteSpace(code) ||
+            string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException(
+                $"{title} code and name are required.");
+        }
+
+        if (code.Length > 50)
+        {
+            throw new ArgumentException(
+                $"{title} code cannot exceed 50 characters.");
+        }
+
+        if (name.Length > 250)
+        {
+            throw new ArgumentException(
+                $"{title} name cannot exceed 250 characters.");
         }
     }
 
