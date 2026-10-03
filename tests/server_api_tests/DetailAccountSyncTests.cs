@@ -1715,6 +1715,185 @@ public sealed class DetailAccountSyncTests
     }
 
     [Fact]
+    public async Task CurrencyRevaluation_PostsBaseAdjustment_WithoutChangingForeignBalance()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var currencies = new CurrencyAccountingService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+
+        await currencies.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var usd = (await currencies.GetCurrenciesAsync(
+            fixture.Company.Id))
+            .Single(x => x.Code == "USD");
+
+        var cash = await fixture.Db.Accounts.SingleAsync(
+            x =>
+                x.CompanyId == fixture.Company.Id &&
+                x.Code == "1110");
+
+        var gain = await fixture.Db.Accounts.SingleAsync(
+            x =>
+                x.CompanyId == fixture.Company.Id &&
+                x.Code == "4100");
+
+        var loss = await fixture.Db.Accounts.SingleAsync(
+            x =>
+                x.CompanyId == fixture.Company.Id &&
+                x.Code == "5200");
+
+        var documentDate = fiscalYear.StartDate.AddDays(30);
+        var revaluationDate = documentDate.AddDays(1);
+
+        await currencies.SaveRateAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateCurrencyRateRequest(
+                usd.Id,
+                documentDate,
+                590_000m,
+                610_000m,
+                600_000m,
+                "Test"));
+
+        await currencies.CreateForeignCurrencyJournalAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateForeignCurrencyJournalRequest(
+                usd.Id,
+                documentDate,
+                "دریافت ارزی",
+                new[]
+                {
+                    new CreateForeignCurrencyJournalLineRequest(
+                        cash.Id,
+                        "دریافت دلار",
+                        100m,
+                        0m),
+                    new CreateForeignCurrencyJournalLineRequest(
+                        gain.Id,
+                        "درآمد",
+                        0m,
+                        100m)
+                },
+                fiscalYear.Id));
+
+        await currencies.SaveRateAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateCurrencyRateRequest(
+                usd.Id,
+                revaluationDate,
+                640_000m,
+                660_000m,
+                650_000m,
+                "Test"));
+
+        var before = await currencies.GetCurrencyPositionAsync(
+            fixture.Company.Id,
+            revaluationDate);
+
+        var beforeCash = before.Rows.Single(
+            x =>
+                x.CurrencyId == usd.Id &&
+                x.AccountId == cash.Id);
+
+        Assert.Equal(100m, beforeCash.ForeignBalance);
+        Assert.Equal(60_000_000m, beforeCash.HistoricalBaseBalance);
+        Assert.Equal(65_000_000m, beforeCash.RevaluedBaseBalance);
+        Assert.Equal(5_000_000m, beforeCash.UnrealizedDifference);
+
+        var posted = await currencies.PostRevaluationAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CurrencyRevaluationRequest(
+                revaluationDate,
+                gain.Id,
+                loss.Id,
+                fiscalYear.Id,
+                "تسعیر پایان روز"));
+
+        Assert.False(posted.NoAdjustmentRequired);
+        Assert.NotNull(posted.JournalEntryId);
+        Assert.NotNull(posted.JournalNumber);
+        Assert.Equal(1, posted.PositionCount);
+        Assert.Equal(5_000_000m, posted.GainTotal);
+        Assert.Equal(0m, posted.LossTotal);
+
+        var journal = await fixture.Db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .SingleAsync(x => x.Id == posted.JournalEntryId);
+
+        Assert.Equal(
+            journal.Lines.Sum(x => x.Debit),
+            journal.Lines.Sum(x => x.Credit));
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == cash.Id &&
+                x.Debit == 5_000_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == gain.Id &&
+                x.Credit == 5_000_000m);
+
+        var cashLineId = journal.Lines
+            .Single(x => x.AccountId == cash.Id)
+            .Id;
+
+        var currencyAdjustment =
+            await fixture.Db.JournalLineCurrencies
+                .AsNoTracking()
+                .SingleAsync(x => x.JournalLineId == cashLineId);
+
+        Assert.Equal(usd.Id, currencyAdjustment.CurrencyId);
+        Assert.Equal(0m, currencyAdjustment.ForeignDebit);
+        Assert.Equal(0m, currencyAdjustment.ForeignCredit);
+        Assert.Equal(650_000m, currencyAdjustment.ExchangeRate);
+
+        var after = await currencies.GetCurrencyPositionAsync(
+            fixture.Company.Id,
+            revaluationDate);
+
+        var afterCash = after.Rows.Single(
+            x =>
+                x.CurrencyId == usd.Id &&
+                x.AccountId == cash.Id);
+
+        Assert.Equal(100m, afterCash.ForeignBalance);
+        Assert.Equal(65_000_000m, afterCash.HistoricalBaseBalance);
+        Assert.Equal(65_000_000m, afterCash.RevaluedBaseBalance);
+        Assert.Equal(0m, afterCash.UnrealizedDifference);
+
+        var repeated = await currencies.PostRevaluationAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CurrencyRevaluationRequest(
+                revaluationDate,
+                gain.Id,
+                loss.Id,
+                fiscalYear.Id));
+
+        Assert.True(repeated.NoAdjustmentRequired);
+        Assert.Null(repeated.JournalEntryId);
+    }
+
+    [Fact]
     public async Task ForeignTrade_PurchaseAndSale_KeepInventoryAtHistoricalBaseCost()
     {
         await using var fixture = await TestFixture.CreateAsync();
