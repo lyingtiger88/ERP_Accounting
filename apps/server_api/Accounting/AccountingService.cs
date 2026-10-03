@@ -1431,6 +1431,42 @@ public sealed class AccountingService(AppDbContext db)
         return entry;
     }
 
+    internal async Task<JournalEntry> PostCurrencyRevaluationJournalWithinCurrentTransactionAsync(
+        Guid companyId,
+        Guid userId,
+        CreateJournalRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (db.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException(
+                "An active database transaction is required.");
+        }
+
+        var entry = await CreatePostedJournalCoreAsync(
+            companyId,
+            userId,
+            request,
+            cancellationToken,
+            allowBaseOnlyCurrencyAdjustment: true);
+
+        AddAuditLog(
+            companyId,
+            userId,
+            "JournalEntry",
+            entry.Id,
+            "CURRENCY_REVALUATION_POST",
+            null,
+            new
+            {
+                entry.Number,
+                entry.DocumentDate
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        return entry;
+    }
+
     public async Task<SyncJournalResponse> SyncJournalAsync(
         Guid companyId,
         Guid userId,
@@ -1784,7 +1820,8 @@ public sealed class AccountingService(AppDbContext db)
         Guid userId,
         CreateJournalRequest request,
         CancellationToken cancellationToken,
-        bool enforceFiscalControls = true)
+        bool enforceFiscalControls = true,
+        bool allowBaseOnlyCurrencyAdjustment = false)
     {
         if (request.Lines.Count < 2)
         {
@@ -1937,11 +1974,25 @@ public sealed class AccountingService(AppDbContext db)
                 if (foreignDebit < 0 ||
                     foreignCredit < 0 ||
                     exchangeRate <= 0 ||
-                    (foreignDebit > 0 && foreignCredit > 0) ||
-                    (foreignDebit == 0 && foreignCredit == 0))
+                    (foreignDebit > 0 && foreignCredit > 0))
                 {
                     throw new ArgumentException(
                         "Foreign-currency amounts or exchange rate are invalid.");
+                }
+
+                var isBaseOnlyCurrencyAdjustment =
+                    foreignDebit == 0 &&
+                    foreignCredit == 0;
+
+                if (isBaseOnlyCurrencyAdjustment)
+                {
+                    if (!allowBaseOnlyCurrencyAdjustment)
+                    {
+                        throw new ArgumentException(
+                            "Zero-foreign currency lines are reserved for FX revaluation journals.");
+                    }
+
+                    continue;
                 }
 
                 var expectedDebit = Math.Round(
