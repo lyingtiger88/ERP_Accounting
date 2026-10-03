@@ -23,6 +23,7 @@ class _CurrencyPositionPageState
   DateTime _asOf = DateTime.now();
   Map<String, dynamic>? _report;
   bool _loading = true;
+  bool _posting = false;
   String? _error;
 
   @override
@@ -51,6 +52,194 @@ class _CurrencyPositionPageState
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _postRevaluation() async {
+    if (_posting || _loading) return;
+
+    final report = _report;
+    if (report == null) return;
+
+    final rows = (report['rows'] as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .where(
+          (row) =>
+              reportNumber(row['unrealizedDifference']).abs() >
+              0.0001,
+        )
+        .toList(growable: false);
+
+    if (rows.isEmpty) {
+      _message('در این تاریخ اختلاف تسعیر قابل ثبت وجود ندارد.');
+      return;
+    }
+
+    setState(() => _posting = true);
+
+    try {
+      final accounts = await _apiClient.getAccounts(
+        bearerToken: widget.accessToken,
+      );
+
+      final gainAccounts = accounts
+          .where(
+            (account) =>
+                (account['isActive'] as bool? ?? true) &&
+                (account['isPostable'] as bool? ?? false) &&
+                account['type'].toString() == 'Revenue',
+          )
+          .toList(growable: false);
+
+      final lossAccounts = accounts
+          .where(
+            (account) =>
+                (account['isActive'] as bool? ?? true) &&
+                (account['isPostable'] as bool? ?? false) &&
+                account['type'].toString() == 'Expense',
+          )
+          .toList(growable: false);
+
+      if (gainAccounts.isEmpty || lossAccounts.isEmpty) {
+        _message(
+          'برای ثبت تسعیر، حداقل یک حساب درآمدی و یک حساب هزینه‌ای قابل ثبت لازم است.',
+        );
+        return;
+      }
+
+      var gainId = gainAccounts.first['id'].toString();
+      var lossId = lossAccounts.first['id'].toString();
+      final description = TextEditingController(
+        text: 'تسعیر ارز تا ' + formatReportDate(_asOf),
+      );
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('ثبت سند تسعیر ارز'),
+            content: SizedBox(
+              width: 560,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'مانده ارزی تغییر نمی‌کند؛ فقط ارزش دفتری در ارز پایه به نرخ حسابداری تاریخ انتخابی تعدیل می‌شود.',
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: gainId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'حساب سود تسعیر ارز',
+                    ),
+                    items: [
+                      for (final account in gainAccounts)
+                        DropdownMenuItem(
+                          value: account['id'].toString(),
+                          child: Text(
+                            account['code'].toString() +
+                                ' — ' +
+                                account['name'].toString(),
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => gainId = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: lossId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'حساب زیان تسعیر ارز',
+                    ),
+                    items: [
+                      for (final account in lossAccounts)
+                        DropdownMenuItem(
+                          value: account['id'].toString(),
+                          child: Text(
+                            account['code'].toString() +
+                                ' — ' +
+                                account['name'].toString(),
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => lossId = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: description,
+                    decoration: const InputDecoration(
+                      labelText: 'شرح سند',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('انصراف'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.post_add_outlined),
+                label: const Text('ثبت سند تسعیر'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (confirmed != true) {
+        description.dispose();
+        return;
+      }
+
+      final response = await _apiClient.postCurrencyRevaluation(
+        bearerToken: widget.accessToken,
+        asOf: _asOf,
+        gainAccountId: gainId,
+        lossAccountId: lossId,
+        description: description.text.trim(),
+      );
+
+      description.dispose();
+
+      if (!mounted) return;
+
+      if (response['noAdjustmentRequired'] as bool? ?? false) {
+        _message('اختلاف تسعیر قابل ثبت وجود نداشت.');
+      } else {
+        _message(
+          'سند تسعیر ' +
+              response['journalNumber'].toString() +
+              ' ثبت شد.',
+        );
+      }
+
+      await _load();
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  void _message(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
+    );
   }
 
   Future<void> _pickDate() async {
@@ -144,6 +333,29 @@ class _CurrencyPositionPageState
                                   ? ''
                                   : ' ' + baseCode),
                         ),
+                      ),
+                    if (!_loading &&
+                        _error == null &&
+                        rows.any(
+                          (row) =>
+                              reportNumber(
+                                row['unrealizedDifference'],
+                              ).abs() >
+                              0.0001,
+                        ))
+                      FilledButton.icon(
+                        onPressed:
+                            _posting ? null : _postRevaluation,
+                        icon: _posting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.post_add_outlined),
+                        label: const Text('ثبت سند تسعیر'),
                       ),
                   ],
                 ),
