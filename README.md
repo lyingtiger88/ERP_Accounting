@@ -81,6 +81,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Historical buy / sell / accounting exchange rates
 - [x] Foreign-currency journal posting with preserved original amounts
 - [x] Currency position and revaluation-difference reporting
+- [x] FX revaluation journal posting against gain/loss accounts
 
 #### Persistence
 - [x] PostgreSQL server database
@@ -247,6 +248,7 @@ Implemented so far:
 - Historical FX rate table with buy, sell and accounting rates per date/source
 - Foreign-currency journals storing original currency amount, historical exchange rate and base-ledger equivalent
 - Currency-position/revaluation report for foreign monetary assets and liabilities
+- Audited FX revaluation posting that preserves foreign balances while updating base-currency carrying value
 - Foreign-currency purchase/sale inventory tests preserving historical base cost
 - Floating detail accounts cached offline and selectable per journal line
 - CI for ASP.NET Core build, sync/revision tests and Flutter analysis
