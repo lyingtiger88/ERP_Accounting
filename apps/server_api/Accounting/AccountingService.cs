@@ -1585,10 +1585,12 @@ public sealed class AccountingService(AppDbContext db)
             query = query.Where(x => x.DocumentDate <= toDate);
         }
 
-        return await query
+        var entries = await query.ToArrayAsync(cancellationToken);
+
+        return entries
             .OrderByDescending(x => x.DocumentDate)
             .ThenByDescending(x => x.CreatedAt)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
     }
 
     public async Task<JournalEntry> PostJournalAsync(
@@ -1981,10 +1983,10 @@ public sealed class AccountingService(AppDbContext db)
             query = query.Where(x => x.EntityId == id);
         }
 
-        var logs = await query
+        var logs = (await query.ToArrayAsync(cancellationToken))
             .OrderByDescending(x => x.CreatedAt)
             .Take(take)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         var userIds = logs
             .Select(x => x.UserId)
@@ -2672,10 +2674,10 @@ public sealed class AccountingService(AppDbContext db)
                 x => x.DocumentDate <= toDate);
         }
 
-        var ordered = await journalQuery
+        var ordered = (await journalQuery.ToArrayAsync(cancellationToken))
             .OrderBy(x => x.DocumentDate)
             .ThenBy(x => x.CreatedAt)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         decimal debitTurnover = 0;
         decimal creditTurnover = 0;
@@ -2846,10 +2848,10 @@ public sealed class AccountingService(AppDbContext db)
                 x => x.DocumentDate <= toDate);
         }
 
-        var journals = await journalQuery
+        var journals = (await journalQuery.ToArrayAsync(cancellationToken))
             .OrderBy(x => x.DocumentDate)
             .ThenBy(x => x.CreatedAt)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         var lineIds = journals
             .SelectMany(x => x.Lines)
