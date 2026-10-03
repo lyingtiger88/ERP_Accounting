@@ -14,7 +14,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 10;
+  static const _databaseVersion = 11;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -239,6 +239,10 @@ class LocalDatabase {
         "ALTER TABLE local_document_lines ADD COLUMN exchange_rate REAL",
       );
     }
+
+    if (oldVersion < 11) {
+      await _createMasterDataSchema(db);
+    }
   }
 
   Future<void> _createMasterDataSchema(Database db) async {
@@ -308,6 +312,38 @@ class LocalDatabase {
     await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_cached_detail_accounts_company_code
       ON cached_detail_accounts(company_id, code)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_cost_centers (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_cached_cost_centers_company_code
+      ON cached_cost_centers(company_id, code)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_accounting_projects (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_cached_accounting_projects_company_code
+      ON cached_accounting_projects(company_id, code)
     ''');
 
     await db.execute('''
@@ -913,6 +949,118 @@ class LocalDatabase {
             startDate: row['start_date'] as String,
             endDate: row['end_date'] as String,
             isClosed: (row['is_closed'] as int) == 1,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> replaceCostCenters({
+    required String companyId,
+    required List<Map<String, dynamic>> costCenters,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.delete(
+        'cached_cost_centers',
+        where: 'company_id = ?',
+        whereArgs: [companyId],
+      );
+
+      for (final item in costCenters) {
+        await txn.insert(
+          'cached_cost_centers',
+          {
+            'id': item['id'] as String,
+            'company_id': companyId,
+            'code': item['code'] as String,
+            'name': item['name'] as String,
+            'is_active': (item['isActive'] as bool? ?? true) ? 1 : 0,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<List<CachedCostCenter>> getCachedCostCenters(
+    String companyId, {
+    bool activeOnly = true,
+  }) async {
+    final rows = await _db.query(
+      'cached_cost_centers',
+      where: activeOnly
+          ? 'company_id = ? AND is_active = 1'
+          : 'company_id = ?',
+      whereArgs: [companyId],
+      orderBy: 'code ASC',
+    );
+
+    return rows
+        .map(
+          (row) => CachedCostCenter(
+            id: row['id'] as String,
+            companyId: row['company_id'] as String,
+            code: row['code'] as String,
+            name: row['name'] as String,
+            isActive: (row['is_active'] as int) == 1,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> replaceAccountingProjects({
+    required String companyId,
+    required List<Map<String, dynamic>> projects,
+  }) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.transaction((txn) async {
+      await txn.delete(
+        'cached_accounting_projects',
+        where: 'company_id = ?',
+        whereArgs: [companyId],
+      );
+
+      for (final item in projects) {
+        await txn.insert(
+          'cached_accounting_projects',
+          {
+            'id': item['id'] as String,
+            'company_id': companyId,
+            'code': item['code'] as String,
+            'name': item['name'] as String,
+            'is_active': (item['isActive'] as bool? ?? true) ? 1 : 0,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<List<CachedAccountingProject>> getCachedAccountingProjects(
+    String companyId, {
+    bool activeOnly = true,
+  }) async {
+    final rows = await _db.query(
+      'cached_accounting_projects',
+      where: activeOnly
+          ? 'company_id = ? AND is_active = 1'
+          : 'company_id = ?',
+      whereArgs: [companyId],
+      orderBy: 'code ASC',
+    );
+
+    return rows
+        .map(
+          (row) => CachedAccountingProject(
+            id: row['id'] as String,
+            companyId: row['company_id'] as String,
+            code: row['code'] as String,
+            name: row['name'] as String,
+            isActive: (row['is_active'] as int) == 1,
           ),
         )
         .toList(growable: false);
@@ -1545,6 +1693,8 @@ class LocalDatabase {
             'document_id': documentId,
             'account_id': line.accountId,
             'detail_account_id': line.detailAccountId,
+'cost_center_id': line.costCenterId,
+'project_id': line.projectId,
             'description': line.description.trim(),
             'debit': line.debit,
             'credit': line.credit,
@@ -1568,6 +1718,8 @@ class LocalDatabase {
                 (line) => {
                   'accountId': line.accountId,
                   'detailAccountId': line.detailAccountId,
+                  'costCenterId': line.costCenterId,
+                  'projectId': line.projectId,
                   'description': line.description.trim(),
                   'debit': line.debit,
                   'credit': line.credit,
@@ -1821,6 +1973,8 @@ class LocalDatabase {
             'document_id': documentId,
             'account_id': line.accountId,
             'detail_account_id': line.detailAccountId,
+'cost_center_id': line.costCenterId,
+'project_id': line.projectId,
             'description': line.description.trim(),
             'debit': line.debit,
             'credit': line.credit,
@@ -1847,6 +2001,8 @@ class LocalDatabase {
               (line) => {
                 'accountId': line.accountId,
                 'detailAccountId': line.detailAccountId,
+                'costCenterId': line.costCenterId,
+                'projectId': line.projectId,
                 'description': line.description.trim(),
                 'debit': line.debit,
                 'credit': line.credit,
@@ -2409,6 +2565,8 @@ class LocalJournalLineInput {
     required this.debit,
     required this.credit,
     this.detailAccountId,
+    this.costCenterId,
+    this.projectId,
   });
 
   final String accountId;
@@ -2416,6 +2574,8 @@ class LocalJournalLineInput {
   final int debit;
   final int credit;
   final String? detailAccountId;
+  final String? costCenterId;
+  final String? projectId;
 }
 
 class LocalAccountingDocument {
@@ -2559,6 +2719,38 @@ class CachedFiscalPeriod {
     return value.compareTo(startDate) >= 0 &&
         value.compareTo(endDate) <= 0;
   }
+}
+
+class CachedCostCenter {
+  const CachedCostCenter({
+    required this.id,
+    required this.companyId,
+    required this.code,
+    required this.name,
+    required this.isActive,
+  });
+
+  final String id;
+  final String companyId;
+  final String code;
+  final String name;
+  final bool isActive;
+}
+
+class CachedAccountingProject {
+  const CachedAccountingProject({
+    required this.id,
+    required this.companyId,
+    required this.code,
+    required this.name,
+    required this.isActive,
+  });
+
+  final String id;
+  final String companyId;
+  final String code;
+  final String name;
+  final bool isActive;
 }
 
 class CachedDetailAccount {
