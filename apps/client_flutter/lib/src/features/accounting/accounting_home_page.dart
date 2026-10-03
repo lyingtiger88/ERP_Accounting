@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
 import 'audit_trail_page.dart';
+import 'accounting_dimensions_page.dart';
 import 'balance_sheet_page.dart';
 import 'currency_accounting_home_page.dart';
 import 'cached_accounts_page.dart';
@@ -119,6 +120,19 @@ class AccountingHomePage extends StatelessWidget {
                   onTap: () => _open(
                     context,
                     DetailAccountsPage(
+                      companyId: companyId,
+                      accessToken: accessToken,
+                      localDatabase: localDatabase,
+                    ),
+                  ),
+                ),
+                _ActionCard(
+                  title: 'ابعاد حسابداری',
+                  subtitle: 'مرکز هزینه و پروژه',
+                  icon: Icons.hub_outlined,
+                  onTap: () => _open(
+                    context,
+                    AccountingDimensionsPage(
                       companyId: companyId,
                       accessToken: accessToken,
                       localDatabase: localDatabase,
