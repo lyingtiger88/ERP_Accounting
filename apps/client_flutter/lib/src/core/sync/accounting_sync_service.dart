@@ -46,6 +46,12 @@ class AccountingSyncService {
     final fiscalYears = await apiClient.getFiscalYears(
       bearerToken: bearerToken,
     );
+    final costCenters = await apiClient.getCostCenters(
+      bearerToken: bearerToken,
+    );
+    final projects = await apiClient.getAccountingProjects(
+      bearerToken: bearerToken,
+    );
     await localDatabase.replaceAccounts(
       companyId: companyId,
       accounts: accounts,
@@ -53,6 +59,14 @@ class AccountingSyncService {
     await localDatabase.replaceFiscalYears(
       companyId: companyId,
       fiscalYears: fiscalYears,
+    );
+    await localDatabase.replaceCostCenters(
+      companyId: companyId,
+      costCenters: costCenters,
+    );
+    await localDatabase.replaceAccountingProjects(
+      companyId: companyId,
+      projects: projects,
     );
 
     for (final fiscalYear in fiscalYears) {
