@@ -1,3 +1,4 @@
+using System.Data;
 using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
@@ -649,6 +650,204 @@ public sealed class CurrencyAccountingService(
             asOf,
             baseCurrency.Code,
             rows);
+    }
+
+    public async Task<CurrencyRevaluationResponse> PostRevaluationAsync(
+        Guid companyId,
+        Guid userId,
+        CurrencyRevaluationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.GainAccountId == request.LossAccountId)
+        {
+            throw new ArgumentException(
+                "FX gain and loss accounts must be different.");
+        }
+
+        var selectedAccounts = await db.Accounts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                (x.Id == request.GainAccountId ||
+                 x.Id == request.LossAccountId))
+            .ToArrayAsync(cancellationToken);
+
+        if (selectedAccounts.Length != 2)
+        {
+            throw new ArgumentException(
+                "One or more FX gain/loss accounts are unavailable.");
+        }
+
+        var gainAccount = selectedAccounts.Single(
+            x => x.Id == request.GainAccountId);
+        var lossAccount = selectedAccounts.Single(
+            x => x.Id == request.LossAccountId);
+
+        if (gainAccount.Type != AccountType.Revenue)
+        {
+            throw new ArgumentException(
+                "FX gain account must be a revenue account.");
+        }
+
+        if (lossAccount.Type != AccountType.Expense)
+        {
+            throw new ArgumentException(
+                "FX loss account must be an expense account.");
+        }
+
+        var accountIds = selectedAccounts.Select(x => x.Id).ToArray();
+
+        var hasChildren = await db.Accounts.AnyAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.ParentId.HasValue &&
+                accountIds.Contains(x.ParentId.Value),
+            cancellationToken);
+
+        if (hasChildren)
+        {
+            throw new ArgumentException(
+                "FX gain/loss accounts must be postable leaf accounts.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var position = await GetCurrencyPositionAsync(
+            companyId,
+            request.AsOf,
+            cancellationToken);
+
+        var adjustableRows = position.Rows
+            .Where(x => Math.Abs(x.UnrealizedDifference) > 0.0001m)
+            .ToArray();
+
+        if (adjustableRows.Length == 0)
+        {
+            await transaction.CommitAsync(cancellationToken);
+
+            return new CurrencyRevaluationResponse(
+                request.AsOf,
+                null,
+                null,
+                0,
+                0m,
+                0m,
+                true);
+        }
+
+        var lines = new List<CreateJournalLineRequest>();
+        decimal gainTotal = 0m;
+        decimal lossTotal = 0m;
+
+        foreach (var row in adjustableRows)
+        {
+            var difference = Math.Round(
+                row.UnrealizedDifference,
+                4,
+                MidpointRounding.AwayFromZero);
+
+            if (difference == 0m)
+            {
+                continue;
+            }
+
+            lines.Add(new CreateJournalLineRequest(
+                row.AccountId,
+                $"تسعیر {row.CurrencyCode} تا {request.AsOf:yyyy-MM-dd}",
+                difference > 0 ? difference : 0m,
+                difference < 0 ? -difference : 0m,
+                CurrencyId: row.CurrencyId,
+                ForeignDebit: 0m,
+                ForeignCredit: 0m,
+                ExchangeRate: row.CurrentRate));
+
+            if (difference > 0m)
+            {
+                gainTotal += difference;
+            }
+            else
+            {
+                lossTotal += -difference;
+            }
+        }
+
+        if (gainTotal > 0m)
+        {
+            lines.Add(new CreateJournalLineRequest(
+                gainAccount.Id,
+                "سود تسعیر ارز",
+                0m,
+                gainTotal));
+        }
+
+        if (lossTotal > 0m)
+        {
+            lines.Add(new CreateJournalLineRequest(
+                lossAccount.Id,
+                "زیان تسعیر ارز",
+                lossTotal,
+                0m));
+        }
+
+        if (lines.Count < 2)
+        {
+            await transaction.CommitAsync(cancellationToken);
+
+            return new CurrencyRevaluationResponse(
+                request.AsOf,
+                null,
+                null,
+                0,
+                0m,
+                0m,
+                true);
+        }
+
+        var description = string.IsNullOrWhiteSpace(request.Description)
+            ? $"تسعیر ارز تا {request.AsOf:yyyy-MM-dd}"
+            : request.Description.Trim();
+
+        var entry = await accountingService
+            .PostCurrencyRevaluationJournalWithinCurrentTransactionAsync(
+                companyId,
+                userId,
+                new CreateJournalRequest(
+                    null,
+                    request.AsOf,
+                    description,
+                    lines,
+                    request.FiscalYearId),
+                cancellationToken);
+
+        AddAudit(
+            companyId,
+            userId,
+            "CurrencyRevaluation",
+            entry.Id,
+            "CURRENCY_REVALUATION",
+            new
+            {
+                request.AsOf,
+                PositionCount = adjustableRows.Length,
+                GainTotal = gainTotal,
+                LossTotal = lossTotal,
+                JournalNumber = entry.Number
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CurrencyRevaluationResponse(
+            request.AsOf,
+            entry.Id,
+            entry.Number,
+            adjustableRows.Length,
+            gainTotal,
+            lossTotal,
+            false);
     }
 
     public async Task<decimal> ResolveAccountingRateAsync(
