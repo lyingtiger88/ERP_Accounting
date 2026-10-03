@@ -148,6 +148,42 @@ public static class AccountingSchemaBootstrapper
             ON detail_accounts ("CompanyId", "Name");
             """,
             """
+            CREATE TABLE IF NOT EXISTS cost_centers (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_cost_centers" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "Code" TEXT NOT NULL,
+                "Name" TEXT NOT NULL,
+                "IsActive" INTEGER NOT NULL DEFAULT 1,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_cost_centers_companies_CompanyId"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_cost_centers_CompanyId_Code"
+            ON cost_centers ("CompanyId", "Code");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS accounting_projects (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_accounting_projects" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "Code" TEXT NOT NULL,
+                "Name" TEXT NOT NULL,
+                "IsActive" INTEGER NOT NULL DEFAULT 1,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_accounting_projects_companies_CompanyId"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_accounting_projects_CompanyId_Code"
+            ON accounting_projects ("CompanyId", "Code");
+            """,
+            """
             CREATE TABLE IF NOT EXISTS journal_entry_fiscal_years (
                 "JournalEntryId" TEXT NOT NULL
                     CONSTRAINT "PK_journal_entry_fiscal_years" PRIMARY KEY,
@@ -170,11 +206,19 @@ public static class AccountingSchemaBootstrapper
                 "JournalLineId" TEXT NOT NULL
                     CONSTRAINT "PK_journal_line_dimensions" PRIMARY KEY,
                 "DetailAccountId" TEXT NULL,
+                "CostCenterId" TEXT NULL,
+                "ProjectId" TEXT NULL,
                 CONSTRAINT "FK_journal_line_dimensions_journal_lines"
                     FOREIGN KEY ("JournalLineId") REFERENCES journal_lines ("Id")
                     ON DELETE CASCADE,
                 CONSTRAINT "FK_journal_line_dimensions_detail_accounts"
                     FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_line_dimensions_cost_centers"
+                    FOREIGN KEY ("CostCenterId") REFERENCES cost_centers ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_line_dimensions_accounting_projects"
+                    FOREIGN KEY ("ProjectId") REFERENCES accounting_projects ("Id")
                     ON DELETE RESTRICT
             );
             """,
@@ -654,6 +698,72 @@ public static class AccountingSchemaBootstrapper
         {
             await db.Database.ExecuteSqlRawAsync(command, cancellationToken);
         }
+
+        await EnsureSqliteColumnAsync(
+            db,
+            "journal_line_dimensions",
+            "CostCenterId",
+            "ALTER TABLE journal_line_dimensions ADD COLUMN \"CostCenterId\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db,
+            "journal_line_dimensions",
+            "ProjectId",
+            "ALTER TABLE journal_line_dimensions ADD COLUMN \"ProjectId\" TEXT NULL;",
+            cancellationToken);
+
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_journal_line_dimensions_CostCenterId\" ON journal_line_dimensions (\"CostCenterId\");",
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_journal_line_dimensions_ProjectId\" ON journal_line_dimensions (\"ProjectId\");",
+            cancellationToken);
+    }
+
+    private static async Task EnsureSqliteColumnAsync(
+        AppDbContext db,
+        string tableName,
+        string columnName,
+        string alterSql,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldClose =
+            connection.State != System.Data.ConnectionState.Open;
+
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT COUNT(*) FROM pragma_table_info('{tableName.Replace("'", "''")}') WHERE name = $name;";
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "$name";
+            parameter.Value = columnName;
+            command.Parameters.Add(parameter);
+
+            var exists = Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken)) > 0;
+
+            if (!exists)
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    alterSql,
+                    cancellationToken);
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
     }
 
     private static async Task EnsurePostgresAsync(
@@ -779,6 +889,42 @@ public static class AccountingSchemaBootstrapper
             ON detail_accounts ("CompanyId", "Name");
             """,
             """
+            CREATE TABLE IF NOT EXISTS cost_centers (
+                "Id" uuid NOT NULL CONSTRAINT "PK_cost_centers" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "Code" character varying(50) NOT NULL,
+                "Name" character varying(250) NOT NULL,
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_cost_centers_companies_CompanyId"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_cost_centers_CompanyId_Code"
+            ON cost_centers ("CompanyId", "Code");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS accounting_projects (
+                "Id" uuid NOT NULL CONSTRAINT "PK_accounting_projects" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "Code" character varying(50) NOT NULL,
+                "Name" character varying(250) NOT NULL,
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_accounting_projects_companies_CompanyId"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_accounting_projects_CompanyId_Code"
+            ON accounting_projects ("CompanyId", "Code");
+            """,
+            """
             CREATE TABLE IF NOT EXISTS journal_entry_fiscal_years (
                 "JournalEntryId" uuid NOT NULL
                     CONSTRAINT "PK_journal_entry_fiscal_years" PRIMARY KEY,
@@ -801,18 +947,41 @@ public static class AccountingSchemaBootstrapper
                 "JournalLineId" uuid NOT NULL
                     CONSTRAINT "PK_journal_line_dimensions" PRIMARY KEY,
                 "DetailAccountId" uuid NULL,
+                "CostCenterId" uuid NULL,
+                "ProjectId" uuid NULL,
                 CONSTRAINT "FK_journal_line_dimensions_journal_lines"
                     FOREIGN KEY ("JournalLineId") REFERENCES journal_lines ("Id")
                     ON DELETE CASCADE,
                 CONSTRAINT "FK_journal_line_dimensions_detail_accounts"
                     FOREIGN KEY ("DetailAccountId") REFERENCES detail_accounts ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_line_dimensions_cost_centers"
+                    FOREIGN KEY ("CostCenterId") REFERENCES cost_centers ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_journal_line_dimensions_accounting_projects"
+                    FOREIGN KEY ("ProjectId") REFERENCES accounting_projects ("Id")
                     ON DELETE RESTRICT
             );
+            """,
+            """
+            ALTER TABLE journal_line_dimensions
+                ADD COLUMN IF NOT EXISTS "CostCenterId" uuid NULL,
+                ADD COLUMN IF NOT EXISTS "ProjectId" uuid NULL;
             """,
             """
             CREATE INDEX IF NOT EXISTS
                 "IX_journal_line_dimensions_DetailAccountId"
             ON journal_line_dimensions ("DetailAccountId");
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_journal_line_dimensions_CostCenterId"
+            ON journal_line_dimensions ("CostCenterId");
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS
+                "IX_journal_line_dimensions_ProjectId"
+            ON journal_line_dimensions ("ProjectId");
             """,
             """
             CREATE TABLE IF NOT EXISTS journal_sync_receipts (
