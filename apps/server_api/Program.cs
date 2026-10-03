@@ -1696,6 +1696,214 @@ accounting.MapPost("/fiscal-years/{fiscalYearId:guid}/state", async (
     }
 });
 
+accounting.MapGet("/cost-centers", async (
+    HttpRequest request,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await accountingService.GetCostCentersAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+accounting.MapPost("/cost-centers", async (
+    HttpRequest request,
+    CreateCostCenterRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        var entity = await accountingService.CreateCostCenterAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken);
+
+        return Results.Created(
+            $"/api/accounting/cost-centers/{entity.Id}",
+            entity);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapPut("/cost-centers/{costCenterId:guid}", async (
+    HttpRequest request,
+    Guid costCenterId,
+    UpdateCostCenterRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.UpdateCostCenterAsync(
+            user.CompanyId,
+            user.Id,
+            costCenterId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapGet("/projects", async (
+    HttpRequest request,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await accountingService.GetAccountingProjectsAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+accounting.MapPost("/projects", async (
+    HttpRequest request,
+    CreateAccountingProjectRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        var entity = await accountingService.CreateAccountingProjectAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken);
+
+        return Results.Created(
+            $"/api/accounting/projects/{entity.Id}",
+            entity);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+accounting.MapPut("/projects/{projectId:guid}", async (
+    HttpRequest request,
+    Guid projectId,
+    UpdateAccountingProjectRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await accountingService.UpdateAccountingProjectAsync(
+            user.CompanyId,
+            user.Id,
+            projectId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
 accounting.MapGet("/detail-accounts", async (
     HttpRequest request,
     AuthService authService,
