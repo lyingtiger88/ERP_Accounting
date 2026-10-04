@@ -502,38 +502,42 @@ class _NewPurchaseReceiptPageState
       Navigator.pop(context, result);
     } on ApiException catch (error) {
       if (error.statusCode == null) {
-        final localId =
-            await widget.localDatabase.saveLocalStoreDraft(
-          companyId: widget.companyId,
-          entityType: 'StorePurchaseReceiptDraft',
-          payload: {
-            'fiscalYearId': _fiscalYearId,
-            'documentDate': _dateOnly(_documentDate),
-            'warehouseId': _warehouseId,
-            'supplierDetailAccountId': _supplierId,
-            'paymentType': _paymentType,
-            'description': _description.text.trim().isEmpty
-                ? null
-                : _description.text.trim(),
-            'currencyId': _currencyId,
-            'currencyCode': _currencyCode,
-            'exchangeRate':
-                _currencyId == null ? null : exchangeRate,
-            'lines': lines,
-          },
-        );
+        try {
+          final localId =
+              await widget.localDatabase.saveLocalStoreDraft(
+            companyId: widget.companyId,
+            entityType: 'StorePurchaseReceiptDraft',
+            payload: {
+              'fiscalYearId': _fiscalYearId,
+              'documentDate': _dateOnly(_documentDate),
+              'warehouseId': _warehouseId,
+              'supplierDetailAccountId': _supplierId,
+              'paymentType': _paymentType,
+              'description': _description.text.trim().isEmpty
+                  ? null
+                  : _description.text.trim(),
+              'currencyId': _currencyId,
+              'currencyCode': _currencyCode,
+              'exchangeRate':
+                  _currencyId == null ? null : exchangeRate,
+              'lines': lines,
+            },
+          );
 
-        if (!mounted) return;
+          if (!mounted) return;
 
-        Navigator.pop(
-          context,
-          {
-            'id': localId,
-            'number': 'LOCAL-' +
-                localId.substring(0, 8).toUpperCase(),
-            'status': 'LocalPending',
-          },
-        );
+          Navigator.pop(
+            context,
+            {
+              'id': localId,
+              'number': 'LOCAL-' +
+                  localId.substring(0, 8).toUpperCase(),
+              'status': 'LocalPending',
+            },
+          );
+        } on StateError catch (localError) {
+          _message(localError.message);
+        }
       } else {
         _message(error.message);
       }
