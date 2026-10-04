@@ -9,11 +9,13 @@ class NewJournalPage extends StatefulWidget {
     required this.companyId,
     required this.localDatabase,
     this.draft,
+    this.isDemoMode = false,
   });
 
   final String companyId;
   final LocalDatabase localDatabase;
   final LocalAccountingDocument? draft;
+  final bool isDemoMode;
 
   @override
   State<NewJournalPage> createState() => _NewJournalPageState();
@@ -212,6 +214,9 @@ class _NewJournalPageState extends State<NewJournalPage> {
   }
 
   Future<void> _save({required bool queueForSync}) async {
+    final effectiveQueueForSync =
+        widget.isDemoMode ? false : queueForSync;
+
     if (_fiscalYearId == null) {
       _showError('سال مالی معتبر برای این سند انتخاب نشده است.');
       return;
@@ -261,7 +266,7 @@ class _NewJournalPageState extends State<NewJournalPage> {
           documentDate: _documentDate,
           description: _description.text,
           lines: lines,
-          queueForSync: queueForSync,
+          queueForSync: effectiveQueueForSync,
         );
       } else {
         await widget.localDatabase.updateLocalJournalDraft(
@@ -271,7 +276,7 @@ class _NewJournalPageState extends State<NewJournalPage> {
           documentDate: _documentDate,
           description: _description.text,
           lines: lines,
-          queueForSync: queueForSync,
+          queueForSync: effectiveQueueForSync,
         );
       }
 
@@ -280,7 +285,7 @@ class _NewJournalPageState extends State<NewJournalPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            queueForSync
+            effectiveQueueForSync
                 ? (widget.draft == null
                     ? 'سند در SQLite ذخیره و وارد صف همگام‌سازی شد.'
                     : 'همان پیش‌نویس به صف همگام‌سازی منتقل شد.')
@@ -486,11 +491,17 @@ class _NewJournalPageState extends State<NewJournalPage> {
                       onPressed:
                           _busy ? null : () => _save(queueForSync: false),
                       icon: const Icon(Icons.save_outlined),
-                      label: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('ذخیره پیش‌نویس'),
+                      label: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          widget.isDemoMode
+                              ? 'ذخیره سند تست'
+                              : 'ذخیره پیش‌نویس',
+                        ),
                       ),
                     ),
+                    if (!widget.isDemoMode)
                     FilledButton.icon(
                       onPressed: _busy || !_balanced
                           ? null
@@ -513,9 +524,11 @@ class _NewJournalPageState extends State<NewJournalPage> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  widget.draft == null
-                      ? 'واحد پایه مبلغ در این نسخه ریال است. شماره قطعی سند هنگام ثبت روی سرور تعیین خواهد شد.'
-                      : 'این سند هنوز Draft محلی است و قابل ویرایش است. پس از «ثبت و آماده همگام‌سازی» قفل می‌شود و اصلاح سند قطعی فقط از مسیر برگشت انجام خواهد شد.',
+                  widget.isDemoMode
+                      ? 'حالت تست: سند فقط در SQLite همین دستگاه ذخیره می‌شود و هرگز وارد صف Sync نخواهد شد.'
+                      : widget.draft == null
+                          ? 'واحد پایه مبلغ در این نسخه ریال است. شماره قطعی سند هنگام ثبت روی سرور تعیین خواهد شد.'
+                          : 'این سند هنوز Draft محلی است و قابل ویرایش است. پس از «ثبت و آماده همگام‌سازی» قفل می‌شود و اصلاح سند قطعی فقط از مسیر برگشت انجام خواهد شد.',
                   style: const TextStyle(fontSize: 12),
                 ),
               ],
