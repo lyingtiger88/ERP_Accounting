@@ -4,6 +4,14 @@ Cross-platform accounting and resource-management platform for Windows and Andro
 
 > **Working title:** `ERP_Accounting` — final product/brand name will be selected later.
 
+## Offline Demo Mode
+
+The Flutter client includes a serverless local demo mode from the login screen.
+It seeds an isolated demo company in SQLite with sample accounts, a 1405 fiscal
+year, detail accounts, cost centers, projects, products, warehouses and stock.
+Demo API calls are short-circuited locally, demo documents never enter the sync
+outbox, and the combined local accounting/store document limit is 500.
+
 ## Project Roadmap
 
 This roadmap is intentionally kept on the repository home page so the current plan and progress are always visible.
