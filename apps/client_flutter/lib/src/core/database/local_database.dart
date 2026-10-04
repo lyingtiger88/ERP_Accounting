@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart' as mobile;
 import 'package:sqflite_common/sqlite_api.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../demo/demo_mode.dart';
 import '../sync/sync_models.dart';
 
 class LocalDatabase {
@@ -475,6 +476,418 @@ class LocalDatabase {
     return db;
   }
 
+  Future<void> ensureDemoWorkspace() async {
+    const companyId = DemoMode.companyId;
+    const fiscalYearId =
+        '00000000-0000-4000-8000-000000000510';
+
+    await cacheUserProfile(
+      userId: DemoMode.userId,
+      companyId: companyId,
+      displayName: DemoMode.displayName,
+      role: DemoMode.role,
+    );
+
+    await replaceAccounts(
+      companyId: companyId,
+      accounts: const [
+        {
+          'id': '00000000-0000-4000-8000-000000000601',
+          'code': '1101',
+          'name': 'صندوق',
+          'type': 'Asset',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Debit',
+          'natureTitle': 'بدهکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000602',
+          'code': '1102',
+          'name': 'بانک',
+          'type': 'Asset',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Debit',
+          'natureTitle': 'بدهکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000603',
+          'code': '1201',
+          'name': 'حساب‌های دریافتنی',
+          'type': 'Asset',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Debit',
+          'natureTitle': 'بدهکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000604',
+          'code': '1301',
+          'name': 'موجودی کالا',
+          'type': 'Asset',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Debit',
+          'natureTitle': 'بدهکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000605',
+          'code': '2101',
+          'name': 'حساب‌های پرداختنی',
+          'type': 'Liability',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Credit',
+          'natureTitle': 'بستانکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000606',
+          'code': '2201',
+          'name': 'مالیات پرداختنی',
+          'type': 'Liability',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Credit',
+          'natureTitle': 'بستانکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000607',
+          'code': '3101',
+          'name': 'سرمایه',
+          'type': 'Equity',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Credit',
+          'natureTitle': 'بستانکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000608',
+          'code': '4101',
+          'name': 'فروش',
+          'type': 'Revenue',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Credit',
+          'natureTitle': 'بستانکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000609',
+          'code': '5101',
+          'name': 'بهای تمام‌شده کالای فروش‌رفته',
+          'type': 'Expense',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Debit',
+          'natureTitle': 'بدهکار',
+          'isPostable': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000610',
+          'code': '5201',
+          'name': 'هزینه‌های عملیاتی',
+          'type': 'Expense',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Debit',
+          'natureTitle': 'بدهکار',
+          'isPostable': true,
+        },
+      ],
+    );
+
+    await replaceFiscalYears(
+      companyId: companyId,
+      fiscalYears: const [
+        {
+          'id': fiscalYearId,
+          'name': 'سال مالی تست ۱۴۰۵',
+          'persianYear': 1405,
+          'startDate': '2026-03-21',
+          'endDate': '2027-03-20',
+          'isDefault': true,
+          'isClosed': false,
+          'isFinalized': false,
+          'closingJournalNumber': null,
+          'netResult': null,
+        },
+      ],
+    );
+
+    await replaceFiscalPeriods(
+      companyId: companyId,
+      fiscalYearId: fiscalYearId,
+      periods: const [
+        {'id': '00000000-0000-4000-8000-000000000521', 'periodNumber': 1, 'name': 'فروردین', 'startDate': '2026-03-21', 'endDate': '2026-04-20', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000522', 'periodNumber': 2, 'name': 'اردیبهشت', 'startDate': '2026-04-21', 'endDate': '2026-05-21', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000523', 'periodNumber': 3, 'name': 'خرداد', 'startDate': '2026-05-22', 'endDate': '2026-06-21', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000524', 'periodNumber': 4, 'name': 'تیر', 'startDate': '2026-06-22', 'endDate': '2026-07-22', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000525', 'periodNumber': 5, 'name': 'مرداد', 'startDate': '2026-07-23', 'endDate': '2026-08-22', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000526', 'periodNumber': 6, 'name': 'شهریور', 'startDate': '2026-08-23', 'endDate': '2026-09-22', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000527', 'periodNumber': 7, 'name': 'مهر', 'startDate': '2026-09-23', 'endDate': '2026-10-22', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000528', 'periodNumber': 8, 'name': 'آبان', 'startDate': '2026-10-23', 'endDate': '2026-11-21', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000529', 'periodNumber': 9, 'name': 'آذر', 'startDate': '2026-11-22', 'endDate': '2026-12-21', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000530', 'periodNumber': 10, 'name': 'دی', 'startDate': '2026-12-22', 'endDate': '2027-01-20', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000531', 'periodNumber': 11, 'name': 'بهمن', 'startDate': '2027-01-21', 'endDate': '2027-02-19', 'isClosed': false},
+        {'id': '00000000-0000-4000-8000-000000000532', 'periodNumber': 12, 'name': 'اسفند', 'startDate': '2027-02-20', 'endDate': '2027-03-20', 'isClosed': false},
+      ],
+    );
+
+    await replaceDetailAccounts(
+      companyId: companyId,
+      details: const [
+        {
+          'id': '00000000-0000-4000-8000-000000000701',
+          'code': 'CUST-001',
+          'name': 'مشتری نمونه',
+          'type': 'Customer',
+          'nationalId': null,
+          'isActive': true,
+          'revision': 1,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000702',
+          'code': 'SUP-001',
+          'name': 'تأمین‌کننده نمونه',
+          'type': 'Supplier',
+          'nationalId': null,
+          'isActive': true,
+          'revision': 1,
+        },
+      ],
+    );
+
+    await replaceCostCenters(
+      companyId: companyId,
+      costCenters: const [
+        {
+          'id': '00000000-0000-4000-8000-000000000711',
+          'code': 'CC-01',
+          'name': 'مرکز هزینه فروش',
+          'isActive': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000712',
+          'code': 'CC-02',
+          'name': 'مرکز هزینه اداری',
+          'isActive': true,
+        },
+      ],
+    );
+
+    await replaceAccountingProjects(
+      companyId: companyId,
+      projects: const [
+        {
+          'id': '00000000-0000-4000-8000-000000000721',
+          'code': 'PRJ-01',
+          'name': 'پروژه آزمایشی',
+          'isActive': true,
+        },
+      ],
+    );
+
+    await replaceStoreEntities(
+      companyId: companyId,
+      entityType: 'StoreProduct',
+      items: const [
+        {
+          'id': '00000000-0000-4000-8000-000000000801',
+          'sku': 'DEMO-001',
+          'name': 'کالای نمونه A',
+          'barcode': '6260000000011',
+          'unitName': 'عدد',
+          'kind': 'Goods',
+          'trackInventory': true,
+          'salesPrice': 1250000,
+          'defaultPurchasePrice': 900000,
+          'isActive': true,
+          'trackingMode': 'None',
+          'minimumStock': 5,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000802',
+          'sku': 'DEMO-002',
+          'name': 'کالای نمونه B',
+          'barcode': '6260000000028',
+          'unitName': 'عدد',
+          'kind': 'Goods',
+          'trackInventory': true,
+          'salesPrice': 2400000,
+          'defaultPurchasePrice': 1800000,
+          'isActive': true,
+          'trackingMode': 'Lot',
+          'minimumStock': 3,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000803',
+          'sku': 'SRV-001',
+          'name': 'خدمت نمونه',
+          'barcode': null,
+          'unitName': 'سرویس',
+          'kind': 'Service',
+          'trackInventory': false,
+          'salesPrice': 3500000,
+          'defaultPurchasePrice': 0,
+          'isActive': true,
+          'trackingMode': 'None',
+          'minimumStock': 0,
+        },
+      ],
+    );
+
+    await replaceStoreEntities(
+      companyId: companyId,
+      entityType: 'Warehouse',
+      items: const [
+        {
+          'id': '00000000-0000-4000-8000-000000000811',
+          'code': 'WH-01',
+          'name': 'انبار اصلی تست',
+          'isActive': true,
+        },
+        {
+          'id': '00000000-0000-4000-8000-000000000812',
+          'code': 'WH-02',
+          'name': 'انبار دوم تست',
+          'isActive': true,
+        },
+      ],
+    );
+
+    await replaceStoreEntities(
+      companyId: companyId,
+      entityType: 'StockBalance',
+      items: const [
+        {
+          'productId': '00000000-0000-4000-8000-000000000801',
+          'sku': 'DEMO-001',
+          'productName': 'کالای نمونه A',
+          'warehouseId': '00000000-0000-4000-8000-000000000811',
+          'warehouseName': 'انبار اصلی تست',
+          'quantity': 25,
+          'averageCost': 900000,
+          'inventoryValue': 22500000,
+          'minimumStock': 5,
+          'isLowStock': false,
+        },
+        {
+          'productId': '00000000-0000-4000-8000-000000000802',
+          'sku': 'DEMO-002',
+          'productName': 'کالای نمونه B',
+          'warehouseId': '00000000-0000-4000-8000-000000000811',
+          'warehouseName': 'انبار اصلی تست',
+          'quantity': 2,
+          'averageCost': 1800000,
+          'inventoryValue': 3600000,
+          'minimumStock': 3,
+          'isLowStock': true,
+        },
+      ],
+    );
+
+    await replaceStoreEntities(
+      companyId: companyId,
+      entityType: 'LowStockAlert',
+      items: const [
+        {
+          'productId': '00000000-0000-4000-8000-000000000802',
+          'sku': 'DEMO-002',
+          'productName': 'کالای نمونه B',
+          'warehouseId': '00000000-0000-4000-8000-000000000811',
+          'warehouseName': 'انبار اصلی تست',
+          'quantity': 2,
+          'minimumStock': 3,
+          'shortage': 1,
+        },
+      ],
+    );
+
+    for (final type in const [
+      'SalesInvoice',
+      'PurchaseReceipt',
+      'SalesReturn',
+      'WarehouseTransfer',
+    ]) {
+      final existing = await getCachedStoreEntities(
+        companyId: companyId,
+        entityType: type,
+      );
+
+      if (existing.isEmpty) {
+        await replaceStoreEntities(
+          companyId: companyId,
+          entityType: type,
+          items: const [],
+        );
+      }
+    }
+
+    await setMeta(
+      'demo_workspace_initialized',
+      DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  Future<int> demoDocumentCount([
+    String companyId = DemoMode.companyId,
+  ]) async {
+    final accountingRows = await _db.rawQuery(
+      'SELECT COUNT(*) AS count FROM local_accounting_documents WHERE company_id = ?',
+      [companyId],
+    );
+    final storeRows = await _db.rawQuery(
+      'SELECT COUNT(*) AS count FROM local_store_drafts WHERE company_id = ?',
+      [companyId],
+    );
+
+    final accounting =
+        (accountingRows.first['count'] as num?)?.toInt() ?? 0;
+    final store = (storeRows.first['count'] as num?)?.toInt() ?? 0;
+    return accounting + store;
+  }
+
+  Future<void> _ensureDemoCapacity(String companyId) async {
+    if (!DemoMode.isDemoCompany(companyId)) return;
+
+    final count = await demoDocumentCount(companyId);
+    if (count >= DemoMode.documentLimit) {
+      throw StateError(
+        'سقف ' +
+            DemoMode.documentLimit.toString() +
+            ' سند در حالت تست پر شده است.',
+      );
+    }
+  }
+
   Future<void> replaceStoreEntities({
     required String companyId,
     required String entityType,
@@ -539,6 +952,9 @@ class LocalDatabase {
     required Map<String, dynamic> payload,
     bool queueForSync = true,
   }) async {
+    await _ensureDemoCapacity(companyId);
+    final effectiveQueueForSync =
+        DemoMode.isDemoCompany(companyId) ? false : queueForSync;
     final localId = _newId();
     final now = DateTime.now().toUtc().toIso8601String();
     final draftPayload = <String, dynamic>{
@@ -554,13 +970,14 @@ class LocalDatabase {
           'company_id': companyId,
           'entity_type': entityType,
           'payload_json': jsonEncode(draftPayload),
-          'sync_status': queueForSync ? 'Pending' : 'LocalOnly',
+          'sync_status':
+              effectiveQueueForSync ? 'Pending' : 'LocalOnly',
           'created_at': now,
           'updated_at': now,
         },
       );
 
-      if (queueForSync) {
+      if (effectiveQueueForSync) {
         await txn.insert(
           'sync_outbox',
           {
@@ -1586,6 +2003,9 @@ class LocalDatabase {
     required List<LocalJournalLineInput> lines,
     required bool queueForSync,
   }) async {
+    await _ensureDemoCapacity(companyId);
+    final effectiveQueueForSync =
+        DemoMode.isDemoCompany(companyId) ? false : queueForSync;
     final effectiveLines = lines
         .where((line) => line.debit > 0 || line.credit > 0)
         .toList(growable: false);
@@ -1610,7 +2030,7 @@ class LocalDatabase {
     final creditTotal =
         effectiveLines.fold<int>(0, (sum, line) => sum + line.credit);
 
-    if (queueForSync) {
+    if (effectiveQueueForSync) {
       if (fiscalYearId == null || fiscalYearId.isEmpty) {
         throw ArgumentError(
           'سال مالی برای سند آماده همگام‌سازی الزامی است.',
@@ -1676,8 +2096,9 @@ class LocalDatabase {
           'fiscal_year_id': fiscalYearId,
           'document_date': dateOnly,
           'description': description.trim(),
-          'status': queueForSync ? 'PendingSync' : 'Draft',
-          'sync_status': queueForSync ? 'Pending' : 'LocalOnly',
+          'status': effectiveQueueForSync ? 'PendingSync' : 'Draft',
+          'sync_status':
+              effectiveQueueForSync ? 'Pending' : 'LocalOnly',
           'currency': 'IRR',
           'created_at': now,
           'updated_at': now,
@@ -1703,7 +2124,7 @@ class LocalDatabase {
         );
       }
 
-      if (queueForSync) {
+      if (effectiveQueueForSync) {
         final payload = <String, dynamic>{
           'localDocumentId': documentId,
           'companyId': companyId,
