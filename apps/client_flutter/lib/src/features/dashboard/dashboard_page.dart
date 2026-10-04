@@ -13,6 +13,7 @@ class DashboardPage extends StatelessWidget {
     required this.accessToken,
     required this.localDatabase,
     required this.accountsSynced,
+    this.isDemoMode = false,
   });
 
   final String displayName;
@@ -20,7 +21,9 @@ class DashboardPage extends StatelessWidget {
   final String companyId;
   final String accessToken;
   final LocalDatabase localDatabase;
+  final bool isDemoMode;
   final bool accountsSynced;
+  final bool isDemoMode;
 
   static const _items = <_NavItem>[
     _NavItem('داشبورد', Icons.dashboard_outlined),
@@ -56,6 +59,7 @@ class DashboardPage extends StatelessWidget {
                     companyId: companyId,
                     accessToken: accessToken,
                     localDatabase: localDatabase,
+                    isDemoMode: isDemoMode,
                   ),
                 ),
               )
@@ -80,6 +84,7 @@ class DashboardPage extends StatelessWidget {
                 companyId: companyId,
                 localDatabase: localDatabase,
                 accountsSynced: accountsSynced,
+                isDemoMode: isDemoMode,
               ),
             ),
           ],
@@ -97,6 +102,7 @@ class _Navigation extends StatelessWidget {
     required this.companyId,
     required this.accessToken,
     required this.localDatabase,
+    required this.isDemoMode,
   });
 
   final List<_NavItem> items;
@@ -132,6 +138,7 @@ class _Navigation extends StatelessWidget {
                         companyId: companyId,
                         accessToken: accessToken,
                         localDatabase: localDatabase,
+                        isDemoMode: isDemoMode,
                       ),
                     ),
                   );
@@ -167,12 +174,14 @@ class _DashboardBody extends StatelessWidget {
     required this.companyId,
     required this.localDatabase,
     required this.accountsSynced,
+    required this.isDemoMode,
   });
 
   final String displayName;
   final String companyId;
   final LocalDatabase localDatabase;
   final bool accountsSynced;
+  final bool isDemoMode;
 
   Future<_LocalStatus> _loadLocalStatus() async {
     return _LocalStatus(
@@ -183,6 +192,8 @@ class _DashboardBody extends StatelessWidget {
       unresolvedConflicts:
           await localDatabase.unresolvedConflictCount(companyId),
       databasePath: localDatabase.databasePath ?? 'unknown',
+      demoDocuments:
+          isDemoMode ? await localDatabase.demoDocumentCount(companyId) : 0,
     );
   }
 
@@ -213,15 +224,19 @@ class _DashboardBody extends StatelessWidget {
               ),
               Chip(
                 avatar: Icon(
-                  accountsSynced
-                      ? Icons.cloud_done_outlined
-                      : Icons.cloud_off_outlined,
+                  isDemoMode
+                      ? Icons.science_outlined
+                      : accountsSynced
+                          ? Icons.cloud_done_outlined
+                          : Icons.cloud_off_outlined,
                   size: 18,
                 ),
                 label: Text(
-                  accountsSynced
-                      ? 'Online + Local Cache'
-                      : 'Local Cache',
+                  isDemoMode
+                      ? 'حالت تست آفلاین'
+                      : accountsSynced
+                          ? 'Online + Local Cache'
+                          : 'Local Cache',
                 ),
               ),
             ],
@@ -256,6 +271,12 @@ class _DashboardBody extends StatelessWidget {
                     status?.pendingChanges.toString() ?? '…',
                     Icons.sync_outlined,
                   ),
+                  if (isDemoMode)
+                    _MetricCard(
+                      'اسناد تست',
+                      (status?.demoDocuments.toString() ?? '…') + '/500',
+                      Icons.description_outlined,
+                    ),
                   _MetricCard(
                     'تعارض‌های حل‌نشده',
                     status?.unresolvedConflicts.toString() ?? '…',
@@ -357,12 +378,14 @@ class _LocalStatus {
     required this.pendingChanges,
     required this.unresolvedConflicts,
     required this.databasePath,
+    required this.demoDocuments,
   });
 
   final int cachedAccounts;
   final int pendingChanges;
   final int unresolvedConflicts;
   final String databasePath;
+  final int demoDocuments;
 }
 
 class _MetricCard extends StatelessWidget {
