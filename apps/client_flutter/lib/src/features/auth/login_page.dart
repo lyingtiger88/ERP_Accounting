@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
 import '../../core/sync/accounting_sync_service.dart';
 import '../dashboard/dashboard_page.dart';
 import 'bootstrap_page.dart';
@@ -161,6 +162,42 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _openDemo() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      await widget.localDatabase.ensureDemoWorkspace();
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => DashboardPage(
+            displayName: DemoMode.displayName,
+            role: DemoMode.role,
+            companyId: DemoMode.companyId,
+            accessToken: DemoMode.accessToken,
+            localDatabase: widget.localDatabase,
+            accountsSynced: false,
+            isDemoMode: true,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'راه‌اندازی حالت تست ناموفق بود: ' + error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
   Future<void> _openBootstrap() async {
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
@@ -290,6 +327,24 @@ class _LoginPageState extends State<LoginPage> {
                                         EdgeInsets.symmetric(vertical: 13),
                                     child: Text('ورود'),
                                   ),
+                                ),
+                                const SizedBox(height: 12),
+                                FilledButton.tonalIcon(
+                                  onPressed: _busy ? null : _openDemo,
+                                  icon: const Icon(Icons.science_outlined),
+                                  label: const Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(vertical: 12),
+                                    child: Text(
+                                      'ورود به حالت تست آفلاین',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'بدون سرور • داده نمونه • حداکثر ۵۰۰ سند محلی',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 12),
                                 ),
                                 const SizedBox(height: 12),
                                 OutlinedButton.icon(
