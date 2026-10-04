@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
 import '../../core/sync/accounting_sync_service.dart';
 import 'audit_trail_page.dart';
 import 'new_journal_page.dart';
@@ -156,6 +157,7 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
           companyId: widget.companyId,
           localDatabase: widget.localDatabase,
           draft: document,
+          isDemoMode: DemoMode.isDemoToken(widget.accessToken),
         ),
       ),
     );
@@ -331,6 +333,7 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
         appBar: AppBar(
           title: const Text('اسناد حسابداری محلی'),
           actions: [
+            if (!DemoMode.isDemoToken(widget.accessToken))
             IconButton(
               tooltip: 'همگام‌سازی دوطرفه',
               onPressed: _syncing ? null : _syncPending,
