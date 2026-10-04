@@ -22,11 +22,13 @@ class AccountingHomePage extends StatelessWidget {
     required this.companyId,
     required this.accessToken,
     required this.localDatabase,
+    this.isDemoMode = false,
   });
 
   final String companyId;
   final String accessToken;
   final LocalDatabase localDatabase;
+  final bool isDemoMode;
 
   Future<void> _open(
     BuildContext context,
@@ -55,9 +57,30 @@ class AccountingHomePage extends StatelessWidget {
                   ),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'ثبت اسناد به‌صورت Offline-First؛ دفتر کل با ارز پایه شرکت نگهداری می‌شود.',
+            Text(
+              isDemoMode
+                  ? 'حالت تست آفلاین فعال است؛ هیچ داده‌ای به سرور ارسال نمی‌شود و سقف ثبت ۵۰۰ سند محلی است.'
+                  : 'ثبت اسناد به‌صورت Offline-First؛ دفتر کل با ارز پایه شرکت نگهداری می‌شود.',
             ),
+            if (isDemoMode) ...[
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.science_outlined),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'در این حالت فقط قابلیت‌های قابل‌اتکا بدون سرور نمایش داده می‌شوند. گزارش‌های سروری، Audit و مدیریت ارز عمداً غیرفعال‌اند.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             Wrap(
               spacing: 16,
@@ -65,19 +88,24 @@ class AccountingHomePage extends StatelessWidget {
               children: [
                 _ActionCard(
                   title: 'ثبت سند جدید',
-                  subtitle: 'پیش‌نویس یا آماده همگام‌سازی',
+                  subtitle: isDemoMode
+                      ? 'ثبت محلی برای تست؛ بدون Sync'
+                      : 'پیش‌نویس یا آماده همگام‌سازی',
                   icon: Icons.note_add_outlined,
                   onTap: () => _open(
                     context,
                     NewJournalPage(
                       companyId: companyId,
                       localDatabase: localDatabase,
+                      isDemoMode: isDemoMode,
                     ),
                   ),
                 ),
                 _ActionCard(
                   title: 'اسناد محلی',
-                  subtitle: 'Draft و Pending Sync',
+                  subtitle: isDemoMode
+                      ? 'اسناد محلی حالت تست'
+                      : 'Draft و Pending Sync',
                   icon: Icons.receipt_long_outlined,
                   onTap: () => _open(
                     context,
@@ -100,6 +128,7 @@ class AccountingHomePage extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (!isDemoMode) ...[
                 _ActionCard(
                   title: 'سال‌های مالی',
                   subtitle: 'ایجاد و مشاهده سال مالی شمسی',
@@ -241,6 +270,8 @@ class AccountingHomePage extends StatelessWidget {
                     ),
                   ),
                 ),
+                ],
+
               ],
             ),
           ],
