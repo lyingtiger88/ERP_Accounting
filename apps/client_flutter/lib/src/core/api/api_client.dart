@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../demo/demo_mode.dart';
 import '../sync/sync_models.dart';
 
 class ApiException implements Exception {
@@ -1480,6 +1481,12 @@ class ApiClient {
     Map<String, dynamic>? body,
     String? bearerToken,
   }) async {
+    if (DemoMode.isDemoToken(bearerToken)) {
+      throw const ApiException(
+        'حالت تست آفلاین است و به سرور متصل نمی‌شود.',
+      );
+    }
+
     final client = HttpClient();
 
     try {
