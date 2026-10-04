@@ -21,7 +21,6 @@ class DashboardPage extends StatelessWidget {
   final String companyId;
   final String accessToken;
   final LocalDatabase localDatabase;
-  final bool isDemoMode;
   final bool accountsSynced;
   final bool isDemoMode;
 
@@ -76,6 +75,7 @@ class DashboardPage extends StatelessWidget {
                   companyId: companyId,
                   accessToken: accessToken,
                   localDatabase: localDatabase,
+                  isDemoMode: isDemoMode,
                 ),
               ),
             Expanded(
@@ -111,6 +111,7 @@ class _Navigation extends StatelessWidget {
   final String companyId;
   final String accessToken;
   final LocalDatabase localDatabase;
+  final bool isDemoMode;
 
   @override
   Widget build(BuildContext context) {
