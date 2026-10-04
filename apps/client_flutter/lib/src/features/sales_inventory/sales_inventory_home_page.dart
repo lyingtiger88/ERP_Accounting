@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
 import '../../core/sync/accounting_sync_service.dart';
 import '../accounting/report_support.dart';
 import 'products_page.dart';
@@ -294,6 +295,7 @@ class _SalesInventoryHomePageState
         appBar: AppBar(
           title: const Text('فروشگاه و انبار'),
           actions: [
+            if (!DemoMode.isDemoToken(widget.accessToken))
             IconButton(
               tooltip: 'همگام‌سازی فروش و انبار',
               onPressed: _syncing ? null : _syncAll,
@@ -352,8 +354,10 @@ class _SalesInventoryHomePageState
                       ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'این ماژول مستقل از حسابداری قابل استفاده است؛ فروش، خرید و برگشت قطعی می‌توانند سند حسابداری خودکار بسازند و تمام گردش‌های انبار به‌صورت یکپارچه نگه‌داری می‌شوند.',
+                Text(
+                  DemoMode.isDemoToken(widget.accessToken)
+                      ? 'حالت تست آفلاین: کالا، انبار، موجودی و Draftهای فروش/خرید از SQLite همین دستگاه استفاده می‌کنند و هیچ Syncی انجام نمی‌شود.'
+                      : 'این ماژول مستقل از حسابداری قابل استفاده است؛ فروش، خرید و برگشت قطعی می‌توانند سند حسابداری خودکار بسازند و تمام گردش‌های انبار به‌صورت یکپارچه نگه‌داری می‌شوند.',
                 ),
                 const SizedBox(height: 20),
                 Wrap(
@@ -423,10 +427,16 @@ class _SalesInventoryHomePageState
                     ),
                     _MetricCard(
                       title: 'وضعیت داده',
-                      value: overview.online ? 'Online' : 'Local Cache',
-                      icon: overview.online
-                          ? Icons.cloud_done_outlined
-                          : Icons.offline_bolt_outlined,
+                      value: DemoMode.isDemoToken(widget.accessToken)
+                          ? 'Demo Local'
+                          : overview.online
+                              ? 'Online'
+                              : 'Local Cache',
+                      icon: DemoMode.isDemoToken(widget.accessToken)
+                          ? Icons.science_outlined
+                          : overview.online
+                              ? Icons.cloud_done_outlined
+                              : Icons.offline_bolt_outlined,
                     ),
                   ],
                 ),
