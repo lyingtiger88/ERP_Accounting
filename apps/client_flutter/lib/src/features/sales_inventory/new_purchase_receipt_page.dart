@@ -10,11 +10,13 @@ class NewPurchaseReceiptPage extends StatefulWidget {
     required this.companyId,
     required this.accessToken,
     required this.localDatabase,
+    this.purchaseOrder,
   });
 
   final String companyId;
   final String accessToken;
   final LocalDatabase localDatabase;
+  final Map<String, dynamic>? purchaseOrder;
 
   @override
   State<NewPurchaseReceiptPage> createState() =>
@@ -148,18 +150,88 @@ class _NewPurchaseReceiptPageState
         }
       }
 
+      final order = widget.purchaseOrder;
+      final prefilledRows = <_PurchaseRowEditor>[];
+
+      if (order != null) {
+        for (final raw
+            in (order['lines'] as List<dynamic>? ?? const [])) {
+          final line = Map<String, dynamic>.from(raw as Map);
+          final ordered = reportNumber(line['quantity']);
+          final received = reportNumber(line['receivedQuantity']);
+          final remaining = ordered - received;
+          if (remaining <= 0) continue;
+
+          final productId = line['productId']?.toString();
+          Map<String, dynamic>? product;
+          for (final candidate in products) {
+            if (candidate['id'].toString() == productId) {
+              product = candidate;
+              break;
+            }
+          }
+
+          final tracking =
+              product?['trackingMode']?.toString() ?? 'None';
+          final splitCount =
+              tracking == 'Serial' && remaining == remaining.round()
+                  ? remaining.toInt()
+                  : 1;
+
+          for (var index = 0; index < splitCount; index++) {
+            final row = _PurchaseRowEditor();
+            row.purchaseOrderLineId = line['id']?.toString();
+            row.productId = productId;
+            row.quantity.text =
+                tracking == 'Serial' ? '1' : remaining.toString();
+            row.unitCost.text =
+                reportNumber(line['unitCost']).toString();
+
+            final ratio = ordered == 0
+                ? 0
+                : (tracking == 'Serial' ? 1 : remaining) / ordered;
+            row.discount.text =
+                (reportNumber(line['discountAmount']) * ratio)
+                    .toString();
+            row.tax.text =
+                (reportNumber(line['taxAmount']) * ratio)
+                    .toString();
+            prefilledRows.add(row);
+          }
+        }
+      }
+
       setState(() {
         _products = products;
         _warehouses = warehouses;
         _currencies = currencies;
         _fiscalYears = years;
         _suppliers = suppliers;
-        _warehouseId = warehouses.isEmpty
-            ? null
-            : warehouses.first['id'].toString();
-        _fiscalYearId = selectedYear?.id;
+        _warehouseId = order?['warehouseId']?.toString() ??
+            (warehouses.isEmpty
+                ? null
+                : warehouses.first['id'].toString());
+        _fiscalYearId =
+            order?['fiscalYearId']?.toString() ?? selectedYear?.id;
         _supplierId =
-            suppliers.isEmpty ? null : suppliers.first.id;
+            order?['supplierDetailAccountId']?.toString() ??
+                (suppliers.isEmpty ? null : suppliers.first.id);
+        _currencyId = order?['currencyId']?.toString();
+        if (order?['exchangeRate'] != null) {
+          _exchangeRate.text =
+              reportNumber(order!['exchangeRate']).toString();
+        }
+        if (order != null) {
+          for (final row in _rows) {
+            row.dispose();
+          }
+          _rows
+            ..clear()
+            ..addAll(prefilledRows);
+          if (_rows.isEmpty) {
+            _rows.add(_PurchaseRowEditor());
+          }
+        }
         _loading = false;
       });
     } catch (error) {
@@ -456,6 +528,7 @@ class _NewPurchaseReceiptPageState
 
       lines.add({
         'productId': row.productId,
+        'purchaseOrderLineId': row.purchaseOrderLineId,
         'quantity': quantity,
         'unitCost': row.unitCost.text.trim().isEmpty
             ? null
@@ -496,6 +569,7 @@ class _NewPurchaseReceiptPageState
         currencyId: _currencyId,
         exchangeRate:
             _currencyId == null ? null : exchangeRate,
+        purchaseOrderId: widget.purchaseOrder?['id']?.toString(),
       );
 
       if (!mounted) return;
@@ -509,6 +583,8 @@ class _NewPurchaseReceiptPageState
             entityType: 'StorePurchaseReceiptDraft',
             payload: {
               'fiscalYearId': _fiscalYearId,
+              'purchaseOrderId':
+                  widget.purchaseOrder?['id']?.toString(),
               'documentDate': _dateOnly(_documentDate),
               'warehouseId': _warehouseId,
               'supplierDetailAccountId': _supplierId,
@@ -581,7 +657,12 @@ class _NewPurchaseReceiptPageState
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('رسید خرید جدید'),
+          title: Text(
+            widget.purchaseOrder == null
+                ? 'رسید خرید جدید'
+                : 'دریافت سفارش ' +
+                    widget.purchaseOrder!['number'].toString(),
+          ),
           actions: [
             IconButton(
               tooltip: 'اسکن بارکد',
@@ -809,7 +890,8 @@ class _NewPurchaseReceiptPageState
                                     ),
                                   ),
                                   TextButton.icon(
-                                    onPressed: _saving
+                                    onPressed: _saving ||
+                                            widget.purchaseOrder != null
                                         ? null
                                         : () => setState(
                                               () => _rows.add(
@@ -828,15 +910,20 @@ class _NewPurchaseReceiptPageState
                                   row: _rows[index],
                                   products: _products,
                                   saving: _saving,
-                                  onProductChanged: (value) =>
-                                      _selectProduct(
-                                    _rows[index],
-                                    value,
-                                  ),
+                                  onProductChanged:
+                                      _rows[index].purchaseOrderLineId != null
+                                          ? null
+                                          : (value) => _selectProduct(
+                                                _rows[index],
+                                                value,
+                                              ),
                                   onChanged: () => setState(() {}),
                                   onPickExpiry: () =>
                                       _pickExpiry(_rows[index]),
-                                  onRemove: () {
+                                  onRemove:
+                                      _rows[index].purchaseOrderLineId != null
+                                          ? null
+                                          : () {
                                     if (_rows.length <= 1) return;
                                     final removed =
                                         _rows.removeAt(index);
@@ -920,10 +1007,10 @@ class _PurchaseLineCard extends StatelessWidget {
   final _PurchaseRowEditor row;
   final List<Map<String, dynamic>> products;
   final bool saving;
-  final ValueChanged<String?> onProductChanged;
+  final ValueChanged<String?>? onProductChanged;
   final VoidCallback onChanged;
   final VoidCallback onPickExpiry;
-  final VoidCallback onRemove;
+  final VoidCallback? onRemove;
 
   Map<String, dynamic>? _product() {
     for (final item in products) {
@@ -1069,6 +1156,7 @@ class _PurchaseField extends StatelessWidget {
 
 class _PurchaseRowEditor {
   String? productId;
+  String? purchaseOrderLineId;
   final quantity = TextEditingController(text: '1');
   final unitCost = TextEditingController();
   final discount = TextEditingController(text: '0');
