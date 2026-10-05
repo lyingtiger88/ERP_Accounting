@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
+import '../../core/demo/local_demo_business_engine.dart';
 import '../accounting/report_support.dart';
 
 class StockPage extends StatefulWidget {
@@ -437,25 +439,47 @@ class _StockPageState extends State<StockPage> {
     }
 
     try {
-      await _apiClient.adjustStock(
-        bearerToken: widget.accessToken,
-        warehouseId: warehouseId,
-        productId: productId,
-        documentDate: date,
-        quantityDelta: _number(quantity.text)!,
-        unitCost: _number(unitCost.text),
-        reason: reason.text.trim(),
-        lotNumber: lot.text.trim().isEmpty
-            ? null
-            : lot.text.trim(),
-        serialNumber: serial.text.trim().isEmpty
-            ? null
-            : serial.text.trim(),
-        expiryDate: expiryDate,
-      );
+      if (DemoMode.isDemoToken(widget.accessToken)) {
+        await LocalDemoBusinessEngine(
+          localDatabase: widget.localDatabase,
+        ).adjustStock(
+          warehouseId: warehouseId,
+          productId: productId,
+          documentDate: date,
+          quantityDelta: _number(quantity.text)!,
+          unitCost: _number(unitCost.text),
+          reason: reason.text.trim(),
+          lotNumber: lot.text.trim().isEmpty
+              ? null
+              : lot.text.trim(),
+          serialNumber: serial.text.trim().isEmpty
+              ? null
+              : serial.text.trim(),
+          expiryDate: expiryDate,
+        );
+      } else {
+        await _apiClient.adjustStock(
+          bearerToken: widget.accessToken,
+          warehouseId: warehouseId,
+          productId: productId,
+          documentDate: date,
+          quantityDelta: _number(quantity.text)!,
+          unitCost: _number(unitCost.text),
+          reason: reason.text.trim(),
+          lotNumber: lot.text.trim().isEmpty
+              ? null
+              : lot.text.trim(),
+          serialNumber: serial.text.trim().isEmpty
+              ? null
+              : serial.text.trim(),
+          expiryDate: expiryDate,
+        );
+      }
 
       await _load();
     } on ApiException catch (error) {
+      _message(error.message);
+    } on StateError catch (error) {
       _message(error.message);
     } finally {
       quantity.dispose();
