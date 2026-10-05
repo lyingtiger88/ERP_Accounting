@@ -113,10 +113,15 @@ class LocalDemoReportingEngine {
     }).toList(growable: false);
 
     final filteredSalesReturns = salesReturns.where((item) {
+      final original =
+          invoiceMap[item['salesInvoiceId']?.toString()];
       return item['status']?.toString() == 'Posted' &&
           inRange(item['documentDate']) &&
           (warehouseId == null ||
-              item['warehouseId']?.toString() == warehouseId);
+              item['warehouseId']?.toString() == warehouseId) &&
+          (detailAccountId == null ||
+              original?['customerDetailAccountId']?.toString() ==
+                  detailAccountId);
     }).toList(growable: false);
 
     final filteredPurchases = purchases.where((item) {
@@ -131,10 +136,15 @@ class LocalDemoReportingEngine {
 
     final filteredPurchaseReturns =
         purchaseReturns.where((item) {
+      final original =
+          purchaseMap[item['purchaseReceiptId']?.toString()];
       return item['status']?.toString() == 'Posted' &&
           inRange(item['documentDate']) &&
           (warehouseId == null ||
-              item['warehouseId']?.toString() == warehouseId);
+              item['warehouseId']?.toString() == warehouseId) &&
+          (detailAccountId == null ||
+              original?['supplierDetailAccountId']?.toString() ==
+                  detailAccountId);
     }).toList(growable: false);
 
     final productRows = <Map<String, dynamic>>[];
@@ -476,6 +486,7 @@ class LocalDemoReportingEngine {
           d.document_date,
           l.debit,
           l.credit,
+          l.detail_account_id,
           l.cost_center_id,
           l.project_id
         FROM local_document_lines l
@@ -493,6 +504,10 @@ class LocalDemoReportingEngine {
 
     for (final row in dimensionRows) {
       if (!inRange(row['document_date'])) continue;
+      if (detailAccountId != null &&
+          row['detail_account_id']?.toString() != detailAccountId) {
+        continue;
+      }
       final debit = n(row['debit']);
       final credit = n(row['credit']);
       final center = row['cost_center_id']?.toString();
