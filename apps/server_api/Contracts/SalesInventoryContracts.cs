@@ -300,7 +300,8 @@ public sealed record PurchaseReceiptLineRequest(
     decimal TaxAmount,
     string? LotNumber = null,
     string? SerialNumber = null,
-    DateOnly? ExpiryDate = null);
+    DateOnly? ExpiryDate = null,
+    Guid? PurchaseOrderLineId = null);
 
 public sealed record CreatePurchaseReceiptRequest(
     Guid FiscalYearId,
@@ -311,7 +312,8 @@ public sealed record CreatePurchaseReceiptRequest(
     string? Description,
     IReadOnlyList<PurchaseReceiptLineRequest> Lines,
     Guid? CurrencyId = null,
-    decimal? ExchangeRate = null);
+    decimal? ExchangeRate = null,
+    Guid? PurchaseOrderId = null);
 
 public sealed record PurchaseReceiptLineView(
     Guid Id,
@@ -326,7 +328,8 @@ public sealed record PurchaseReceiptLineView(
     decimal NetAmount,
     string? LotNumber,
     string? SerialNumber,
-    DateOnly? ExpiryDate);
+    DateOnly? ExpiryDate,
+    Guid? PurchaseOrderLineId = null);
 
 public sealed record PurchaseReceiptView(
     Guid Id,
@@ -351,7 +354,9 @@ public sealed record PurchaseReceiptView(
     string? AccountingJournalNumber,
     DateTimeOffset CreatedAt,
     DateTimeOffset? PostedAt,
-    IReadOnlyList<PurchaseReceiptLineView> Lines);
+    IReadOnlyList<PurchaseReceiptLineView> Lines,
+    Guid? PurchaseOrderId = null,
+    string? PurchaseOrderNumber = null);
 
 public sealed record PostPurchaseReceiptResponse(
     Guid ReceiptId,
