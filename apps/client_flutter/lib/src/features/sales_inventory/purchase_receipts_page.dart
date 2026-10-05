@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
+import '../../core/demo/local_demo_business_engine.dart';
 import '../accounting/report_support.dart';
 import 'new_purchase_receipt_page.dart';
 
@@ -149,7 +151,9 @@ class _PurchaseReceiptsPageState
             'currencyCode':
                 payload['currencyCode']?.toString() ?? 'BASE',
             'exchangeRate': payload['exchangeRate'] ?? 1,
-            'status': 'LocalPending',
+            'status': DemoMode.isDemoToken(widget.accessToken)
+                ? 'Draft'
+                : 'LocalPending',
             'subtotal': subtotal,
             'discountTotal': discount,
             'taxTotal': tax,
@@ -210,10 +214,14 @@ class _PurchaseReceiptsPageState
     setState(() => _busy = true);
 
     try {
-      final response = await _apiClient.postPurchaseReceipt(
-        bearerToken: widget.accessToken,
-        receiptId: receipt['id'].toString(),
-      );
+      final response = DemoMode.isDemoToken(widget.accessToken)
+          ? await LocalDemoBusinessEngine(
+              localDatabase: widget.localDatabase,
+            ).postPurchaseReceipt(receipt['id'].toString())
+          : await _apiClient.postPurchaseReceipt(
+              bearerToken: widget.accessToken,
+              receiptId: receipt['id'].toString(),
+            );
 
       if (!mounted) return;
       setState(_reload);
@@ -222,6 +230,8 @@ class _PurchaseReceiptsPageState
             response['accountingJournalNumber'].toString(),
       );
     } on ApiException catch (error) {
+      _message(error.message);
+    } on StateError catch (error) {
       _message(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
