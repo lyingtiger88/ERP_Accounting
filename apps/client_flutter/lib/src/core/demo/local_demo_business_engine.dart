@@ -741,6 +741,104 @@ class LocalDemoBusinessEngine {
     });
   }
 
+  Future<void> adjustStock({
+    required String warehouseId,
+    required String productId,
+    required DateTime documentDate,
+    required num quantityDelta,
+    num? unitCost,
+    required String reason,
+    String? lotNumber,
+    String? serialNumber,
+    DateTime? expiryDate,
+  }) {
+    return localDatabase.runDemoBusinessTransaction((txn) async {
+      final trimmedReason = reason.trim();
+      if (quantityDelta == 0) {
+        throw StateError('مقدار تعدیل نمی‌تواند صفر باشد.');
+      }
+      if (trimmedReason.isEmpty) {
+        throw StateError('علت تعدیل موجودی الزامی است.');
+      }
+
+      final products = await _readCachedMap(txn, 'StoreProduct');
+      final warehouses = await _readCachedMap(txn, 'Warehouse');
+      final product = products[productId];
+
+      if (product == null ||
+          !(product['trackInventory'] as bool? ?? false)) {
+        throw StateError('کالای موجودی‌دار معتبر پیدا نشد.');
+      }
+      if (!warehouses.containsKey(warehouseId)) {
+        throw StateError('انبار معتبر پیدا نشد.');
+      }
+
+      final line = <String, dynamic>{
+        'lotNumber': lotNumber,
+        'serialNumber': serialNumber,
+        'expiryDate': expiryDate == null ? null : _dateOnly(expiryDate),
+      };
+      _validateTrace(product, line, quantityDelta.abs());
+
+      num effectiveCost;
+      if (quantityDelta > 0) {
+        effectiveCost = unitCost ?? _num(product['defaultPurchasePrice']);
+        if (effectiveCost < 0) {
+          throw StateError('بهای واحد نمی‌تواند منفی باشد.');
+        }
+
+        if ((product['trackingMode']?.toString() ?? 'None') == 'Serial' &&
+            _text(serialNumber) != null) {
+          final existing = await _serialQuantity(
+            txn,
+            productId,
+            serialNumber!.trim(),
+          );
+          if (existing > 0) {
+            throw StateError('این شماره سریال قبلاً در موجودی وجود دارد.');
+          }
+        }
+      } else {
+        final balance = await _traceBalance(
+          txn,
+          warehouseId: warehouseId,
+          productId: productId,
+          trackingMode: product['trackingMode']?.toString() ?? 'None',
+          lotNumber: _text(lotNumber),
+          serialNumber: _text(serialNumber),
+          expiryDate:
+              expiryDate == null ? null : _dateOnly(expiryDate),
+        );
+
+        if (balance.quantity + quantityDelta < 0) {
+          throw StateError('تعدیل باعث منفی شدن موجودی می‌شود.');
+        }
+
+        effectiveCost = balance.quantity == 0
+            ? _num(product['defaultPurchasePrice'])
+            : balance.value / balance.quantity;
+      }
+
+      await _insertMovement(
+        txn,
+        warehouseId: warehouseId,
+        productId: productId,
+        documentDate: _dateOnly(documentDate),
+        movementType:
+            quantityDelta > 0 ? 'AdjustmentIn' : 'AdjustmentOut',
+        quantity: quantityDelta,
+        unitCost: effectiveCost,
+        lotNumber: _text(lotNumber),
+        serialNumber: _text(serialNumber),
+        expiryDate: expiryDate == null ? null : _dateOnly(expiryDate),
+        referenceType: 'ManualAdjustment',
+        description: trimmedReason,
+      );
+
+      await _refreshStockCaches(txn);
+    });
+  }
+
   Future<Map<String, dynamic>> createSalesReturn({
     required String invoiceId,
     required DateTime documentDate,
