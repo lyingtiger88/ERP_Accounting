@@ -979,6 +979,129 @@ class ApiClient {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getTreasuryAccounts({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/treasury/accounts',
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createTreasuryAccount({
+    required String bearerToken,
+    required String code,
+    required String name,
+    required String type,
+    required String ledgerAccountId,
+    String? currencyId,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/treasury/accounts',
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+        'type': type,
+        'ledgerAccountId': ledgerAccountId,
+        'currencyId': currencyId,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> updateTreasuryAccount({
+    required String bearerToken,
+    required String accountId,
+    required String code,
+    required String name,
+    required String type,
+    required String ledgerAccountId,
+    String? currencyId,
+    required bool isActive,
+  }) async {
+    final response = await _request(
+      'PUT',
+      '/api/treasury/accounts/' + accountId,
+      bearerToken: bearerToken,
+      body: {
+        'code': code,
+        'name': name,
+        'type': type,
+        'ledgerAccountId': ledgerAccountId,
+        'currencyId': currencyId,
+        'isActive': isActive,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getTreasuryTransactions({
+    required String bearerToken,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final query = <String>[
+      if (from != null) 'from=' + Uri.encodeQueryComponent(_dateOnly(from)),
+      if (to != null) 'to=' + Uri.encodeQueryComponent(_dateOnly(to)),
+    ];
+
+    final response = await _request(
+      'GET',
+      '/api/treasury/transactions' +
+          (query.isEmpty ? '' : '?' + query.join('&')),
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> postTreasuryTransaction({
+    required String bearerToken,
+    required String fiscalYearId,
+    required DateTime documentDate,
+    required String type,
+    required num amount,
+    String? description,
+    String? fromTreasuryAccountId,
+    String? toTreasuryAccountId,
+    String? counterAccountId,
+    String? detailAccountId,
+    String? currencyId,
+    num? exchangeRate,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/treasury/transactions',
+      bearerToken: bearerToken,
+      body: {
+        'fiscalYearId': fiscalYearId,
+        'documentDate': _dateOnly(documentDate),
+        'type': type,
+        'amount': amount,
+        'description': description,
+        'fromTreasuryAccountId': fromTreasuryAccountId,
+        'toTreasuryAccountId': toTreasuryAccountId,
+        'counterAccountId': counterAccountId,
+        'detailAccountId': detailAccountId,
+        'currencyId': currencyId,
+        'exchangeRate': exchangeRate,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getStoreProducts({
     required String bearerToken,
   }) async {
