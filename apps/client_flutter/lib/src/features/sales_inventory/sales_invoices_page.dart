@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
+import '../../core/demo/local_demo_business_engine.dart';
 import '../accounting/report_support.dart';
 import 'new_sales_invoice_page.dart';
 
@@ -148,7 +150,9 @@ class _SalesInvoicesPageState
                 payload['currencyCode']?.toString() ?? 'BASE',
             'exchangeRate': payload['exchangeRate'] ?? 1,
             'customerName': null,
-            'status': 'LocalPending',
+            'status': DemoMode.isDemoToken(widget.accessToken)
+                ? 'Draft'
+                : 'LocalPending',
             'description': payload['description'],
             'subtotal': subtotal,
             'discountTotal': discount,
@@ -234,10 +238,14 @@ class _SalesInvoicesPageState
     setState(() => _busy = true);
 
     try {
-      final response = await _apiClient.postSalesInvoice(
-        bearerToken: widget.accessToken,
-        invoiceId: invoice['id'].toString(),
-      );
+      final response = DemoMode.isDemoToken(widget.accessToken)
+          ? await LocalDemoBusinessEngine(
+              localDatabase: widget.localDatabase,
+            ).postSalesInvoice(invoice['id'].toString())
+          : await _apiClient.postSalesInvoice(
+              bearerToken: widget.accessToken,
+              invoiceId: invoice['id'].toString(),
+            );
 
       if (!mounted) return;
       setState(_reload);
@@ -247,6 +255,8 @@ class _SalesInvoicesPageState
             response['accountingJournalNumber'].toString(),
       );
     } on ApiException catch (error) {
+      _message(error.message);
+    } on StateError catch (error) {
       _message(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
