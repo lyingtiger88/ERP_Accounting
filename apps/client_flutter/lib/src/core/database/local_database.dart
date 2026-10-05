@@ -918,6 +918,45 @@ class LocalDatabase {
   
       }
 
+    final existingTreasuryAccounts = await getCachedStoreEntities(
+      companyId: companyId,
+      entityType: 'TreasuryAccount',
+    );
+    if (existingTreasuryAccounts.isEmpty) {
+      await replaceStoreEntities(
+        companyId: companyId,
+        entityType: 'TreasuryAccount',
+        items: const [
+          {
+            'id': '00000000-0000-4000-8000-000000000901',
+            'code': 'CASH-01',
+            'name': 'صندوق اصلی تست',
+            'type': 'Cashbox',
+            'ledgerAccountId':
+                '00000000-0000-4000-8000-000000000601',
+            'ledgerAccountCode': '1101',
+            'ledgerAccountName': 'صندوق',
+            'currencyId': null,
+            'currencyCode': 'IRR',
+            'isActive': true,
+          },
+          {
+            'id': '00000000-0000-4000-8000-000000000902',
+            'code': 'BANK-01',
+            'name': 'بانک اصلی تست',
+            'type': 'Bank',
+            'ledgerAccountId':
+                '00000000-0000-4000-8000-000000000602',
+            'ledgerAccountCode': '1102',
+            'ledgerAccountName': 'بانک',
+            'currencyId': null,
+            'currencyCode': 'IRR',
+            'isActive': true,
+          },
+        ],
+      );
+    }
+
     for (final type in const [
       'SalesInvoice',
       'PurchaseOrder',
@@ -925,6 +964,7 @@ class LocalDatabase {
       'PurchaseReturn',
       'SalesReturn',
       'WarehouseTransfer',
+      'TreasuryTransaction',
     ]) {
       final existing = await getCachedStoreEntities(
         companyId: companyId,
