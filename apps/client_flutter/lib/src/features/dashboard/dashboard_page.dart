@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/database/local_database.dart';
 import '../accounting/accounting_home_page.dart';
+import '../reports/reports_center_page.dart';
 import '../sales_inventory/sales_inventory_home_page.dart';
 
 class DashboardPage extends StatelessWidget {
@@ -140,6 +141,19 @@ class _Navigation extends StatelessWidget {
                         accessToken: accessToken,
                         localDatabase: localDatabase,
                         isDemoMode: isDemoMode,
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (item.label == 'گزارش‌ها') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ReportsCenterPage(
+                        companyId: companyId,
+                        accessToken: accessToken,
+                        localDatabase: localDatabase,
                       ),
                     ),
                   );
