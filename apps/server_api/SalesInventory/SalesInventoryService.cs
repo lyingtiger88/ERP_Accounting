@@ -1242,6 +1242,278 @@ public sealed class SalesInventoryService(
             .ToArray();
     }
 
+    public async Task<PurchaseOrderView> CreatePurchaseOrderAsync(
+        Guid companyId,
+        Guid userId,
+        CreatePurchaseOrderRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Lines.Count == 0)
+        {
+            throw new ArgumentException(
+                "Purchase order requires at least one line.");
+        }
+
+        var fiscalYear = await db.FiscalYears
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == request.FiscalYearId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+
+        var warehouseExists = await db.Warehouses.AnyAsync(
+            x =>
+                x.Id == request.WarehouseId &&
+                x.CompanyId == companyId &&
+                x.IsActive,
+            cancellationToken);
+
+        if (!warehouseExists)
+        {
+            throw new ArgumentException(
+                "Warehouse does not exist or is inactive.");
+        }
+
+        var supplierExists = await db.DetailAccounts.AnyAsync(
+            x =>
+                x.Id == request.SupplierDetailAccountId &&
+                x.CompanyId == companyId &&
+                x.IsActive,
+            cancellationToken);
+
+        if (!supplierExists)
+        {
+            throw new ArgumentException(
+                "Supplier detail account does not exist or is inactive.");
+        }
+
+        var productIds = request.Lines
+            .Select(x => x.ProductId)
+            .Distinct()
+            .ToArray();
+
+        var products = await db.StoreProducts
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        if (products.Count != productIds.Length)
+        {
+            throw new ArgumentException(
+                "Purchase order contains missing or inactive products.");
+        }
+
+        var tradeCurrency = await ResolveTradeCurrencyAsync(
+            companyId,
+            request.CurrencyId,
+            request.ExchangeRate,
+            request.DocumentDate,
+            cancellationToken);
+
+        var order = new PurchaseOrder
+        {
+            CompanyId = companyId,
+            FiscalYearId = fiscalYear.Id,
+            Number = await GeneratePurchaseOrderNumberAsync(
+                companyId,
+                fiscalYear.PersianYear,
+                fiscalYear.Id,
+                cancellationToken),
+            DocumentDate = request.DocumentDate,
+            ExpectedDate = request.ExpectedDate,
+            CurrencyId = tradeCurrency.CurrencyId,
+            ExchangeRate = tradeCurrency.ExchangeRate,
+            SupplierDetailAccountId = request.SupplierDetailAccountId,
+            WarehouseId = request.WarehouseId,
+            Description = NullIfBlank(request.Description),
+            CreatedByUserId = userId
+        };
+
+        foreach (var requestedLine in request.Lines)
+        {
+            if (requestedLine.Quantity <= 0)
+            {
+                throw new ArgumentException(
+                    "Purchase order quantity must be greater than zero.");
+            }
+
+            if (requestedLine.DiscountAmount < 0 ||
+                requestedLine.TaxAmount < 0)
+            {
+                throw new ArgumentException(
+                    "Purchase order amounts cannot be negative.");
+            }
+
+            var product = products[requestedLine.ProductId];
+            var unitCost = requestedLine.UnitCost ??
+                (tradeCurrency.CurrencyId.HasValue
+                    ? ConvertFromBase(
+                        product.DefaultPurchasePrice,
+                        tradeCurrency.ExchangeRate)
+                    : product.DefaultPurchasePrice);
+
+            if (unitCost < 0)
+            {
+                throw new ArgumentException(
+                    "Purchase order unit cost cannot be negative.");
+            }
+
+            var gross = requestedLine.Quantity * unitCost;
+            if (requestedLine.DiscountAmount > gross)
+            {
+                throw new ArgumentException(
+                    "Purchase order discount cannot exceed gross amount.");
+            }
+
+            var net = gross - requestedLine.DiscountAmount;
+
+            order.Lines.Add(new PurchaseOrderLine
+            {
+                PurchaseOrderId = order.Id,
+                ProductId = product.Id,
+                Quantity = requestedLine.Quantity,
+                ReceivedQuantity = 0,
+                UnitCost = unitCost,
+                DiscountAmount = requestedLine.DiscountAmount,
+                TaxAmount = requestedLine.TaxAmount,
+                NetAmount = net
+            });
+
+            order.Subtotal += gross;
+            order.DiscountTotal += requestedLine.DiscountAmount;
+            order.TaxTotal += requestedLine.TaxAmount;
+        }
+
+        order.GrandTotal =
+            order.Subtotal - order.DiscountTotal + order.TaxTotal;
+
+        if (order.GrandTotal <= 0)
+        {
+            throw new ArgumentException(
+                "Purchase order grand total must be greater than zero.");
+        }
+
+        db.PurchaseOrders.Add(order);
+
+        db.AccountingAuditLogs.Add(new AccountingAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EntityType = "PurchaseOrder",
+            EntityId = order.Id,
+            Action = "PURCHASE_ORDER_CREATE",
+            PayloadJson =
+                $@"{{""orderNumber"":""{order.Number}""}}"
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return await BuildPurchaseOrderViewAsync(
+            order.Id,
+            companyId,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PurchaseOrderView>> GetPurchaseOrdersAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var keys = await db.PurchaseOrders
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.Id,
+                x.DocumentDate,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var ids = keys
+            .OrderByDescending(x => x.DocumentDate)
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => x.Id)
+            .ToArray();
+
+        var result = new List<PurchaseOrderView>(ids.Length);
+        foreach (var id in ids)
+        {
+            result.Add(await BuildPurchaseOrderViewAsync(
+                id,
+                companyId,
+                cancellationToken));
+        }
+
+        return result;
+    }
+
+    public async Task<PurchaseOrderView> SetPurchaseOrderStatusAsync(
+        Guid companyId,
+        Guid userId,
+        Guid orderId,
+        PurchaseOrderStatus targetStatus,
+        CancellationToken cancellationToken = default)
+    {
+        if (targetStatus == PurchaseOrderStatus.Draft)
+        {
+            throw new ArgumentException(
+                "Purchase order cannot be moved back to draft.");
+        }
+
+        var order = await db.PurchaseOrders
+            .FirstOrDefaultAsync(
+                x => x.Id == orderId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Purchase order does not exist in this company.");
+
+        var validTransition =
+            (order.Status == PurchaseOrderStatus.Draft &&
+             targetStatus is PurchaseOrderStatus.Approved or
+                 PurchaseOrderStatus.Cancelled) ||
+            (order.Status == PurchaseOrderStatus.Approved &&
+             targetStatus is PurchaseOrderStatus.Closed or
+                 PurchaseOrderStatus.Cancelled);
+
+        if (!validTransition)
+        {
+            throw new InvalidOperationException(
+                $"Cannot change purchase order from {order.Status} to {targetStatus}.");
+        }
+
+        order.Status = targetStatus;
+        if (targetStatus == PurchaseOrderStatus.Approved)
+        {
+            order.ApprovedAt = DateTimeOffset.UtcNow;
+        }
+        if (targetStatus is PurchaseOrderStatus.Closed or
+            PurchaseOrderStatus.Cancelled)
+        {
+            order.ClosedAt = DateTimeOffset.UtcNow;
+        }
+
+        db.AccountingAuditLogs.Add(new AccountingAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EntityType = "PurchaseOrder",
+            EntityId = order.Id,
+            Action = "PURCHASE_ORDER_STATUS",
+            PayloadJson =
+                $@"{{""orderNumber"":""{order.Number}"",""status"":""{targetStatus}""}}"
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return await BuildPurchaseOrderViewAsync(
+            order.Id,
+            companyId,
+            cancellationToken);
+    }
+
     public async Task<PurchaseReceiptView> CreatePurchaseReceiptAsync(
         Guid companyId,
         Guid userId,
@@ -2988,6 +3260,21 @@ public sealed class SalesInventoryService(
         }
     }
 
+    private async Task<string> GeneratePurchaseOrderNumberAsync(
+        Guid companyId,
+        int persianYear,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken)
+    {
+        var count = await db.PurchaseOrders.CountAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYearId,
+            cancellationToken);
+
+        return $"PO-{persianYear}-{count + 1:000000}";
+    }
+
     private async Task<string> GeneratePurchaseReturnNumberAsync(
         Guid companyId,
         Guid fiscalYearId,
@@ -3165,6 +3452,100 @@ public sealed class SalesInventoryService(
             journalNumber,
             receipt.CreatedAt,
             receipt.PostedAt,
+            lines);
+    }
+
+    private async Task<PurchaseOrderView> BuildPurchaseOrderViewAsync(
+        Guid orderId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var order = await db.PurchaseOrders
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == orderId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Purchase order does not exist in this company.");
+
+        var productIds = order.Lines
+            .Select(x => x.ProductId)
+            .Distinct()
+            .ToArray();
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var supplierName = await db.DetailAccounts
+            .AsNoTracking()
+            .Where(x => x.Id == order.SupplierDetailAccountId)
+            .Select(x => x.Name)
+            .SingleAsync(cancellationToken);
+
+        var warehouseName = await db.Warehouses
+            .AsNoTracking()
+            .Where(x => x.Id == order.WarehouseId)
+            .Select(x => x.Name)
+            .SingleAsync(cancellationToken);
+
+        string? currencyCode = null;
+        if (order.CurrencyId is Guid currencyId)
+        {
+            currencyCode = await db.Currencies
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == currencyId &&
+                    x.CompanyId == companyId)
+                .Select(x => x.Code)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        currencyCode ??= await GetBaseCurrencyCodeAsync(
+            companyId,
+            cancellationToken);
+
+        var lines = order.Lines.Select(line =>
+        {
+            products.TryGetValue(line.ProductId, out var product);
+
+            return new PurchaseOrderLineView(
+                line.Id,
+                line.ProductId,
+                product?.Sku ?? "?",
+                product?.Name ?? "کالای نامشخص",
+                product?.UnitName ?? "عدد",
+                line.Quantity,
+                line.ReceivedQuantity,
+                line.UnitCost,
+                line.DiscountAmount,
+                line.TaxAmount,
+                line.NetAmount);
+        }).ToArray();
+
+        return new PurchaseOrderView(
+            order.Id,
+            order.FiscalYearId,
+            order.Number,
+            order.DocumentDate,
+            order.ExpectedDate,
+            order.CurrencyId,
+            currencyCode,
+            order.ExchangeRate,
+            order.SupplierDetailAccountId,
+            supplierName,
+            order.WarehouseId,
+            warehouseName,
+            order.Status,
+            order.Description,
+            order.Subtotal,
+            order.DiscountTotal,
+            order.TaxTotal,
+            order.GrandTotal,
+            order.CreatedAt,
+            order.ApprovedAt,
+            order.ClosedAt,
             lines);
     }
 
