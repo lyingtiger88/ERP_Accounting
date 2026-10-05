@@ -527,7 +527,7 @@ public sealed class ReportingService(AppDbContext db)
         var lineIds = lineMap.Keys.ToArray();
 
         var dimensions = lineIds.Length == 0
-            ? []
+            ? Array.Empty<JournalLineDimension>()
             : await db.JournalLineDimensions
                 .AsNoTracking()
                 .Where(x => lineIds.Contains(x.JournalLineId))
