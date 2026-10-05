@@ -189,8 +189,15 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Leave
 - [ ] Payroll foundation
 - [ ] Management dashboard
-- [ ] KPI widgets
-- [ ] Custom reports
+- [x] KPI widgets
+- [x] Unified date-range reporting center
+- [x] Sales / purchase / product profitability reports
+- [x] Inventory movement and valuation reports
+- [x] Customer / supplier commercial-flow reports
+- [x] Treasury receipt / payment / transfer reports
+- [x] Cost-center / project dimension reports
+- [x] CSV export compatible with Excel
+- [ ] Custom report designer
 - [ ] Approval workflows
 - [ ] Notifications
 - [ ] Role-based dashboards
@@ -244,6 +251,9 @@ Implemented so far:
 - Initial chart of accounts
 - Balanced double-entry journal validation
 - Initial general ledger and trial balance reports
+- Unified Reports Center with fiscal-year and explicit from/to date filtering
+- Operational reporting for product profit, purchases, inventory, parties, treasury, cost centers and projects
+- Offline Demo reporting engine plus CSV export
 - Offline journal-entry UI with Rial amounts
 - Local Draft/Pending Sync documents stored transactionally with Outbox
 - End-to-end Outbox journal upload with retry/error tracking
