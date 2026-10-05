@@ -3,6 +3,7 @@ using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.Security;
+using ERPAccounting.Api.Reporting;
 using ERPAccounting.Api.SalesInventory;
 using ERPAccounting.Api.Treasury;
 using Microsoft.AspNetCore.Identity;
@@ -66,6 +67,7 @@ builder.Services.AddScoped<AccountingService>();
 builder.Services.AddScoped<CurrencyAccountingService>();
 builder.Services.AddScoped<SalesInventoryService>();
 builder.Services.AddScoped<TreasuryService>();
+builder.Services.AddScoped<ReportingService>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -1139,6 +1141,46 @@ store.MapPost("/invoices/{invoiceId:guid}/returns", async (
     }
 });
 
+
+var reports = app.MapGroup("/api/reports");
+
+reports.MapGet("/center", async (
+    HttpRequest request,
+    DateOnly? from,
+    DateOnly? to,
+    Guid? warehouseId,
+    Guid? productId,
+    Guid? detailAccountId,
+    AuthService authService,
+    ReportingService reportingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await reportingService.GetReportsCenterAsync(
+            user.CompanyId,
+            from,
+            to,
+            warehouseId,
+            productId,
+            detailAccountId,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 
 var treasury = app.MapGroup("/api/treasury");
 
