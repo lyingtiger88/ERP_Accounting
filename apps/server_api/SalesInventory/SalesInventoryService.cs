@@ -1645,6 +1645,7 @@ public sealed class SalesInventoryService(
             CurrencyId = tradeCurrency.CurrencyId,
             ExchangeRate = tradeCurrency.ExchangeRate,
             SupplierDetailAccountId = request.SupplierDetailAccountId,
+            PurchaseOrderId = request.PurchaseOrderId,
             WarehouseId = request.WarehouseId,
             PaymentType = request.PaymentType,
             Description = NullIfBlank(request.Description),
