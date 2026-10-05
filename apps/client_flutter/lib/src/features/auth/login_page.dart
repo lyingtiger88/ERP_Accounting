@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
 import '../../core/demo/demo_mode.dart';
+import '../../core/demo/local_demo_business_engine.dart';
 import '../../core/sync/accounting_sync_service.dart';
 import '../dashboard/dashboard_page.dart';
 import 'bootstrap_page.dart';
@@ -170,6 +171,9 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       await widget.localDatabase.ensureDemoWorkspace();
+      await LocalDemoBusinessEngine(
+        localDatabase: widget.localDatabase,
+      ).initialize();
 
       if (!mounted) return;
 
