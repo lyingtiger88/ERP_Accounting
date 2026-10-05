@@ -1235,6 +1235,72 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> getPurchaseOrders({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/sales-inventory/purchase-orders',
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createPurchaseOrder({
+    required String bearerToken,
+    required String fiscalYearId,
+    required DateTime documentDate,
+    DateTime? expectedDate,
+    required String supplierDetailAccountId,
+    required String warehouseId,
+    String? description,
+    required List<Map<String, dynamic>> lines,
+    String? currencyId,
+    num? exchangeRate,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/purchase-orders',
+      bearerToken: bearerToken,
+      body: {
+        'fiscalYearId': fiscalYearId,
+        'documentDate': _dateOnly(documentDate),
+        'expectedDate':
+            expectedDate == null ? null : _dateOnly(expectedDate),
+        'supplierDetailAccountId': supplierDetailAccountId,
+        'warehouseId': warehouseId,
+        'description': description,
+        'lines': lines,
+        'currencyId': currencyId,
+        'exchangeRate': exchangeRate,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> setPurchaseOrderStatus({
+    required String bearerToken,
+    required String orderId,
+    required String status,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/purchase-orders/' +
+          orderId +
+          '/status',
+      bearerToken: bearerToken,
+      body: {'status': status},
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getPurchaseReceipts({
     required String bearerToken,
   }) async {
