@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
+import '../../core/demo/local_demo_business_engine.dart';
 import '../accounting/report_support.dart';
 import 'new_warehouse_transfer_page.dart';
 
@@ -122,7 +124,9 @@ class _WarehouseTransfersPageState
                     ?['name']
                     ?.toString() ??
                 'انبار مقصد',
-            'status': 'LocalPending',
+            'status': DemoMode.isDemoToken(widget.accessToken)
+                ? 'Draft'
+                : 'LocalPending',
             'syncError': draft.lastError,
             'lines': lines,
           };
@@ -152,13 +156,25 @@ class _WarehouseTransfersPageState
     setState(() => _busy = true);
 
     try {
-      await _apiClient.postWarehouseTransfer(
-        bearerToken: widget.accessToken,
-        transferId: transfer['id'].toString(),
-      );
+      if (DemoMode.isDemoToken(widget.accessToken)) {
+        await LocalDemoBusinessEngine(
+          localDatabase: widget.localDatabase,
+        ).postWarehouseTransfer(transfer['id'].toString());
+      } else {
+        await _apiClient.postWarehouseTransfer(
+          bearerToken: widget.accessToken,
+          transferId: transfer['id'].toString(),
+        );
+      }
 
       if (mounted) setState(_reload);
     } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    } on StateError catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error.message)),
