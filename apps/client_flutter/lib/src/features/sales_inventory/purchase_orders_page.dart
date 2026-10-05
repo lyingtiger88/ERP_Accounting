@@ -6,6 +6,7 @@ import '../../core/demo/demo_mode.dart';
 import '../../core/demo/local_demo_business_engine.dart';
 import '../accounting/report_support.dart';
 import 'new_purchase_order_page.dart';
+import 'new_purchase_receipt_page.dart';
 
 class PurchaseOrdersPage extends StatefulWidget {
   const PurchaseOrdersPage({
@@ -180,6 +181,30 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
     if (result != null && mounted) {
       setState(_reload);
       _message('سفارش خرید ذخیره شد.');
+    }
+  }
+
+  Future<void> _receive(
+    Map<String, dynamic> order,
+  ) async {
+    final result = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute<dynamic>(
+        builder: (_) => NewPurchaseReceiptPage(
+          companyId: widget.companyId,
+          accessToken: widget.accessToken,
+          localDatabase: widget.localDatabase,
+          purchaseOrder: order,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(_reload);
+      _message(
+        'رسید سفارش ' +
+            order['number'].toString() +
+            ' ذخیره شد.',
+      );
     }
   }
 
@@ -443,6 +468,15 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
                               FilledButton.icon(
                                 onPressed: _busy
                                     ? null
+                                    : () => _receive(item),
+                                icon: const Icon(
+                                  Icons.inventory_2_outlined,
+                                ),
+                                label: const Text('دریافت کالا'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: _busy
+                                    ? null
                                     : () => _setStatus(
                                           item,
                                           'Closed',
@@ -450,7 +484,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
                                 icon: const Icon(
                                   Icons.inventory_outlined,
                                 ),
-                                label: const Text('بستن سفارش'),
+                                label: const Text('بستن دستی'),
                               ),
                               OutlinedButton.icon(
                                 onPressed: _busy
