@@ -1636,6 +1636,342 @@ public sealed class SalesInventoryService(
             receipt.GrandTotal);
     }
 
+    public async Task<PurchaseReturnView> CreatePurchaseReturnAsync(
+        Guid companyId,
+        Guid userId,
+        Guid receiptId,
+        CreatePurchaseReturnRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Lines.Count == 0)
+        {
+            throw new ArgumentException(
+                "Purchase return requires at least one line.");
+        }
+
+        var reason = request.Reason.Trim();
+        if (reason.Length == 0)
+        {
+            throw new ArgumentException(
+                "Purchase return reason is required.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var receipt = await db.PurchaseReceipts
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == receiptId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Purchase receipt does not exist in this company.");
+
+        if (receipt.Status is not PurchaseReceiptStatus.Posted and
+            not PurchaseReceiptStatus.Reversed)
+        {
+            throw new InvalidOperationException(
+                "Only posted purchase receipts can be returned.");
+        }
+
+        await EnsureOperationalDateOpenAsync(
+            companyId,
+            request.DocumentDate,
+            cancellationToken);
+
+        var requestedLineIds = request.Lines
+            .Select(x => x.PurchaseReceiptLineId)
+            .Distinct()
+            .ToArray();
+
+        var originalLines = receipt.Lines
+            .Where(x => requestedLineIds.Contains(x.Id))
+            .ToDictionary(x => x.Id);
+
+        if (originalLines.Count != requestedLineIds.Length)
+        {
+            throw new ArgumentException(
+                "Return contains lines that do not belong to the purchase receipt.");
+        }
+
+        var previousReturned = await db.PurchaseReturnLines
+            .AsNoTracking()
+            .Where(x =>
+                requestedLineIds.Contains(x.PurchaseReceiptLineId) &&
+                db.PurchaseReturns.Any(r =>
+                    r.Id == x.PurchaseReturnId &&
+                    r.CompanyId == companyId &&
+                    r.Status == PurchaseReturnStatus.Posted))
+            .GroupBy(x => x.PurchaseReceiptLineId)
+            .Select(group => new
+            {
+                LineId = group.Key,
+                Quantity = group.Sum(x => x.Quantity)
+            })
+            .ToDictionaryAsync(x => x.LineId, x => x.Quantity, cancellationToken);
+
+        var settings = await GetOrCreateSettingsEntityAsync(
+            companyId,
+            cancellationToken);
+
+        if (settings.PayablesAccountId is not Guid payablesAccountId ||
+            settings.PurchaseTaxReceivableAccountId is not Guid purchaseTaxAccountId)
+        {
+            throw new InvalidOperationException(
+                "Purchase accounting mappings are incomplete.");
+        }
+
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                receipt.Lines.Select(l => l.ProductId).Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var purchaseReturn = new PurchaseReturn
+        {
+            CompanyId = companyId,
+            FiscalYearId = receipt.FiscalYearId,
+            PurchaseReceiptId = receipt.Id,
+            Number = await GeneratePurchaseReturnNumberAsync(
+                companyId,
+                receipt.FiscalYearId,
+                cancellationToken),
+            DocumentDate = request.DocumentDate,
+            WarehouseId = receipt.WarehouseId,
+            Reason = reason,
+            CreatedByUserId = userId
+        };
+
+        var rate = receipt.ExchangeRate <= 0 ? 1m : receipt.ExchangeRate;
+
+        foreach (var requested in request.Lines)
+        {
+            if (requested.Quantity <= 0)
+            {
+                throw new ArgumentException(
+                    "Return quantity must be greater than zero.");
+            }
+
+            var original = originalLines[requested.PurchaseReceiptLineId];
+            var alreadyReturned =
+                previousReturned.GetValueOrDefault(original.Id);
+
+            if (alreadyReturned + requested.Quantity > original.Quantity)
+            {
+                throw new InvalidOperationException(
+                    "Returned quantity cannot exceed the remaining purchased quantity.");
+            }
+
+            var product = products[original.ProductId];
+            var traceMovements = await GetTraceMovementsAsync(
+                companyId,
+                receipt.WarehouseId,
+                product.Id,
+                original.LotNumber,
+                original.SerialNumber,
+                original.ExpiryDate,
+                cancellationToken);
+
+            var available = traceMovements.Sum(x => x.Quantity);
+            if (settings.PreventNegativeStock &&
+                available < requested.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Insufficient stock to return product '{product.Name}'. " +
+                    $"Available: {available}, requested: {requested.Quantity}.");
+            }
+
+            var ratio = requested.Quantity / original.Quantity;
+            var netAmount = original.NetAmount * ratio;
+            var taxAmount = original.TaxAmount * ratio;
+            var baseUnitCost =
+                ConvertToBase(original.NetAmount, rate) / original.Quantity;
+
+            purchaseReturn.Lines.Add(new PurchaseReturnLine
+            {
+                PurchaseReturnId = purchaseReturn.Id,
+                PurchaseReceiptLineId = original.Id,
+                ProductId = original.ProductId,
+                Quantity = requested.Quantity,
+                NetAmount = netAmount,
+                TaxAmount = taxAmount,
+                UnitCost = baseUnitCost
+            });
+
+            purchaseReturn.GrandTotal += netAmount + taxAmount;
+            purchaseReturn.TaxTotal += taxAmount;
+
+            db.StockMovements.Add(new StockMovement
+            {
+                CompanyId = companyId,
+                WarehouseId = receipt.WarehouseId,
+                ProductId = original.ProductId,
+                DocumentDate = request.DocumentDate,
+                Type = StockMovementType.PurchaseReturn,
+                Quantity = -requested.Quantity,
+                UnitCost = baseUnitCost,
+                LotNumber = original.LotNumber,
+                SerialNumber = original.SerialNumber,
+                ExpiryDate = original.ExpiryDate,
+                ReferenceType = "PurchaseReturn",
+                ReferenceId = purchaseReturn.Id,
+                Description = $"برگشت از خرید {receipt.Number}",
+                CreatedByUserId = userId
+            });
+        }
+
+        if (purchaseReturn.GrandTotal <= 0)
+        {
+            throw new InvalidOperationException(
+                "Purchase return total must be greater than zero.");
+        }
+
+        var settlementAccount =
+            receipt.PaymentType == PurchasePaymentType.Cash
+                ? settings.CashAccountId
+                : payablesAccountId;
+        var netInventory =
+            purchaseReturn.GrandTotal - purchaseReturn.TaxTotal;
+
+        var journalLines = new List<CreateJournalLineRequest>
+        {
+            new(
+                settlementAccount,
+                $"تسویه برگشت از خرید {purchaseReturn.Number}",
+                ConvertToBase(purchaseReturn.GrandTotal, rate),
+                0,
+                receipt.PaymentType == PurchasePaymentType.Credit
+                    ? receipt.SupplierDetailAccountId
+                    : null,
+                CurrencyId: receipt.CurrencyId,
+                ForeignDebit: receipt.CurrencyId.HasValue
+                    ? purchaseReturn.GrandTotal
+                    : null,
+                ForeignCredit: receipt.CurrencyId.HasValue
+                    ? 0m
+                    : null,
+                ExchangeRate: receipt.CurrencyId.HasValue
+                    ? rate
+                    : null),
+            new(
+                settings.InventoryAccountId,
+                $"خروج موجودی برگشت خرید {purchaseReturn.Number}",
+                0,
+                ConvertToBase(netInventory, rate))
+        };
+
+        if (purchaseReturn.TaxTotal > 0)
+        {
+            journalLines.Add(new CreateJournalLineRequest(
+                purchaseTaxAccountId,
+                $"برگشت مالیات خرید {purchaseReturn.Number}",
+                0,
+                ConvertToBase(purchaseReturn.TaxTotal, rate)));
+        }
+
+        var journal = await accountingService
+            .PostJournalWithinCurrentTransactionAsync(
+                companyId,
+                userId,
+                new CreateJournalRequest(
+                    null,
+                    request.DocumentDate,
+                    $"ثبت حسابداری برگشت از خرید {purchaseReturn.Number}",
+                    journalLines,
+                    receipt.FiscalYearId),
+                "POST_PURCHASE_RETURN",
+                cancellationToken);
+
+        purchaseReturn.AccountingJournalEntryId = journal.Id;
+        db.PurchaseReturns.Add(purchaseReturn);
+
+        var allReceiptLineIds = receipt.Lines.Select(x => x.Id).ToArray();
+        var allPreviousReturns = await db.PurchaseReturnLines
+            .AsNoTracking()
+            .Where(x =>
+                allReceiptLineIds.Contains(x.PurchaseReceiptLineId) &&
+                db.PurchaseReturns.Any(r =>
+                    r.Id == x.PurchaseReturnId &&
+                    r.CompanyId == companyId &&
+                    r.Status == PurchaseReturnStatus.Posted))
+            .GroupBy(x => x.PurchaseReceiptLineId)
+            .Select(group => new
+            {
+                LineId = group.Key,
+                Quantity = group.Sum(x => x.Quantity)
+            })
+            .ToDictionaryAsync(x => x.LineId, x => x.Quantity, cancellationToken);
+
+        var newReturnByLine = purchaseReturn.Lines
+            .GroupBy(x => x.PurchaseReceiptLineId)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.Quantity));
+
+        var fullyReturned = receipt.Lines.All(line =>
+            allPreviousReturns.GetValueOrDefault(line.Id) +
+            newReturnByLine.GetValueOrDefault(line.Id) >= line.Quantity);
+
+        if (fullyReturned)
+        {
+            receipt.Status = PurchaseReceiptStatus.Reversed;
+            receipt.ReversalJournalEntryId = journal.Id;
+        }
+
+        db.AccountingAuditLogs.Add(new AccountingAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EntityType = "PurchaseReturn",
+            EntityId = purchaseReturn.Id,
+            Action = "PURCHASE_RETURN_POST",
+            Reason = reason,
+            PayloadJson =
+                $"{{\"returnNumber\":\"{purchaseReturn.Number}\",\"receiptNumber\":\"{receipt.Number}\",\"journalNumber\":\"{journal.Number}\"}}"
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return await BuildPurchaseReturnViewAsync(
+            purchaseReturn.Id,
+            companyId,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PurchaseReturnView>> GetPurchaseReturnsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var keys = await db.PurchaseReturns
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.Id,
+                x.DocumentDate,
+                x.CreatedAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var ids = keys
+            .OrderByDescending(x => x.DocumentDate)
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => x.Id)
+            .ToArray();
+
+        var result = new List<PurchaseReturnView>(ids.Length);
+        foreach (var id in ids)
+        {
+            result.Add(await BuildPurchaseReturnViewAsync(
+                id,
+                companyId,
+                cancellationToken));
+        }
+
+        return result;
+    }
+
     public async Task<WarehouseTransferView> CreateWarehouseTransferAsync(
         Guid companyId,
         Guid userId,
@@ -2652,6 +2988,28 @@ public sealed class SalesInventoryService(
         }
     }
 
+    private async Task<string> GeneratePurchaseReturnNumberAsync(
+        Guid companyId,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken)
+    {
+        var fiscalYear = await db.FiscalYears
+            .AsNoTracking()
+            .SingleAsync(
+                x =>
+                    x.Id == fiscalYearId &&
+                    x.CompanyId == companyId,
+                cancellationToken);
+
+        var count = await db.PurchaseReturns.CountAsync(
+            x =>
+                x.CompanyId == companyId &&
+                x.FiscalYearId == fiscalYearId,
+            cancellationToken);
+
+        return $"PRT-{fiscalYear.PersianYear}-{count + 1:000000}";
+    }
+
     private async Task<string> GeneratePurchaseNumberAsync(
         Guid companyId,
         int persianYear,
@@ -2807,6 +3165,111 @@ public sealed class SalesInventoryService(
             journalNumber,
             receipt.CreatedAt,
             receipt.PostedAt,
+            lines);
+    }
+
+    private async Task<PurchaseReturnView> BuildPurchaseReturnViewAsync(
+        Guid returnId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var purchaseReturn = await db.PurchaseReturns
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.Id == returnId && x.CompanyId == companyId,
+                cancellationToken)
+            ?? throw new ArgumentException(
+                "Purchase return does not exist in this company.");
+
+        var receipt = await db.PurchaseReceipts
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == purchaseReturn.PurchaseReceiptId &&
+                x.CompanyId == companyId)
+            .Select(x => new
+            {
+                x.Number,
+                x.CurrencyId,
+                x.ExchangeRate
+            })
+            .SingleAsync(cancellationToken);
+
+        var productIds = purchaseReturn.Lines
+            .Select(x => x.ProductId)
+            .Distinct()
+            .ToArray();
+        var products = await db.StoreProducts
+            .AsNoTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var warehouseName = await db.Warehouses
+            .AsNoTracking()
+            .Where(x => x.Id == purchaseReturn.WarehouseId)
+            .Select(x => x.Name)
+            .SingleAsync(cancellationToken);
+
+        string? journalNumber = null;
+        if (purchaseReturn.AccountingJournalEntryId is Guid journalId)
+        {
+            journalNumber = await db.JournalEntries
+                .AsNoTracking()
+                .Where(x => x.Id == journalId)
+                .Select(x => x.Number)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        string? currencyCode = null;
+        if (receipt.CurrencyId is Guid currencyId)
+        {
+            currencyCode = await db.Currencies
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == currencyId &&
+                    x.CompanyId == companyId)
+                .Select(x => x.Code)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        currencyCode ??= await GetBaseCurrencyCodeAsync(
+            companyId,
+            cancellationToken);
+
+        var lines = purchaseReturn.Lines.Select(line =>
+        {
+            products.TryGetValue(line.ProductId, out var product);
+
+            return new PurchaseReturnLineView(
+                line.Id,
+                line.PurchaseReceiptLineId,
+                line.ProductId,
+                product?.Sku ?? "?",
+                product?.Name ?? "کالای نامشخص",
+                line.Quantity,
+                line.NetAmount,
+                line.TaxAmount,
+                line.UnitCost);
+        }).ToArray();
+
+        return new PurchaseReturnView(
+            purchaseReturn.Id,
+            purchaseReturn.PurchaseReceiptId,
+            receipt.Number,
+            purchaseReturn.Number,
+            purchaseReturn.DocumentDate,
+            receipt.CurrencyId,
+            currencyCode,
+            receipt.ExchangeRate,
+            purchaseReturn.WarehouseId,
+            warehouseName,
+            purchaseReturn.Status,
+            purchaseReturn.Reason,
+            purchaseReturn.GrandTotal,
+            purchaseReturn.TaxTotal,
+            purchaseReturn.AccountingJournalEntryId,
+            journalNumber,
+            purchaseReturn.CreatedAt,
             lines);
     }
 
