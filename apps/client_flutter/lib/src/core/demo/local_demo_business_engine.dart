@@ -885,7 +885,7 @@ class LocalDemoBusinessEngine {
         for (final raw in
             (invoice['lines'] as List<dynamic>? ?? const []))
           Map<String, dynamic>.from(raw as Map)['id'].toString():
-              Map<String, dynamic>.from(raw as Map),
+              Map<String, dynamic>.from(raw),
       };
 
       final previousReturns = await _readCachedList(
