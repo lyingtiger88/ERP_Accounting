@@ -214,6 +214,7 @@ public sealed class PurchaseReceipt
     public Guid? CurrencyId { get; set; }
     public decimal ExchangeRate { get; set; } = 1m;
     public Guid? SupplierDetailAccountId { get; set; }
+    public Guid? PurchaseOrderId { get; set; }
     public required Guid WarehouseId { get; set; }
     public PurchasePaymentType PaymentType { get; set; } = PurchasePaymentType.Credit;
     public PurchaseReceiptStatus Status { get; set; } = PurchaseReceiptStatus.Draft;
@@ -235,6 +236,7 @@ public sealed class PurchaseReceiptLine
     public Guid Id { get; set; } = Guid.NewGuid();
     public required Guid PurchaseReceiptId { get; set; }
     public required Guid ProductId { get; set; }
+    public Guid? PurchaseOrderLineId { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitCost { get; set; }
     public decimal DiscountAmount { get; set; }
