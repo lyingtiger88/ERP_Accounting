@@ -1309,6 +1309,162 @@ public sealed class DetailAccountSyncTests
     }
 
     [Fact]
+    public async Task PurchaseOrder_ReceiptsTrackOpenQuantity_AndAutoClose()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var supplier = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "SUP-PO-REC",
+                "تامین‌کننده دریافت سفارش",
+                DetailAccountType.Supplier,
+                null));
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "PO-REC-001",
+                "کالای دریافت سفارش",
+                "626000000404",
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                20_000m,
+                12_000m));
+
+        var date = fiscalYear.StartDate.AddDays(12);
+
+        var order = await store.CreatePurchaseOrderAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseOrderRequest(
+                fiscalYear.Id,
+                date,
+                date.AddDays(5),
+                supplier.Id,
+                warehouse.Id,
+                "سفارش برای دریافت مرحله‌ای",
+                new[]
+                {
+                    new PurchaseOrderLineRequest(
+                        product.Id,
+                        4m,
+                        12_000m,
+                        2_000m,
+                        4_600m)
+                }));
+
+        order = await store.SetPurchaseOrderStatusAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            order.Id,
+            PurchaseOrderStatus.Approved);
+
+        var orderLine = order.Lines.Single();
+
+        var firstReceipt = await store.CreatePurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseReceiptRequest(
+                fiscalYear.Id,
+                date.AddDays(1),
+                warehouse.Id,
+                supplier.Id,
+                PurchasePaymentType.Credit,
+                "دریافت اول",
+                new[]
+                {
+                    new PurchaseReceiptLineRequest(
+                        product.Id,
+                        2m,
+                        12_000m,
+                        1_000m,
+                        2_300m,
+                        PurchaseOrderLineId: orderLine.Id)
+                },
+                PurchaseOrderId: order.Id));
+
+        Assert.Equal(order.Id, firstReceipt.PurchaseOrderId);
+        Assert.Equal(order.Number, firstReceipt.PurchaseOrderNumber);
+
+        await store.PostPurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            firstReceipt.Id);
+
+        var afterFirst = (await store.GetPurchaseOrdersAsync(
+            fixture.Company.Id)).Single(x => x.Id == order.Id);
+
+        Assert.Equal(PurchaseOrderStatus.Approved, afterFirst.Status);
+        Assert.Equal(
+            2m,
+            afterFirst.Lines.Single().ReceivedQuantity);
+
+        var secondReceipt = await store.CreatePurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseReceiptRequest(
+                fiscalYear.Id,
+                date.AddDays(2),
+                warehouse.Id,
+                supplier.Id,
+                PurchasePaymentType.Credit,
+                "دریافت دوم",
+                new[]
+                {
+                    new PurchaseReceiptLineRequest(
+                        product.Id,
+                        2m,
+                        12_000m,
+                        1_000m,
+                        2_300m,
+                        PurchaseOrderLineId: orderLine.Id)
+                },
+                PurchaseOrderId: order.Id));
+
+        await store.PostPurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            secondReceipt.Id);
+
+        var completed = (await store.GetPurchaseOrdersAsync(
+            fixture.Company.Id)).Single(x => x.Id == order.Id);
+
+        Assert.Equal(PurchaseOrderStatus.Closed, completed.Status);
+        Assert.Equal(
+            4m,
+            completed.Lines.Single().ReceivedQuantity);
+        Assert.NotNull(completed.ClosedAt);
+
+        var stock = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(4m, stock.Quantity);
+        Assert.Equal(46_000m, stock.InventoryValue);
+    }
+
+    [Fact]
     public async Task PurchaseReturn_ReducesStock_AndReversesPurchaseAccounting()
     {
         await using var fixture = await TestFixture.CreateAsync();
