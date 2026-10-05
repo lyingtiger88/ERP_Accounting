@@ -379,6 +379,51 @@ public static class SalesInventorySchemaBootstrapper
                 FOREIGN KEY ("SalesInvoiceLineId") REFERENCES sales_invoice_lines ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
             );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_returns (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_returns" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "FiscalYearId" TEXT NOT NULL,
+                "PurchaseReceiptId" TEXT NOT NULL,
+                "Number" TEXT NOT NULL,
+                "DocumentDate" TEXT NOT NULL,
+                "WarehouseId" TEXT NOT NULL,
+                "Status" TEXT NOT NULL,
+                "Reason" TEXT NULL,
+                "GrandTotal" TEXT NOT NULL,
+                "TaxTotal" TEXT NOT NULL,
+                "AccountingJournalEntryId" TEXT NULL,
+                "ReversalJournalEntryId" TEXT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("PurchaseReceiptId") REFERENCES purchase_receipts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ReversalJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_purchase_returns_CompanyId_Number"
+            ON purchase_returns ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_return_lines (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_return_lines" PRIMARY KEY,
+                "PurchaseReturnId" TEXT NOT NULL,
+                "PurchaseReceiptLineId" TEXT NOT NULL,
+                "ProductId" TEXT NOT NULL,
+                "Quantity" TEXT NOT NULL,
+                "NetAmount" TEXT NOT NULL,
+                "TaxAmount" TEXT NOT NULL,
+                "UnitCost" TEXT NOT NULL,
+                FOREIGN KEY ("PurchaseReturnId") REFERENCES purchase_returns ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("PurchaseReceiptLineId") REFERENCES purchase_receipt_lines ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
             """
         };
 
@@ -885,6 +930,51 @@ public static class SalesInventorySchemaBootstrapper
                 "CostAmount" numeric(20,4) NOT NULL,
                 FOREIGN KEY ("SalesReturnId") REFERENCES sales_returns ("Id") ON DELETE CASCADE,
                 FOREIGN KEY ("SalesInvoiceLineId") REFERENCES sales_invoice_lines ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_returns (
+                "Id" uuid NOT NULL CONSTRAINT "PK_purchase_returns" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "FiscalYearId" uuid NOT NULL,
+                "PurchaseReceiptId" uuid NOT NULL,
+                "Number" character varying(80) NOT NULL,
+                "DocumentDate" date NOT NULL,
+                "WarehouseId" uuid NOT NULL,
+                "Status" character varying(30) NOT NULL,
+                "Reason" character varying(500) NULL,
+                "GrandTotal" numeric(20,4) NOT NULL,
+                "TaxTotal" numeric(20,4) NOT NULL,
+                "AccountingJournalEntryId" uuid NULL,
+                "ReversalJournalEntryId" uuid NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("PurchaseReceiptId") REFERENCES purchase_receipts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("ReversalJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_purchase_returns_CompanyId_Number"
+            ON purchase_returns ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_return_lines (
+                "Id" uuid NOT NULL CONSTRAINT "PK_purchase_return_lines" PRIMARY KEY,
+                "PurchaseReturnId" uuid NOT NULL,
+                "PurchaseReceiptLineId" uuid NOT NULL,
+                "ProductId" uuid NOT NULL,
+                "Quantity" numeric(20,4) NOT NULL,
+                "NetAmount" numeric(20,4) NOT NULL,
+                "TaxAmount" numeric(20,4) NOT NULL,
+                "UnitCost" numeric(20,4) NOT NULL,
+                FOREIGN KEY ("PurchaseReturnId") REFERENCES purchase_returns ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("PurchaseReceiptLineId") REFERENCES purchase_receipt_lines ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
             );
             """
