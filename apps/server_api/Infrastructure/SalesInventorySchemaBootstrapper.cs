@@ -244,6 +244,55 @@ public static class SalesInventorySchemaBootstrapper
             ON stock_movements ("ReferenceType", "ReferenceId");
             """,
             """
+            CREATE TABLE IF NOT EXISTS purchase_orders (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_orders" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "FiscalYearId" TEXT NOT NULL,
+                "Number" TEXT NOT NULL,
+                "DocumentDate" TEXT NOT NULL,
+                "ExpectedDate" TEXT NULL,
+                "CurrencyId" TEXT NULL,
+                "ExchangeRate" TEXT NOT NULL DEFAULT '1',
+                "SupplierDetailAccountId" TEXT NOT NULL,
+                "WarehouseId" TEXT NOT NULL,
+                "Status" TEXT NOT NULL,
+                "Description" TEXT NULL,
+                "Subtotal" TEXT NOT NULL,
+                "DiscountTotal" TEXT NOT NULL,
+                "TaxTotal" TEXT NOT NULL,
+                "GrandTotal" TEXT NOT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "ApprovedAt" TEXT NULL,
+                "ClosedAt" TEXT NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CurrencyId") REFERENCES currencies ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("SupplierDetailAccountId") REFERENCES detail_accounts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_purchase_orders_CompanyId_Number"
+            ON purchase_orders ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_order_lines (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_order_lines" PRIMARY KEY,
+                "PurchaseOrderId" TEXT NOT NULL,
+                "ProductId" TEXT NOT NULL,
+                "Quantity" TEXT NOT NULL,
+                "ReceivedQuantity" TEXT NOT NULL DEFAULT '0',
+                "UnitCost" TEXT NOT NULL,
+                "DiscountAmount" TEXT NOT NULL,
+                "TaxAmount" TEXT NOT NULL,
+                "NetAmount" TEXT NOT NULL,
+                FOREIGN KEY ("PurchaseOrderId") REFERENCES purchase_orders ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
             CREATE TABLE IF NOT EXISTS purchase_receipts (
                 "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_receipts" PRIMARY KEY,
                 "CompanyId" TEXT NOT NULL,
@@ -796,6 +845,55 @@ public static class SalesInventorySchemaBootstrapper
             """
             CREATE INDEX IF NOT EXISTS "IX_stock_movements_Company_Serial"
             ON stock_movements ("CompanyId", "SerialNumber");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_orders (
+                "Id" uuid NOT NULL CONSTRAINT "PK_purchase_orders" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "FiscalYearId" uuid NOT NULL,
+                "Number" character varying(80) NOT NULL,
+                "DocumentDate" date NOT NULL,
+                "ExpectedDate" date NULL,
+                "CurrencyId" uuid NULL,
+                "ExchangeRate" numeric(24,8) NOT NULL DEFAULT 1,
+                "SupplierDetailAccountId" uuid NOT NULL,
+                "WarehouseId" uuid NOT NULL,
+                "Status" character varying(30) NOT NULL,
+                "Description" character varying(500) NULL,
+                "Subtotal" numeric(20,4) NOT NULL,
+                "DiscountTotal" numeric(20,4) NOT NULL,
+                "TaxTotal" numeric(20,4) NOT NULL,
+                "GrandTotal" numeric(20,4) NOT NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "ApprovedAt" timestamp with time zone NULL,
+                "ClosedAt" timestamp with time zone NULL,
+                FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CurrencyId") REFERENCES currencies ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("SupplierDetailAccountId") REFERENCES detail_accounts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_purchase_orders_CompanyId_Number"
+            ON purchase_orders ("CompanyId", "Number");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS purchase_order_lines (
+                "Id" uuid NOT NULL CONSTRAINT "PK_purchase_order_lines" PRIMARY KEY,
+                "PurchaseOrderId" uuid NOT NULL,
+                "ProductId" uuid NOT NULL,
+                "Quantity" numeric(20,4) NOT NULL,
+                "ReceivedQuantity" numeric(20,4) NOT NULL DEFAULT 0,
+                "UnitCost" numeric(20,4) NOT NULL,
+                "DiscountAmount" numeric(20,4) NOT NULL,
+                "TaxAmount" numeric(20,4) NOT NULL,
+                "NetAmount" numeric(20,4) NOT NULL,
+                FOREIGN KEY ("PurchaseOrderId") REFERENCES purchase_orders ("Id") ON DELETE CASCADE,
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+            );
             """,
             """
             CREATE TABLE IF NOT EXISTS purchase_receipts (
