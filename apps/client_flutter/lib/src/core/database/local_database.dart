@@ -921,6 +921,7 @@ class LocalDatabase {
     for (final type in const [
       'SalesInvoice',
       'PurchaseReceipt',
+      'PurchaseReturn',
       'SalesReturn',
       'WarehouseTransfer',
     ]) {
