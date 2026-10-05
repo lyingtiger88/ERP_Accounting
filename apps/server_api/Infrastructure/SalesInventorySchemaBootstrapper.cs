@@ -269,6 +269,7 @@ public static class SalesInventorySchemaBootstrapper
                 FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("CurrencyId") REFERENCES currencies ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("SupplierDetailAccountId") REFERENCES detail_accounts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("PurchaseOrderId") REFERENCES purchase_orders ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
             );
@@ -302,6 +303,7 @@ public static class SalesInventorySchemaBootstrapper
                 "CurrencyId" TEXT NULL,
                 "ExchangeRate" TEXT NOT NULL DEFAULT '1',
                 "SupplierDetailAccountId" TEXT NULL,
+                "PurchaseOrderId" TEXT NULL,
                 "WarehouseId" TEXT NOT NULL,
                 "PaymentType" TEXT NOT NULL,
                 "Status" TEXT NOT NULL,
@@ -319,6 +321,7 @@ public static class SalesInventorySchemaBootstrapper
                 FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("CurrencyId") REFERENCES currencies ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("SupplierDetailAccountId") REFERENCES detail_accounts ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("PurchaseOrderId") REFERENCES purchase_orders ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("WarehouseId") REFERENCES warehouses ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("AccountingJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
                 FOREIGN KEY ("ReversalJournalEntryId") REFERENCES journal_entries ("Id") ON DELETE RESTRICT,
@@ -334,6 +337,7 @@ public static class SalesInventorySchemaBootstrapper
                 "Id" TEXT NOT NULL CONSTRAINT "PK_purchase_receipt_lines" PRIMARY KEY,
                 "PurchaseReceiptId" TEXT NOT NULL,
                 "ProductId" TEXT NOT NULL,
+                "PurchaseOrderLineId" TEXT NULL,
                 "Quantity" TEXT NOT NULL,
                 "UnitCost" TEXT NOT NULL,
                 "DiscountAmount" TEXT NOT NULL,
@@ -343,7 +347,8 @@ public static class SalesInventorySchemaBootstrapper
                 "SerialNumber" TEXT NULL,
                 "ExpiryDate" TEXT NULL,
                 FOREIGN KEY ("PurchaseReceiptId") REFERENCES purchase_receipts ("Id") ON DELETE CASCADE,
-                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("PurchaseOrderLineId") REFERENCES purchase_order_lines ("Id") ON DELETE RESTRICT
             );
             """,
             """
@@ -537,6 +542,14 @@ public static class SalesInventorySchemaBootstrapper
         await EnsureSqliteColumnAsync(
             db, "purchase_receipts", "ExchangeRate",
             "ALTER TABLE purchase_receipts ADD COLUMN \"ExchangeRate\" TEXT NOT NULL DEFAULT '1';",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "purchase_receipts", "PurchaseOrderId",
+            "ALTER TABLE purchase_receipts ADD COLUMN \"PurchaseOrderId\" TEXT NULL;",
+            cancellationToken);
+        await EnsureSqliteColumnAsync(
+            db, "purchase_receipt_lines", "PurchaseOrderLineId",
+            "ALTER TABLE purchase_receipt_lines ADD COLUMN \"PurchaseOrderLineId\" TEXT NULL;",
             cancellationToken);
 
         await db.Database.ExecuteSqlRawAsync(
@@ -905,6 +918,7 @@ public static class SalesInventorySchemaBootstrapper
                 "CurrencyId" uuid NULL,
                 "ExchangeRate" numeric(24,8) NOT NULL DEFAULT 1,
                 "SupplierDetailAccountId" uuid NULL,
+                "PurchaseOrderId" uuid NULL,
                 "WarehouseId" uuid NOT NULL,
                 "PaymentType" character varying(30) NOT NULL,
                 "Status" character varying(30) NOT NULL,
@@ -936,6 +950,7 @@ public static class SalesInventorySchemaBootstrapper
                 "Id" uuid NOT NULL CONSTRAINT "PK_purchase_receipt_lines" PRIMARY KEY,
                 "PurchaseReceiptId" uuid NOT NULL,
                 "ProductId" uuid NOT NULL,
+                "PurchaseOrderLineId" uuid NULL,
                 "Quantity" numeric(20,4) NOT NULL,
                 "UnitCost" numeric(20,4) NOT NULL,
                 "DiscountAmount" numeric(20,4) NOT NULL,
@@ -945,7 +960,8 @@ public static class SalesInventorySchemaBootstrapper
                 "SerialNumber" character varying(180) NULL,
                 "ExpiryDate" date NULL,
                 FOREIGN KEY ("PurchaseReceiptId") REFERENCES purchase_receipts ("Id") ON DELETE CASCADE,
-                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT
+                FOREIGN KEY ("ProductId") REFERENCES store_products ("Id") ON DELETE RESTRICT,
+                FOREIGN KEY ("PurchaseOrderLineId") REFERENCES purchase_order_lines ("Id") ON DELETE RESTRICT
             );
             """,
             """
@@ -1082,5 +1098,18 @@ public static class SalesInventorySchemaBootstrapper
         {
             await db.Database.ExecuteSqlRawAsync(command, cancellationToken);
         }
+
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE purchase_receipts ADD COLUMN IF NOT EXISTS \"PurchaseOrderId\" uuid NULL;",
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE purchase_receipt_lines ADD COLUMN IF NOT EXISTS \"PurchaseOrderLineId\" uuid NULL;",
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_purchase_receipts_PurchaseOrderId\" ON purchase_receipts (\"PurchaseOrderId\");",
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS \"IX_purchase_receipt_lines_PurchaseOrderLineId\" ON purchase_receipt_lines (\"PurchaseOrderLineId\");",
+            cancellationToken);
     }
 }
