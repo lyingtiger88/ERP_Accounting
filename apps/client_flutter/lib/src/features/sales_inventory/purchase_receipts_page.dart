@@ -238,6 +238,192 @@ class _PurchaseReceiptsPageState
     }
   }
 
+  Future<void> _returnPurchase(
+    Map<String, dynamic> receipt,
+  ) async {
+    if (_busy || receipt['status'].toString() != 'Posted') {
+      return;
+    }
+
+    final lines = (receipt['lines'] as List<dynamic>? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+    final controllers = <String, TextEditingController>{
+      for (final line in lines)
+        line['id'].toString(): TextEditingController(text: '0'),
+    };
+    final reason = TextEditingController();
+    var date = DateTime.now();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(
+              'برگشت از خرید ' + receipt['number'].toString(),
+            ),
+            content: SizedBox(
+              width: 620,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final line in lines)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                line['sku'].toString() +
+                                    ' — ' +
+                                    line['productName'].toString() +
+                                    ' • خرید: ' +
+                                    formatReportMoney(
+                                      reportNumber(line['quantity']),
+                                    ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 130,
+                              child: TextField(
+                                controller:
+                                    controllers[line['id'].toString()],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                textDirection: TextDirection.ltr,
+                                decoration: const InputDecoration(
+                                  labelText: 'تعداد برگشت',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    TextField(
+                      controller: reason,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'علت برگشت از خرید',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: date,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setDialogState(() => date = picked);
+                        }
+                      },
+                      icon: const Icon(Icons.calendar_month_outlined),
+                      label: Text(formatReportDate(date)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('انصراف'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  if (reason.text.trim().isEmpty) return;
+                  final hasQuantity = controllers.values.any(
+                    (controller) =>
+                        (num.tryParse(
+                              controller.text.replaceAll(',', '').trim(),
+                            ) ??
+                            0) >
+                        0,
+                  );
+                  if (!hasQuantity) return;
+                  Navigator.pop(context, true);
+                },
+                icon: const Icon(Icons.assignment_return_outlined),
+                label: const Text('ثبت برگشت خرید'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+      reason.dispose();
+      return;
+    }
+
+    final requestLines = <Map<String, dynamic>>[];
+    for (final line in lines) {
+      final value = num.tryParse(
+            controllers[line['id'].toString()]!
+                .text
+                .replaceAll(',', '')
+                .trim(),
+          ) ??
+          0;
+      if (value > 0) {
+        requestLines.add({
+          'purchaseReceiptLineId': line['id'].toString(),
+          'quantity': value,
+        });
+      }
+    }
+
+    setState(() => _busy = true);
+
+    try {
+      final result = DemoMode.isDemoToken(widget.accessToken)
+          ? await LocalDemoBusinessEngine(
+              localDatabase: widget.localDatabase,
+            ).createPurchaseReturn(
+              receiptId: receipt['id'].toString(),
+              documentDate: date,
+              reason: reason.text.trim(),
+              lines: requestLines,
+            )
+          : await _apiClient.createPurchaseReturn(
+              bearerToken: widget.accessToken,
+              receiptId: receipt['id'].toString(),
+              documentDate: date,
+              reason: reason.text.trim(),
+              lines: requestLines,
+            );
+
+      if (!mounted) return;
+      setState(_reload);
+      _message(
+        'برگشت خرید ' +
+            result['number'].toString() +
+            ' ثبت شد • سند: ' +
+            result['accountingJournalNumber'].toString(),
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } on StateError catch (error) {
+      _message(error.message);
+    } finally {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+      reason.dispose();
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _message(String value) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -322,10 +508,12 @@ class _PurchaseReceiptsPageState
                       label: Text(
                         item['status'].toString() == 'Posted'
                             ? 'قطعی'
-                            : item['status'].toString() ==
-                                    'LocalPending'
-                                ? 'منتظر Sync'
-                                : 'پیش‌نویس',
+                            : item['status'].toString() == 'Reversed'
+                                ? 'برگشت کامل'
+                                : item['status'].toString() ==
+                                        'LocalPending'
+                                    ? 'منتظر Sync'
+                                    : 'پیش‌نویس',
                       ),
                     ),
                     children: [
@@ -398,6 +586,16 @@ class _PurchaseReceiptsPageState
                                   Icons.check_circle_outline,
                                 ),
                                 label: const Text('ثبت قطعی'),
+                              ),
+                            if (item['status'].toString() == 'Posted')
+                              OutlinedButton.icon(
+                                onPressed: _busy
+                                    ? null
+                                    : () => _returnPurchase(item),
+                                icon: const Icon(
+                                  Icons.assignment_return_outlined,
+                                ),
+                                label: const Text('برگشت از خرید'),
                               ),
                             if (item['accountingJournalNumber'] != null)
                               Chip(
