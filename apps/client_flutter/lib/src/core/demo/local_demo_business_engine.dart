@@ -108,6 +108,44 @@ class LocalDemoBusinessEngine {
 
       final warehouseId = payload['warehouseId']?.toString();
       final fiscalYearId = payload['fiscalYearId']?.toString();
+      final purchaseOrderId = payload['purchaseOrderId']?.toString();
+      Map<String, dynamic>? linkedOrder;
+      Map<String, Map<String, dynamic>>? linkedOrderLines;
+
+      if (purchaseOrderId != null && purchaseOrderId.isNotEmpty) {
+        final rows = await txn.query(
+          'cached_store_entities',
+          columns: ['payload_json'],
+          where:
+              'company_id = ? AND entity_type = ? AND entity_id = ?',
+          whereArgs: [
+            DemoMode.companyId,
+            'PurchaseOrder',
+            purchaseOrderId,
+          ],
+          limit: 1,
+        );
+
+        if (rows.isEmpty) {
+          throw StateError('سفارش خرید لینک‌شده پیدا نشد.');
+        }
+
+        linkedOrder = Map<String, dynamic>.from(
+          jsonDecode(rows.first['payload_json'] as String) as Map,
+        );
+        if (linkedOrder['status']?.toString() != 'Approved') {
+          throw StateError(
+            'فقط سفارش خرید تاییدشده قابل دریافت است.',
+          );
+        }
+
+        linkedOrderLines = {
+          for (final raw in
+              (linkedOrder['lines'] as List<dynamic>? ?? const []))
+            Map<String, dynamic>.from(raw as Map)['id'].toString():
+                Map<String, dynamic>.from(raw),
+        };
+      }
 
       if (warehouseId == null ||
           !warehouses.containsKey(warehouseId)) {
@@ -149,6 +187,38 @@ class LocalDemoBusinessEngine {
         final line = Map<String, dynamic>.from(raw as Map);
         final productId = line['productId']?.toString();
         final product = productId == null ? null : products[productId];
+
+        if (linkedOrderLines != null) {
+          final orderLineId =
+              line['purchaseOrderLineId']?.toString();
+          final orderLine = orderLineId == null
+              ? null
+              : linkedOrderLines[orderLineId];
+
+          if (orderLine == null ||
+              orderLine['productId']?.toString() != productId) {
+            throw StateError(
+              'ردیف رسید با سفارش خرید لینک‌شده تطابق ندارد.',
+            );
+          }
+
+          final remaining =
+              _num(orderLine['quantity']) -
+              _num(orderLine['receivedQuantity']);
+          final receiving = _num(line['quantity']);
+          if (receiving > remaining) {
+            throw StateError(
+              'تعداد دریافت از مانده سفارش خرید بیشتر است.',
+            );
+          }
+
+          orderLine['receivedQuantity'] =
+              _num(orderLine['receivedQuantity']) + receiving;
+        } else if (line['purchaseOrderLineId'] != null) {
+          throw StateError(
+            'ردیف سفارش بدون شناسه سفارش خرید قابل ثبت نیست.',
+          );
+        }
 
         if (productId == null || product == null) {
           throw StateError('یکی از کالاهای فاکتور در کش محلی وجود ندارد.');
@@ -241,6 +311,28 @@ class LocalDemoBusinessEngine {
           'unitCost': unitCost,
           'costAmount': costAmount,
         });
+      }
+
+      if (linkedOrder != null &&
+          linkedOrderLines != null) {
+        final allReceived = linkedOrderLines.values.every(
+          (line) =>
+              _num(line['receivedQuantity']) >=
+              _num(line['quantity']),
+        );
+        linkedOrder['lines'] =
+            linkedOrderLines.values.toList(growable: false);
+        if (allReceived) {
+          linkedOrder['status'] = 'Closed';
+          linkedOrder['closedAt'] =
+              DateTime.now().toUtc().toIso8601String();
+        }
+        await _upsertCachedEntity(
+          txn,
+          'PurchaseOrder',
+          purchaseOrderId!,
+          linkedOrder,
+        );
       }
 
       final grandTotal =
@@ -554,6 +646,8 @@ class LocalDemoBusinessEngine {
         'supplierDetailAccountId':
             payload['supplierDetailAccountId'],
         'supplierName': supplierName,
+        'purchaseOrderId': purchaseOrderId,
+        'purchaseOrderNumber': linkedOrder?['number'],
         'paymentType': paymentType,
         'currencyCode': 'BASE',
         'exchangeRate': 1,
@@ -1120,6 +1214,7 @@ class LocalDemoBusinessEngine {
           'warehouseName': warehouses[warehouseId]!['name'],
           'supplierDetailAccountId': supplierId,
           'supplierName': supplierName,
+          'currencyId': payload['currencyId'],
           'currencyCode':
               payload['currencyCode']?.toString() ?? 'BASE',
           'exchangeRate': payload['exchangeRate'] ?? 1,
