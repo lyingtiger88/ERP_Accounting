@@ -1327,7 +1327,6 @@ public sealed class SalesInventoryService(
             CurrencyId = tradeCurrency.CurrencyId,
             ExchangeRate = tradeCurrency.ExchangeRate,
             SupplierDetailAccountId = request.SupplierDetailAccountId,
-            PurchaseOrderId = request.PurchaseOrderId,
             WarehouseId = request.WarehouseId,
             Description = NullIfBlank(request.Description),
             CreatedByUserId = userId
@@ -1350,7 +1349,6 @@ public sealed class SalesInventoryService(
 
             var product = products[requestedLine.ProductId];
             var unitCost = requestedLine.UnitCost ??
-                purchaseOrderLine?.UnitCost ??
                 (tradeCurrency.CurrencyId.HasValue
                     ? ConvertFromBase(
                         product.DefaultPurchasePrice,
