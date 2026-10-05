@@ -12,6 +12,13 @@ year, detail accounts, cost centers, projects, products, warehouses and stock.
 Demo API calls are short-circuited locally, demo documents never enter the sync
 outbox, and the combined local accounting/store document limit is 500.
 
+A local business engine now executes demo operations without the ASP.NET API:
+sales posting decreases stock, calculates weighted-average COGS and creates the
+balanced accounting journal; purchase posting increases stock, updates weighted
+average inventory cost and creates the purchase/tax/settlement journal; sales
+returns restore inventory and reverse revenue/tax/COGS; warehouse transfers keep
+the source cost; and manual stock adjustments update the local stock ledger.
+
 ## Project Roadmap
 
 This roadmap is intentionally kept on the repository home page so the current plan and progress are always visible.
