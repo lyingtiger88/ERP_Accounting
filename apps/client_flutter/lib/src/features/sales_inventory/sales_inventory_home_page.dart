@@ -6,6 +6,7 @@ import '../../core/demo/demo_mode.dart';
 import '../../core/sync/accounting_sync_service.dart';
 import '../accounting/report_support.dart';
 import 'products_page.dart';
+import 'purchase_orders_page.dart';
 import 'purchase_receipts_page.dart';
 import 'purchase_returns_page.dart';
 import 'sales_invoices_page.dart';
@@ -457,6 +458,19 @@ class _SalesInventoryHomePageState
                           accessToken: widget.accessToken,
                           localDatabase:
                               widget.localDatabase,
+                        ),
+                      ),
+                    ),
+                    _ModuleCard(
+                      title: 'سفارش‌های خرید',
+                      subtitle:
+                          'Draft، تایید، بستن و لغو سفارش تامین‌کننده',
+                      icon: Icons.shopping_cart_outlined,
+                      onTap: () => _open(
+                        PurchaseOrdersPage(
+                          companyId: widget.companyId,
+                          accessToken: widget.accessToken,
+                          localDatabase: widget.localDatabase,
                         ),
                       ),
                     ),
