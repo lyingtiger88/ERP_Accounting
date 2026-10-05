@@ -739,6 +739,309 @@ class LocalDemoBusinessEngine {
     });
   }
 
+  Future<Map<String, dynamic>> createSalesReturn({
+    required String invoiceId,
+    required DateTime documentDate,
+    required String reason,
+    required List<Map<String, dynamic>> lines,
+  }) {
+    return localDatabase.runDemoBusinessTransaction((txn) async {
+      await _ensureCapacityForNewDocument(txn);
+
+      final trimmedReason = reason.trim();
+      if (trimmedReason.isEmpty) {
+        throw StateError('علت برگشت از فروش الزامی است.');
+      }
+      if (lines.isEmpty) {
+        throw StateError('حداقل یک ردیف برای برگشت لازم است.');
+      }
+
+      final invoiceRows = await txn.query(
+        'cached_store_entities',
+        columns: ['payload_json'],
+        where: 'company_id = ? AND entity_type = ? AND entity_id = ?',
+        whereArgs: [
+          DemoMode.companyId,
+          'SalesInvoice',
+          invoiceId,
+        ],
+        limit: 1,
+      );
+
+      if (invoiceRows.isEmpty) {
+        throw StateError('فاکتور فروش قطعی در داده محلی پیدا نشد.');
+      }
+
+      final invoice = Map<String, dynamic>.from(
+        jsonDecode(invoiceRows.first['payload_json'] as String) as Map,
+      );
+
+      final invoiceStatus = invoice['status']?.toString();
+      if (invoiceStatus != 'Posted' && invoiceStatus != 'Reversed') {
+        throw StateError('فقط فاکتور قطعی قابل برگشت است.');
+      }
+
+      final originalLines = <String, Map<String, dynamic>>{
+        for (final raw in
+            (invoice['lines'] as List<dynamic>? ?? const []))
+          Map<String, dynamic>.from(raw as Map)['id'].toString():
+              Map<String, dynamic>.from(raw as Map),
+      };
+
+      final previousReturns = await _readCachedList(
+        txn,
+        'SalesReturn',
+      );
+      final returnedByLine = <String, num>{};
+
+      for (final salesReturn in previousReturns) {
+        if (salesReturn['salesInvoiceId']?.toString() != invoiceId ||
+            salesReturn['status']?.toString() != 'Posted') {
+          continue;
+        }
+
+        for (final raw in
+            (salesReturn['lines'] as List<dynamic>? ?? const [])) {
+          final line = Map<String, dynamic>.from(raw as Map);
+          final lineId = line['salesInvoiceLineId']?.toString();
+          if (lineId == null) continue;
+          returnedByLine[lineId] =
+              (returnedByLine[lineId] ?? 0) + _num(line['quantity']);
+        }
+      }
+
+      final products = await _readCachedMap(
+        txn,
+        'StoreProduct',
+      );
+      final warehouses = await _readCachedMap(
+        txn,
+        'Warehouse',
+      );
+      final warehouseId = invoice['warehouseId']?.toString();
+
+      if (warehouseId == null || !warehouses.containsKey(warehouseId)) {
+        throw StateError('انبار فاکتور برگشتی پیدا نشد.');
+      }
+
+      final number = await _nextCachedNumber(
+        txn,
+        entityType: 'SalesReturn',
+        prefix: 'DEMO-R-',
+      );
+      final returnId = _newId();
+      final postedLines = <Map<String, dynamic>>[];
+      final newReturnedByLine = <String, num>{};
+
+      num grandTotal = 0;
+      num taxTotal = 0;
+      num costTotal = 0;
+
+      for (final requested in lines) {
+        final lineId = requested['salesInvoiceLineId']?.toString();
+        final quantity = _num(requested['quantity']);
+        final original = lineId == null ? null : originalLines[lineId];
+
+        if (lineId == null || original == null) {
+          throw StateError('یکی از ردیف‌های برگشت متعلق به فاکتور نیست.');
+        }
+        if (quantity <= 0) {
+          throw StateError('تعداد برگشت باید بزرگ‌تر از صفر باشد.');
+        }
+
+        final originalQuantity = _num(original['quantity']);
+        final alreadyReturned = returnedByLine[lineId] ?? 0;
+        if (alreadyReturned + quantity > originalQuantity) {
+          throw StateError(
+            'تعداد برگشت از مانده قابل برگشت ردیف بیشتر است.',
+          );
+        }
+
+        final ratio = quantity / originalQuantity;
+        final netAmount = _num(original['netAmount']) * ratio;
+        final taxAmount = _num(original['taxAmount']) * ratio;
+        final costAmount = _num(original['costAmount']) * ratio;
+        final unitCost = _num(original['unitCost']);
+        final productId = original['productId']?.toString();
+        final product = productId == null ? null : products[productId];
+
+        if (productId == null || product == null) {
+          throw StateError('کالای ردیف برگشتی پیدا نشد.');
+        }
+
+        if (product['trackInventory'] as bool? ?? false) {
+          await _insertMovement(
+            txn,
+            warehouseId: warehouseId,
+            productId: productId,
+            documentDate: _dateOnly(documentDate),
+            movementType: 'SaleReturn',
+            quantity: quantity,
+            unitCost: unitCost,
+            lotNumber: _text(original['lotNumber']),
+            serialNumber: _text(original['serialNumber']),
+            expiryDate: _text(original['expiryDate']),
+            referenceType: 'SalesReturn',
+            referenceId: returnId,
+            description: 'برگشت از فروش ' + invoice['number'].toString(),
+          );
+        }
+
+        grandTotal += netAmount + taxAmount;
+        taxTotal += taxAmount;
+        costTotal += costAmount;
+        newReturnedByLine[lineId] =
+            (newReturnedByLine[lineId] ?? 0) + quantity;
+
+        postedLines.add({
+          'id': _newId(),
+          'salesInvoiceLineId': lineId,
+          'productId': productId,
+          'sku': product['sku'],
+          'productName': product['name'],
+          'unitName': product['unitName'] ?? 'عدد',
+          'quantity': quantity,
+          'netAmount': netAmount,
+          'taxAmount': taxAmount,
+          'unitCost': unitCost,
+          'costAmount': costAmount,
+        });
+      }
+
+      final settlementAmount = _money(grandTotal);
+      final returnTaxAmount = _money(taxTotal);
+      final netSalesAmount = settlementAmount - returnTaxAmount;
+      final returnedCostAmount = _money(costTotal);
+      final paymentType = invoice['paymentType']?.toString() ?? 'Cash';
+
+      final journalLines = <_DemoJournalLine>[
+        if (netSalesAmount > 0)
+          _DemoJournalLine(
+            accountId: _salesRevenueAccountId,
+            description: 'برگشت درآمد فروش $number',
+            debit: netSalesAmount,
+          ),
+        if (returnTaxAmount > 0)
+          _DemoJournalLine(
+            accountId: _salesTaxAccountId,
+            description: 'برگشت مالیات فروش $number',
+            debit: returnTaxAmount,
+          ),
+        _DemoJournalLine(
+          accountId: paymentType == 'Cash'
+              ? _cashAccountId
+              : _receivablesAccountId,
+          detailAccountId: paymentType == 'Credit'
+              ? invoice['customerDetailAccountId']?.toString()
+              : null,
+          description: 'تسویه برگشت از فروش $number',
+          credit: settlementAmount,
+        ),
+        if (returnedCostAmount > 0)
+          _DemoJournalLine(
+            accountId: _inventoryAccountId,
+            description: 'برگشت موجودی فروش $number',
+            debit: returnedCostAmount,
+          ),
+        if (returnedCostAmount > 0)
+          _DemoJournalLine(
+            accountId: _cogsAccountId,
+            description: 'برگشت بهای تمام‌شده $number',
+            credit: returnedCostAmount,
+          ),
+      ];
+
+      final fiscalYearId = invoice['fiscalYearId']?.toString() ??
+          '00000000-0000-4000-8000-000000000510';
+      final journalNumber = await _insertPostedJournal(
+        txn,
+        fiscalYearId: fiscalYearId,
+        documentDate: _dateOnly(documentDate),
+        description: 'ثبت حسابداری برگشت از فروش $number',
+        lines: journalLines,
+      );
+
+      var fullyReturned = true;
+      for (final entry in originalLines.entries) {
+        final originalQuantity = _num(entry.value['quantity']);
+        final totalReturned =
+            (returnedByLine[entry.key] ?? 0) +
+            (newReturnedByLine[entry.key] ?? 0);
+        if (totalReturned < originalQuantity) {
+          fullyReturned = false;
+          break;
+        }
+      }
+
+      if (fullyReturned) {
+        invoice['status'] = 'Reversed';
+        invoice['reversalJournalNumber'] = journalNumber;
+        await _upsertCachedEntity(
+          txn,
+          'SalesInvoice',
+          invoiceId,
+          invoice,
+        );
+      }
+
+      final warehouse = warehouses[warehouseId]!;
+      final posted = <String, dynamic>{
+        'id': returnId,
+        'salesInvoiceId': invoiceId,
+        'salesInvoiceNumber': invoice['number'],
+        'number': number,
+        'documentDate': _dateOnly(documentDate),
+        'warehouseId': warehouseId,
+        'warehouseName': warehouse['name'],
+        'reason': trimmedReason,
+        'status': 'Posted',
+        'currencyCode': 'BASE',
+        'grandTotal': grandTotal,
+        'taxTotal': taxTotal,
+        'costTotal': costTotal,
+        'accountingJournalNumber': journalNumber,
+        'lines': postedLines,
+      };
+
+      await _upsertCachedEntity(
+        txn,
+        'SalesReturn',
+        returnId,
+        posted,
+      );
+      await _refreshStockCaches(txn);
+
+      return posted;
+    });
+  }
+
+  Future<void> _ensureCapacityForNewDocument(
+    DatabaseExecutor txn,
+  ) async {
+    final accountingRows = await txn.rawQuery(
+      'SELECT COUNT(*) AS count FROM local_accounting_documents '
+      'WHERE company_id = ?',
+      [DemoMode.companyId],
+    );
+    final draftRows = await txn.rawQuery(
+      'SELECT COUNT(*) AS count FROM local_store_drafts '
+      'WHERE company_id = ?',
+      [DemoMode.companyId],
+    );
+
+    final accounting =
+        (accountingRows.first['count'] as num?)?.toInt() ?? 0;
+    final drafts = (draftRows.first['count'] as num?)?.toInt() ?? 0;
+
+    if (accounting + drafts >= DemoMode.documentLimit) {
+      throw StateError(
+        'سقف ' +
+            DemoMode.documentLimit.toString() +
+            ' سند در حالت تست پر شده است.',
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> _readDraft(
     DatabaseExecutor txn,
     String draftId,
