@@ -1703,6 +1703,7 @@ public sealed class SalesInventoryService(
                 requestedLine.SerialNumber);
 
             var unitCost = requestedLine.UnitCost ??
+                purchaseOrderLine?.UnitCost ??
                 (tradeCurrency.CurrencyId.HasValue
                     ? ConvertFromBase(
                         product.DefaultPurchasePrice,
@@ -3245,8 +3246,7 @@ public sealed class SalesInventoryService(
                     line.CostAmount,
                     line.LotNumber,
                     line.SerialNumber,
-                    line.ExpiryDate,
-                    line.PurchaseOrderLineId);
+                    line.ExpiryDate);
             })
             .ToArray();
 
@@ -3559,7 +3559,8 @@ public sealed class SalesInventoryService(
                     line.NetAmount,
                     line.LotNumber,
                     line.SerialNumber,
-                    line.ExpiryDate);
+                    line.ExpiryDate,
+                    line.PurchaseOrderLineId);
             })
             .ToArray();
 
