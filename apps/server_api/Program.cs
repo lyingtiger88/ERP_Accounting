@@ -818,6 +818,66 @@ store.MapPost("/purchases/{receiptId:guid}/post", async (
     }
 });
 
+store.MapGet("/purchase-returns", async (
+    HttpRequest request,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await storeService.GetPurchaseReturnsAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+store.MapPost("/purchases/{receiptId:guid}/returns", async (
+    HttpRequest request,
+    Guid receiptId,
+    CreatePurchaseReturnRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSalesInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.CreatePurchaseReturnAsync(
+            user.CompanyId,
+            user.Id,
+            receiptId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
 store.MapGet("/transfers", async (
     HttpRequest request,
     AuthService authService,
