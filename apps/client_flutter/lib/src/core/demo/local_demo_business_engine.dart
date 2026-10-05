@@ -1009,6 +1009,175 @@ class LocalDemoBusinessEngine {
     });
   }
 
+  Future<Map<String, dynamic>> setPurchaseOrderStatus({
+    required String orderId,
+    required String status,
+  }) {
+    return localDatabase.runDemoBusinessTransaction((txn) async {
+      if (!const ['Approved', 'Closed', 'Cancelled'].contains(status)) {
+        throw StateError('وضعیت سفارش خرید معتبر نیست.');
+      }
+
+      final cachedRows = await txn.query(
+        'cached_store_entities',
+        columns: ['payload_json'],
+        where: 'company_id = ? AND entity_type = ? AND entity_id = ?',
+        whereArgs: [DemoMode.companyId, 'PurchaseOrder', orderId],
+        limit: 1,
+      );
+
+      Map<String, dynamic> order;
+
+      if (cachedRows.isEmpty) {
+        if (status != 'Approved' && status != 'Cancelled') {
+          throw StateError(
+            'سفارش پیش‌نویس فقط قابل تایید یا لغو است.',
+          );
+        }
+
+        final payload = await _readDraft(
+          txn,
+          orderId,
+          'StorePurchaseOrderDraft',
+        );
+        final products = await _readCachedMap(txn, 'StoreProduct');
+        final warehouses = await _readCachedMap(txn, 'Warehouse');
+        final warehouseId = payload['warehouseId']?.toString();
+        final supplierId =
+            payload['supplierDetailAccountId']?.toString();
+
+        if (warehouseId == null ||
+            !warehouses.containsKey(warehouseId) ||
+            supplierId == null) {
+          throw StateError('اطلاعات سفارش خرید محلی کامل نیست.');
+        }
+
+        final supplierName =
+            await _detailAccountName(txn, supplierId) ??
+                'تامین‌کننده محلی';
+        final number = await _nextCachedNumber(
+          txn,
+          entityType: 'PurchaseOrder',
+          prefix: 'DEMO-PO-',
+        );
+
+        num subtotal = 0;
+        num discountTotal = 0;
+        num taxTotal = 0;
+        final postedLines = <Map<String, dynamic>>[];
+
+        for (final raw
+            in (payload['lines'] as List<dynamic>? ?? const [])) {
+          final line = Map<String, dynamic>.from(raw as Map);
+          final productId = line['productId']?.toString();
+          final product =
+              productId == null ? null : products[productId];
+
+          if (productId == null || product == null) {
+            throw StateError('کالای سفارش خرید محلی پیدا نشد.');
+          }
+
+          final quantity = _num(line['quantity']);
+          final unitCost = line['unitCost'] == null
+              ? _num(product['defaultPurchasePrice'])
+              : _num(line['unitCost']);
+          final discount = _num(line['discountAmount']);
+          final tax = _num(line['taxAmount']);
+          final gross = quantity * unitCost;
+
+          if (quantity <= 0 ||
+              unitCost < 0 ||
+              discount < 0 ||
+              tax < 0 ||
+              discount > gross) {
+            throw StateError('مقادیر سفارش خرید معتبر نیست.');
+          }
+
+          final net = gross - discount;
+          subtotal += gross;
+          discountTotal += discount;
+          taxTotal += tax;
+
+          postedLines.add({
+            ...line,
+            'id': _newId(),
+            'sku': product['sku'],
+            'productName': product['name'],
+            'unitName': product['unitName'] ?? 'عدد',
+            'unitCost': unitCost,
+            'netAmount': net,
+            'receivedQuantity': 0,
+          });
+        }
+
+        order = {
+          'id': orderId,
+          'fiscalYearId': payload['fiscalYearId'],
+          'number': number,
+          'documentDate': payload['documentDate'],
+          'expectedDate': null,
+          'warehouseId': warehouseId,
+          'warehouseName': warehouses[warehouseId]!['name'],
+          'supplierDetailAccountId': supplierId,
+          'supplierName': supplierName,
+          'currencyCode':
+              payload['currencyCode']?.toString() ?? 'BASE',
+          'exchangeRate': payload['exchangeRate'] ?? 1,
+          'status': status,
+          'description': payload['description'],
+          'subtotal': subtotal,
+          'discountTotal': discountTotal,
+          'taxTotal': taxTotal,
+          'grandTotal': subtotal - discountTotal + taxTotal,
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
+          'approvedAt': status == 'Approved'
+              ? DateTime.now().toUtc().toIso8601String()
+              : null,
+          'closedAt': status == 'Cancelled'
+              ? DateTime.now().toUtc().toIso8601String()
+              : null,
+          'lines': postedLines,
+        };
+
+        await _upsertCachedEntity(
+          txn,
+          'PurchaseOrder',
+          orderId,
+          order,
+        );
+        await _finishDraft(txn, orderId);
+      } else {
+        order = Map<String, dynamic>.from(
+          jsonDecode(cachedRows.first['payload_json'] as String)
+              as Map,
+        );
+
+        final current = order['status']?.toString() ?? 'Draft';
+        final valid =
+            current == 'Approved' &&
+                (status == 'Closed' || status == 'Cancelled');
+
+        if (!valid) {
+          throw StateError(
+            'تغییر وضعیت سفارش از $current به $status مجاز نیست.',
+          );
+        }
+
+        order['status'] = status;
+        order['closedAt'] =
+            DateTime.now().toUtc().toIso8601String();
+        await _upsertCachedEntity(
+          txn,
+          'PurchaseOrder',
+          orderId,
+          order,
+        );
+      }
+
+      return order;
+    });
+  }
+
   Future<void> adjustStock({
     required String warehouseId,
     required String productId,
