@@ -1327,6 +1327,7 @@ public sealed class SalesInventoryService(
             CurrencyId = tradeCurrency.CurrencyId,
             ExchangeRate = tradeCurrency.ExchangeRate,
             SupplierDetailAccountId = request.SupplierDetailAccountId,
+            PurchaseOrderId = request.PurchaseOrderId,
             WarehouseId = request.WarehouseId,
             Description = NullIfBlank(request.Description),
             CreatedByUserId = userId
@@ -1349,6 +1350,7 @@ public sealed class SalesInventoryService(
 
             var product = products[requestedLine.ProductId];
             var unitCost = requestedLine.UnitCost ??
+                purchaseOrderLine?.UnitCost ??
                 (tradeCurrency.CurrencyId.HasValue
                     ? ConvertFromBase(
                         product.DefaultPurchasePrice,
@@ -1526,6 +1528,42 @@ public sealed class SalesInventoryService(
                 "Purchase receipt requires at least one line.");
         }
 
+        PurchaseOrder? purchaseOrder = null;
+        Dictionary<Guid, PurchaseOrderLine>? purchaseOrderLines = null;
+
+        if (request.PurchaseOrderId is Guid purchaseOrderId)
+        {
+            purchaseOrder = await db.PurchaseOrders
+                .AsNoTracking()
+                .Include(x => x.Lines)
+                .FirstOrDefaultAsync(
+                    x =>
+                        x.Id == purchaseOrderId &&
+                        x.CompanyId == companyId,
+                    cancellationToken)
+                ?? throw new ArgumentException(
+                    "Purchase order does not exist in this company.");
+
+            if (purchaseOrder.Status != PurchaseOrderStatus.Approved)
+            {
+                throw new InvalidOperationException(
+                    "Only approved purchase orders can receive goods.");
+            }
+
+            if (purchaseOrder.FiscalYearId != request.FiscalYearId ||
+                purchaseOrder.WarehouseId != request.WarehouseId ||
+                request.SupplierDetailAccountId !=
+                    purchaseOrder.SupplierDetailAccountId ||
+                purchaseOrder.CurrencyId != request.CurrencyId)
+            {
+                throw new ArgumentException(
+                    "Receipt fiscal year, supplier, warehouse and currency must match the purchase order.");
+            }
+
+            purchaseOrderLines = purchaseOrder.Lines
+                .ToDictionary(x => x.Id);
+        }
+
         var fiscalYear = await db.FiscalYears
             .AsNoTracking()
             .FirstOrDefaultAsync(
@@ -1623,6 +1661,40 @@ public sealed class SalesInventoryService(
                     "Purchase quantity must be greater than zero.");
             }
 
+            PurchaseOrderLine? purchaseOrderLine = null;
+            if (purchaseOrderLines is not null)
+            {
+                if (requestedLine.PurchaseOrderLineId is not Guid orderLineId ||
+                    !purchaseOrderLines.TryGetValue(
+                        orderLineId,
+                        out purchaseOrderLine))
+                {
+                    throw new ArgumentException(
+                        "Every receipt line linked to a purchase order must reference a valid order line.");
+                }
+
+                if (purchaseOrderLine.ProductId != requestedLine.ProductId)
+                {
+                    throw new ArgumentException(
+                        "Receipt product does not match the purchase order line.");
+                }
+
+                var remaining =
+                    purchaseOrderLine.Quantity -
+                    purchaseOrderLine.ReceivedQuantity;
+
+                if (requestedLine.Quantity > remaining)
+                {
+                    throw new InvalidOperationException(
+                        $"Receipt quantity exceeds open purchase order quantity. Remaining: {remaining}.");
+                }
+            }
+            else if (requestedLine.PurchaseOrderLineId.HasValue)
+            {
+                throw new ArgumentException(
+                    "Purchase order line cannot be supplied without a purchase order.");
+            }
+
             var product = products[requestedLine.ProductId];
             ValidateTraceFields(
                 product,
@@ -1659,6 +1731,7 @@ public sealed class SalesInventoryService(
             {
                 PurchaseReceiptId = receipt.Id,
                 ProductId = product.Id,
+                PurchaseOrderLineId = requestedLine.PurchaseOrderLineId,
                 Quantity = requestedLine.Quantity,
                 UnitCost = unitCost,
                 DiscountAmount = requestedLine.DiscountAmount,
@@ -1769,9 +1842,61 @@ public sealed class SalesInventoryService(
                 receipt.Lines.Select(l => l.ProductId).Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
+        PurchaseOrder? linkedOrder = null;
+        Dictionary<Guid, PurchaseOrderLine>? linkedOrderLines = null;
+
+        if (receipt.PurchaseOrderId is Guid linkedOrderId)
+        {
+            linkedOrder = await db.PurchaseOrders
+                .Include(x => x.Lines)
+                .FirstOrDefaultAsync(
+                    x =>
+                        x.Id == linkedOrderId &&
+                        x.CompanyId == companyId,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "Linked purchase order no longer exists.");
+
+            if (linkedOrder.Status != PurchaseOrderStatus.Approved)
+            {
+                throw new InvalidOperationException(
+                    "Linked purchase order is not open for receiving.");
+            }
+
+            linkedOrderLines = linkedOrder.Lines.ToDictionary(x => x.Id);
+        }
+
         foreach (var line in receipt.Lines)
         {
             var product = products[line.ProductId];
+
+            if (linkedOrderLines is not null)
+            {
+                if (line.PurchaseOrderLineId is not Guid orderLineId ||
+                    !linkedOrderLines.TryGetValue(
+                        orderLineId,
+                        out var orderLine))
+                {
+                    throw new InvalidOperationException(
+                        "Receipt contains an invalid purchase order line.");
+                }
+
+                if (orderLine.ProductId != line.ProductId)
+                {
+                    throw new InvalidOperationException(
+                        "Receipt product no longer matches its purchase order line.");
+                }
+
+                var remaining =
+                    orderLine.Quantity - orderLine.ReceivedQuantity;
+                if (line.Quantity > remaining)
+                {
+                    throw new InvalidOperationException(
+                        $"Receipt quantity exceeds the current open purchase order quantity. Remaining: {remaining}.");
+                }
+
+                orderLine.ReceivedQuantity += line.Quantity;
+            }
 
             ValidateTraceFields(
                 product,
@@ -1821,6 +1946,14 @@ public sealed class SalesInventoryService(
                 ConvertToBase(
                     line.NetAmount,
                     receipt.ExchangeRate) / line.Quantity;
+        }
+
+        if (linkedOrder is not null &&
+            linkedOrder.Lines.All(
+                x => x.ReceivedQuantity >= x.Quantity))
+        {
+            linkedOrder.Status = PurchaseOrderStatus.Closed;
+            linkedOrder.ClosedAt = DateTimeOffset.UtcNow;
         }
 
         var inventoryNet = receipt.Subtotal - receipt.DiscountTotal;
@@ -3112,7 +3245,8 @@ public sealed class SalesInventoryService(
                     line.CostAmount,
                     line.LotNumber,
                     line.SerialNumber,
-                    line.ExpiryDate);
+                    line.ExpiryDate,
+                    line.PurchaseOrderLineId);
             })
             .ToArray();
 
@@ -3429,6 +3563,16 @@ public sealed class SalesInventoryService(
             })
             .ToArray();
 
+        string? purchaseOrderNumber = null;
+        if (receipt.PurchaseOrderId is Guid purchaseOrderId)
+        {
+            purchaseOrderNumber = await db.PurchaseOrders
+                .AsNoTracking()
+                .Where(x => x.Id == purchaseOrderId)
+                .Select(x => x.Number)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
         return new PurchaseReceiptView(
             receipt.Id,
             receipt.FiscalYearId,
@@ -3452,7 +3596,9 @@ public sealed class SalesInventoryService(
             journalNumber,
             receipt.CreatedAt,
             receipt.PostedAt,
-            lines);
+            lines,
+            receipt.PurchaseOrderId,
+            purchaseOrderNumber);
     }
 
     private async Task<PurchaseOrderView> BuildPurchaseOrderViewAsync(
