@@ -619,6 +619,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<CurrencyDefinition>().WithMany().HasForeignKey(x => x.CurrencyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<DetailAccount>().WithMany().HasForeignKey(x => x.SupplierDetailAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
@@ -677,7 +678,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.SerialNumber).HasMaxLength(180);
             entity.HasIndex(x => x.ProductId);
             entity.HasIndex(x => x.SerialNumber);
+            entity.HasIndex(x => x.PurchaseOrderLineId);
             entity.HasOne<StoreProduct>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PurchaseOrderLine>().WithMany().HasForeignKey(x => x.PurchaseOrderLineId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PurchaseReturn>(entity =>
