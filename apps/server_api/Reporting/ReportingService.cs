@@ -127,25 +127,26 @@ public sealed class ReportingService(AppDbContext db)
                 .ToArrayAsync(cancellationToken))
             .ToDictionary(x => x.Id);
 
-        var salesNet = invoices.Sum(x =>
-            (x.Subtotal - x.DiscountTotal) * SafeRate(x.ExchangeRate));
-        var salesReturnNet = salesReturns.Sum(x =>
-            (x.GrandTotal - x.TaxTotal) *
-            (invoiceById.TryGetValue(x.SalesInvoiceId, out var invoice)
-                ? SafeRate(invoice.ExchangeRate)
-                : 1m));
-        var cogs = invoices.Sum(x => x.CostTotal) -
-            salesReturns.Sum(x => x.CostTotal);
-        var netSales = salesNet - salesReturnNet;
+        if (detailAccountId.HasValue)
+        {
+            salesReturns = salesReturns
+                .Where(x =>
+                    invoiceById.TryGetValue(
+                        x.SalesInvoiceId,
+                        out var invoice) &&
+                    invoice.CustomerDetailAccountId ==
+                        detailAccountId.Value)
+                .ToArray();
 
-        var purchasesNet = receipts.Sum(x =>
-            (x.Subtotal - x.DiscountTotal) * SafeRate(x.ExchangeRate));
-        var purchaseReturnNet = purchaseReturns.Sum(x =>
-            (x.GrandTotal - x.TaxTotal) *
-            (receiptById.TryGetValue(x.PurchaseReceiptId, out var receipt)
-                ? SafeRate(receipt.ExchangeRate)
-                : 1m));
-        var netPurchases = purchasesNet - purchaseReturnNet;
+            purchaseReturns = purchaseReturns
+                .Where(x =>
+                    receiptById.TryGetValue(
+                        x.PurchaseReceiptId,
+                        out var receipt) &&
+                    receipt.SupplierDetailAccountId ==
+                        detailAccountId.Value)
+                .ToArray();
+        }
 
         var productRows = BuildProductRows(
             products,
@@ -155,6 +156,10 @@ public sealed class ReportingService(AppDbContext db)
             purchaseReturns,
             invoiceById,
             receiptById);
+
+        var netSales = productRows.Sum(x => x.NetSales);
+        var cogs = productRows.Sum(x => x.CostOfGoodsSold);
+        var netPurchases = productRows.Sum(x => x.NetPurchases);
 
         var stockMovements = await db.StockMovements
             .AsNoTracking()
@@ -287,13 +292,15 @@ public sealed class ReportingService(AppDbContext db)
             purchaseReturns,
             treasuryTransactions,
             invoiceById,
-            receiptById);
+            receiptById,
+            productId);
 
         var (costCenterRows, projectRows) =
             await BuildDimensionRowsAsync(
                 companyId,
                 from,
                 to,
+                detailAccountId,
                 cancellationToken);
 
         var inventoryValue = inventoryRows.Sum(x => x.ClosingValue);
@@ -423,38 +430,98 @@ public sealed class ReportingService(AppDbContext db)
         IReadOnlyList<PurchaseReturn> purchaseReturns,
         IReadOnlyList<TreasuryTransaction> treasuryTransactions,
         IReadOnlyDictionary<Guid, SalesInvoice> invoiceById,
-        IReadOnlyDictionary<Guid, PurchaseReceipt> receiptById)
+        IReadOnlyDictionary<Guid, PurchaseReceipt> receiptById,
+        Guid? productId)
     {
         return details.Select(detail =>
         {
-            var sales = invoices
-                .Where(x => x.CustomerDetailAccountId == detail.Id)
-                .Sum(x => x.GrandTotal * SafeRate(x.ExchangeRate));
+            var sales = productId.HasValue
+                ? invoices
+                    .Where(x =>
+                        x.CustomerDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.Lines
+                            .Where(line =>
+                                line.ProductId == productId.Value)
+                            .Sum(line =>
+                                line.NetAmount + line.TaxAmount) *
+                        SafeRate(x.ExchangeRate))
+                : invoices
+                    .Where(x =>
+                        x.CustomerDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.GrandTotal *
+                        SafeRate(x.ExchangeRate));
 
-            var salesReturnAmount = salesReturns
-                .Where(x =>
-                    invoiceById.TryGetValue(
-                        x.SalesInvoiceId,
-                        out var invoice) &&
-                    invoice.CustomerDetailAccountId == detail.Id)
-                .Sum(x =>
-                    x.GrandTotal *
-                    SafeRate(invoiceById[x.SalesInvoiceId].ExchangeRate));
+            var salesReturnAmount = productId.HasValue
+                ? salesReturns
+                    .Where(x =>
+                        invoiceById.TryGetValue(
+                            x.SalesInvoiceId,
+                            out var invoice) &&
+                        invoice.CustomerDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.Lines
+                            .Where(line =>
+                                line.ProductId == productId.Value)
+                            .Sum(line =>
+                                line.NetAmount + line.TaxAmount) *
+                        SafeRate(
+                            invoiceById[x.SalesInvoiceId].ExchangeRate))
+                : salesReturns
+                    .Where(x =>
+                        invoiceById.TryGetValue(
+                            x.SalesInvoiceId,
+                            out var invoice) &&
+                        invoice.CustomerDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.GrandTotal *
+                        SafeRate(
+                            invoiceById[x.SalesInvoiceId].ExchangeRate));
 
-            var purchases = receipts
-                .Where(x => x.SupplierDetailAccountId == detail.Id)
-                .Sum(x => x.GrandTotal * SafeRate(x.ExchangeRate));
+            var purchases = productId.HasValue
+                ? receipts
+                    .Where(x =>
+                        x.SupplierDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.Lines
+                            .Where(line =>
+                                line.ProductId == productId.Value)
+                            .Sum(line =>
+                                line.NetAmount + line.TaxAmount) *
+                        SafeRate(x.ExchangeRate))
+                : receipts
+                    .Where(x =>
+                        x.SupplierDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.GrandTotal *
+                        SafeRate(x.ExchangeRate));
 
-            var purchaseReturnAmount = purchaseReturns
-                .Where(x =>
-                    receiptById.TryGetValue(
-                        x.PurchaseReceiptId,
-                        out var receipt) &&
-                    receipt.SupplierDetailAccountId == detail.Id)
-                .Sum(x =>
-                    x.GrandTotal *
-                    SafeRate(
-                        receiptById[x.PurchaseReceiptId].ExchangeRate));
+            var purchaseReturnAmount = productId.HasValue
+                ? purchaseReturns
+                    .Where(x =>
+                        receiptById.TryGetValue(
+                            x.PurchaseReceiptId,
+                            out var receipt) &&
+                        receipt.SupplierDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.Lines
+                            .Where(line =>
+                                line.ProductId == productId.Value)
+                            .Sum(line =>
+                                line.NetAmount + line.TaxAmount) *
+                        SafeRate(
+                            receiptById[x.PurchaseReceiptId].ExchangeRate))
+                : purchaseReturns
+                    .Where(x =>
+                        receiptById.TryGetValue(
+                            x.PurchaseReceiptId,
+                            out var receipt) &&
+                        receipt.SupplierDetailAccountId == detail.Id)
+                    .Sum(x =>
+                        x.GrandTotal *
+                        SafeRate(
+                            receiptById[x.PurchaseReceiptId].ExchangeRate));
 
             var received = treasuryTransactions
                 .Where(x =>
@@ -504,6 +571,7 @@ public sealed class ReportingService(AppDbContext db)
         Guid companyId,
         DateOnly? from,
         DateOnly? to,
+        Guid? detailAccountId,
         CancellationToken cancellationToken)
     {
         var journals = await db.JournalEntries
@@ -532,6 +600,14 @@ public sealed class ReportingService(AppDbContext db)
                 .AsNoTracking()
                 .Where(x => lineIds.Contains(x.JournalLineId))
                 .ToArrayAsync(cancellationToken);
+
+        if (detailAccountId.HasValue)
+        {
+            dimensions = dimensions
+                .Where(x =>
+                    x.DetailAccountId == detailAccountId.Value)
+                .ToArray();
+        }
 
         var costCenters = await db.CostCenters
             .AsNoTracking()
