@@ -1210,6 +1210,178 @@ public sealed class DetailAccountSyncTests
     }
 
     [Fact]
+    public async Task PurchaseReturn_ReducesStock_AndReversesPurchaseAccounting()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var supplier = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "SUP-RET",
+                "تامین‌کننده برگشت تست",
+                DetailAccountType.Supplier,
+                null));
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "PUR-RET-001",
+                "کالای برگشت خرید تست",
+                "626000000202",
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                15_000m,
+                10_000m));
+
+        var date = fiscalYear.StartDate.AddDays(8);
+
+        var receipt = await store.CreatePurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseReceiptRequest(
+                fiscalYear.Id,
+                date,
+                warehouse.Id,
+                supplier.Id,
+                PurchasePaymentType.Credit,
+                "خرید برای تست برگشت",
+                new[]
+                {
+                    new PurchaseReceiptLineRequest(
+                        product.Id,
+                        5m,
+                        10_000m,
+                        0m,
+                        5_000m)
+                }));
+
+        await store.PostPurchaseReceiptAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            receipt.Id);
+
+        var purchaseReturn = await store.CreatePurchaseReturnAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            receipt.Id,
+            new CreatePurchaseReturnRequest(
+                date.AddDays(1),
+                "برگشت دو عدد معیوب",
+                new[]
+                {
+                    new PurchaseReturnLineRequest(
+                        receipt.Lines.Single().Id,
+                        2m)
+                }));
+
+        Assert.Equal(22_000m, purchaseReturn.GrandTotal);
+        Assert.Equal(2_000m, purchaseReturn.TaxTotal);
+        Assert.Equal(PurchaseReturnStatus.Posted, purchaseReturn.Status);
+
+        var stock = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(3m, stock.Quantity);
+        Assert.Equal(10_000m, stock.AverageCost);
+        Assert.Equal(30_000m, stock.InventoryValue);
+
+        var journal = await fixture.Db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .SingleAsync(
+                x => x.Id == purchaseReturn.AccountingJournalEntryId);
+
+        Assert.Equal(
+            journal.Lines.Sum(x => x.Debit),
+            journal.Lines.Sum(x => x.Credit));
+
+        var settings = await fixture.Db.SalesInventorySettings
+            .AsNoTracking()
+            .SingleAsync(
+                x => x.CompanyId == fixture.Company.Id);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.PayablesAccountId &&
+                x.Debit == 22_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId == settings.InventoryAccountId &&
+                x.Credit == 20_000m);
+
+        Assert.Contains(
+            journal.Lines,
+            x =>
+                x.AccountId ==
+                    settings.PurchaseTaxReceivableAccountId &&
+                x.Credit == 2_000m);
+
+        var savedReceipt = await fixture.Db.PurchaseReceipts
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == receipt.Id);
+
+        Assert.Equal(
+            PurchaseReceiptStatus.Posted,
+            savedReceipt.Status);
+
+        var finalReturn = await store.CreatePurchaseReturnAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            receipt.Id,
+            new CreatePurchaseReturnRequest(
+                date.AddDays(2),
+                "برگشت مانده خرید",
+                new[]
+                {
+                    new PurchaseReturnLineRequest(
+                        receipt.Lines.Single().Id,
+                        3m)
+                }));
+
+        Assert.Equal(33_000m, finalReturn.GrandTotal);
+
+        savedReceipt = await fixture.Db.PurchaseReceipts
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == receipt.Id);
+
+        Assert.Equal(
+            PurchaseReceiptStatus.Reversed,
+            savedReceipt.Status);
+
+        stock = (await store.GetStockBalancesAsync(
+            fixture.Company.Id,
+            warehouse.Id))
+            .Single(x => x.ProductId == product.Id);
+
+        Assert.Equal(0m, stock.Quantity);
+        Assert.Equal(0m, stock.InventoryValue);
+    }
+
+    [Fact]
     public async Task WarehouseTransfer_PreservesTotalQuantityAndValue()
     {
         await using var fixture = await TestFixture.CreateAsync();
