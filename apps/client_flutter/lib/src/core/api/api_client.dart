@@ -1296,6 +1296,45 @@ class ApiClient {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<List<Map<String, dynamic>>> getPurchaseReturns({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/sales-inventory/purchase-returns',
+      bearerToken: bearerToken,
+    );
+
+    return (response as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createPurchaseReturn({
+    required String bearerToken,
+    required String receiptId,
+    required DateTime documentDate,
+    required String reason,
+    required List<Map<String, dynamic>> lines,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/sales-inventory/purchases/' +
+          receiptId +
+          '/returns',
+      bearerToken: bearerToken,
+      body: {
+        'documentDate': _dateOnly(documentDate),
+        'reason': reason,
+        'lines': lines,
+      },
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getWarehouseTransfers({
     required String bearerToken,
   }) async {
