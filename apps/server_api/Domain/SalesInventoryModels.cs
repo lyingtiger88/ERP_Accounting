@@ -26,6 +26,14 @@ public enum SalesPaymentType
     Cash
 }
 
+public enum PurchaseOrderStatus
+{
+    Draft,
+    Approved,
+    Closed,
+    Cancelled
+}
+
 public enum PurchaseReceiptStatus
 {
     Draft,
@@ -156,6 +164,44 @@ public sealed class SalesInvoiceLine
     public string? LotNumber { get; set; }
     public string? SerialNumber { get; set; }
     public DateOnly? ExpiryDate { get; set; }
+}
+
+public sealed class PurchaseOrder
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required Guid FiscalYearId { get; set; }
+    public required string Number { get; set; }
+    public required DateOnly DocumentDate { get; set; }
+    public DateOnly? ExpectedDate { get; set; }
+    public Guid? CurrencyId { get; set; }
+    public decimal ExchangeRate { get; set; } = 1m;
+    public required Guid SupplierDetailAccountId { get; set; }
+    public required Guid WarehouseId { get; set; }
+    public PurchaseOrderStatus Status { get; set; } = PurchaseOrderStatus.Draft;
+    public string? Description { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal DiscountTotal { get; set; }
+    public decimal TaxTotal { get; set; }
+    public decimal GrandTotal { get; set; }
+    public required Guid CreatedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ApprovedAt { get; set; }
+    public DateTimeOffset? ClosedAt { get; set; }
+    public List<PurchaseOrderLine> Lines { get; set; } = [];
+}
+
+public sealed class PurchaseOrderLine
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid PurchaseOrderId { get; set; }
+    public required Guid ProductId { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal ReceivedQuantity { get; set; }
+    public decimal UnitCost { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal NetAmount { get; set; }
 }
 
 public sealed class PurchaseReceipt
