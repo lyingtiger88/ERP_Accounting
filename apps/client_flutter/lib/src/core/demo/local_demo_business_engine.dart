@@ -309,6 +309,7 @@ class LocalDemoBusinessEngine {
         'id': draftId,
         'number': number,
         'documentDate': documentDate,
+        'fiscalYearId': fiscalYearId,
         'warehouseId': warehouseId,
         'warehouseName': warehouse['name'],
         'customerDetailAccountId':
@@ -547,6 +548,7 @@ class LocalDemoBusinessEngine {
         'id': draftId,
         'number': number,
         'documentDate': documentDate,
+        'fiscalYearId': fiscalYearId,
         'warehouseId': warehouseId,
         'warehouseName': warehouse['name'],
         'supplierDetailAccountId':
