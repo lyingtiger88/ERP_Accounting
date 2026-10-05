@@ -302,6 +302,46 @@ public sealed record PostPurchaseReceiptResponse(
     string AccountingJournalNumber,
     decimal GrandTotal);
 
+public sealed record PurchaseReturnLineRequest(
+    Guid PurchaseReceiptLineId,
+    decimal Quantity);
+
+public sealed record CreatePurchaseReturnRequest(
+    DateOnly DocumentDate,
+    string Reason,
+    IReadOnlyList<PurchaseReturnLineRequest> Lines);
+
+public sealed record PurchaseReturnLineView(
+    Guid Id,
+    Guid PurchaseReceiptLineId,
+    Guid ProductId,
+    string Sku,
+    string ProductName,
+    decimal Quantity,
+    decimal NetAmount,
+    decimal TaxAmount,
+    decimal UnitCost);
+
+public sealed record PurchaseReturnView(
+    Guid Id,
+    Guid PurchaseReceiptId,
+    string PurchaseReceiptNumber,
+    string Number,
+    DateOnly DocumentDate,
+    Guid? CurrencyId,
+    string CurrencyCode,
+    decimal ExchangeRate,
+    Guid WarehouseId,
+    string WarehouseName,
+    PurchaseReturnStatus Status,
+    string? Reason,
+    decimal GrandTotal,
+    decimal TaxTotal,
+    Guid? AccountingJournalEntryId,
+    string? AccountingJournalNumber,
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<PurchaseReturnLineView> Lines);
+
 public sealed record SalesReturnLineRequest(
     Guid SalesInvoiceLineId,
     decimal Quantity);
