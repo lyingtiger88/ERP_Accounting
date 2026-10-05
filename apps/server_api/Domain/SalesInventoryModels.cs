@@ -33,6 +33,12 @@ public enum PurchaseReceiptStatus
     Reversed
 }
 
+public enum PurchaseReturnStatus
+{
+    Posted,
+    Reversed
+}
+
 public enum PurchasePaymentType
 {
     Credit,
@@ -56,6 +62,7 @@ public enum StockMovementType
 {
     Opening,
     PurchaseReceipt,
+    PurchaseReturn,
     SaleIssue,
     SaleReturn,
     TransferOut,
@@ -190,6 +197,38 @@ public sealed class PurchaseReceiptLine
     public string? LotNumber { get; set; }
     public string? SerialNumber { get; set; }
     public DateOnly? ExpiryDate { get; set; }
+}
+
+public sealed class PurchaseReturn
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid CompanyId { get; set; }
+    public required Guid FiscalYearId { get; set; }
+    public required Guid PurchaseReceiptId { get; set; }
+    public required string Number { get; set; }
+    public required DateOnly DocumentDate { get; set; }
+    public required Guid WarehouseId { get; set; }
+    public PurchaseReturnStatus Status { get; set; } = PurchaseReturnStatus.Posted;
+    public string? Reason { get; set; }
+    public decimal GrandTotal { get; set; }
+    public decimal TaxTotal { get; set; }
+    public Guid? AccountingJournalEntryId { get; set; }
+    public Guid? ReversalJournalEntryId { get; set; }
+    public required Guid CreatedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public List<PurchaseReturnLine> Lines { get; set; } = [];
+}
+
+public sealed class PurchaseReturnLine
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid PurchaseReturnId { get; set; }
+    public required Guid PurchaseReceiptLineId { get; set; }
+    public required Guid ProductId { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal NetAmount { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal UnitCost { get; set; }
 }
 
 public sealed class WarehouseTransfer
