@@ -1210,6 +1210,105 @@ public sealed class DetailAccountSyncTests
     }
 
     [Fact]
+    public async Task PurchaseOrder_StatusWorkflow_HasNoStockOrAccountingEffect()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var supplier = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "SUP-PO",
+                "تامین‌کننده سفارش خرید",
+                DetailAccountType.Supplier,
+                null));
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "PO-ITEM-001",
+                "کالای سفارش خرید",
+                "626000000303",
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                20_000m,
+                12_000m));
+
+        var journalCountBefore =
+            await fixture.Db.JournalEntries.CountAsync();
+        var movementCountBefore =
+            await fixture.Db.StockMovements.CountAsync();
+
+        var order = await store.CreatePurchaseOrderAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreatePurchaseOrderRequest(
+                fiscalYear.Id,
+                fiscalYear.StartDate.AddDays(4),
+                fiscalYear.StartDate.AddDays(10),
+                supplier.Id,
+                warehouse.Id,
+                "سفارش خرید تست",
+                new[]
+                {
+                    new PurchaseOrderLineRequest(
+                        product.Id,
+                        4m,
+                        12_000m,
+                        2_000m,
+                        4_600m)
+                }));
+
+        Assert.Equal(PurchaseOrderStatus.Draft, order.Status);
+        Assert.Equal(50_600m, order.GrandTotal);
+        Assert.Equal(4m, order.Lines.Single().Quantity);
+        Assert.Equal(0m, order.Lines.Single().ReceivedQuantity);
+
+        var approved = await store.SetPurchaseOrderStatusAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            order.Id,
+            PurchaseOrderStatus.Approved);
+
+        Assert.Equal(PurchaseOrderStatus.Approved, approved.Status);
+        Assert.NotNull(approved.ApprovedAt);
+
+        var closed = await store.SetPurchaseOrderStatusAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            order.Id,
+            PurchaseOrderStatus.Closed);
+
+        Assert.Equal(PurchaseOrderStatus.Closed, closed.Status);
+        Assert.NotNull(closed.ClosedAt);
+
+        Assert.Equal(
+            journalCountBefore,
+            await fixture.Db.JournalEntries.CountAsync());
+        Assert.Equal(
+            movementCountBefore,
+            await fixture.Db.StockMovements.CountAsync());
+    }
+
+    [Fact]
     public async Task PurchaseReturn_ReducesStock_AndReversesPurchaseAccounting()
     {
         await using var fixture = await TestFixture.CreateAsync();
