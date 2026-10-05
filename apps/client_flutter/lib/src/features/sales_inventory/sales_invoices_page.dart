@@ -431,13 +431,22 @@ class _SalesInvoicesPageState
     setState(() => _busy = true);
 
     try {
-      final result = await _apiClient.createSalesReturn(
-        bearerToken: widget.accessToken,
-        invoiceId: invoice['id'].toString(),
-        documentDate: date,
-        reason: reason.text.trim(),
-        lines: requestLines,
-      );
+      final result = DemoMode.isDemoToken(widget.accessToken)
+          ? await LocalDemoBusinessEngine(
+              localDatabase: widget.localDatabase,
+            ).createSalesReturn(
+              invoiceId: invoice['id'].toString(),
+              documentDate: date,
+              reason: reason.text.trim(),
+              lines: requestLines,
+            )
+          : await _apiClient.createSalesReturn(
+              bearerToken: widget.accessToken,
+              invoiceId: invoice['id'].toString(),
+              documentDate: date,
+              reason: reason.text.trim(),
+              lines: requestLines,
+            );
 
       if (!mounted) return;
       setState(_reload);
@@ -449,6 +458,8 @@ class _SalesInvoicesPageState
             result['accountingJournalNumber'].toString(),
       );
     } on ApiException catch (error) {
+      _message(error.message);
+    } on StateError catch (error) {
       _message(error.message);
     } finally {
       for (final controller in controllers.values) {
