@@ -1328,6 +1328,7 @@ class ApiClient {
     required List<Map<String, dynamic>> lines,
     String? currencyId,
     num? exchangeRate,
+    String? purchaseOrderId,
   }) async {
     final response = await _request(
       'POST',
@@ -1343,6 +1344,7 @@ class ApiClient {
         'lines': lines,
         'currencyId': currencyId,
         'exchangeRate': exchangeRate,
+        'purchaseOrderId': purchaseOrderId,
       },
     );
 
