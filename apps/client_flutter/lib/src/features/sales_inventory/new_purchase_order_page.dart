@@ -861,18 +861,8 @@ class _PurchaseLineCard extends StatelessWidget {
   final VoidCallback onPickExpiry;
   final VoidCallback onRemove;
 
-  Map<String, dynamic>? _product() {
-    for (final item in products) {
-      if (item['id'].toString() == row.productId) {
-        return item;
-      }
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final product = _product();
     const tracking = 'None';
 
     return Card(
