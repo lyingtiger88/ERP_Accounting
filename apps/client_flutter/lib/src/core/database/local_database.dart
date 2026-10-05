@@ -15,7 +15,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 11;
+  static const _databaseVersion = 12;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -127,6 +127,7 @@ class LocalDatabase {
 
     await _createAccountingSchema(db);
     await _createSalesInventoryCacheSchema(db);
+    await _createDemoBusinessSchema(db);
   }
 
   Future<void> _upgradeSchema(
@@ -243,6 +244,10 @@ class LocalDatabase {
 
     if (oldVersion < 11) {
       await _createMasterDataSchema(db);
+    }
+
+    if (oldVersion < 12) {
+      await _createDemoBusinessSchema(db);
     }
   }
 
@@ -468,6 +473,45 @@ class LocalDatabase {
     ''');
   }
 
+  Future<void> _createDemoBusinessSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS demo_stock_movements (
+        id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        warehouse_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        document_date TEXT NOT NULL,
+        movement_type TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        unit_cost REAL NOT NULL,
+        lot_number TEXT,
+        serial_number TEXT,
+        expiry_date TEXT,
+        reference_type TEXT,
+        reference_id TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_demo_stock_movements_balance
+      ON demo_stock_movements(
+        company_id,
+        warehouse_id,
+        product_id,
+        lot_number,
+        serial_number,
+        expiry_date
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_demo_stock_movements_reference
+      ON demo_stock_movements(company_id, reference_type, reference_id)
+    ''');
+  }
+
   Database get _db {
     final db = _database;
     if (db == null) {
@@ -476,10 +520,18 @@ class LocalDatabase {
     return db;
   }
 
+  Future<T> runDemoBusinessTransaction<T>(
+    Future<T> Function(DatabaseExecutor txn) action,
+  ) {
+    return _db.transaction(action);
+  }
+
   Future<void> ensureDemoWorkspace() async {
     const companyId = DemoMode.companyId;
     const fiscalYearId =
         '00000000-0000-4000-8000-000000000510';
+    final demoInitialized =
+        await getMeta('demo_workspace_initialized') != null;
 
     await cacheUserProfile(
       userId: DemoMode.userId,
@@ -621,6 +673,19 @@ class LocalDatabase {
           'natureTitle': 'بدهکار',
           'isPostable': true,
         },
+        {
+          'id': '00000000-0000-4000-8000-000000000611',
+          'code': '1401',
+          'name': 'مالیات خرید دریافتنی',
+          'type': 'Asset',
+          'parentId': null,
+          'isActive': true,
+          'level': 'Detail',
+          'levelTitle': 'معین',
+          'nature': 'Debit',
+          'natureTitle': 'بدهکار',
+          'isPostable': true,
+        },
       ],
     );
 
@@ -715,121 +780,143 @@ class LocalDatabase {
       ],
     );
 
-    await replaceStoreEntities(
-      companyId: companyId,
-      entityType: 'StoreProduct',
-      items: const [
-        {
-          'id': '00000000-0000-4000-8000-000000000801',
-          'sku': 'DEMO-001',
-          'name': 'کالای نمونه A',
-          'barcode': '6260000000011',
-          'unitName': 'عدد',
-          'kind': 'Goods',
-          'trackInventory': true,
-          'salesPrice': 1250000,
-          'defaultPurchasePrice': 900000,
-          'isActive': true,
-          'trackingMode': 'None',
-          'minimumStock': 5,
-        },
-        {
-          'id': '00000000-0000-4000-8000-000000000802',
-          'sku': 'DEMO-002',
-          'name': 'کالای نمونه B',
-          'barcode': '6260000000028',
-          'unitName': 'عدد',
-          'kind': 'Goods',
-          'trackInventory': true,
-          'salesPrice': 2400000,
-          'defaultPurchasePrice': 1800000,
-          'isActive': true,
-          'trackingMode': 'Lot',
-          'minimumStock': 3,
-        },
-        {
-          'id': '00000000-0000-4000-8000-000000000803',
-          'sku': 'SRV-001',
-          'name': 'خدمت نمونه',
-          'barcode': null,
-          'unitName': 'سرویس',
-          'kind': 'Service',
-          'trackInventory': false,
-          'salesPrice': 3500000,
-          'defaultPurchasePrice': 0,
-          'isActive': true,
-          'trackingMode': 'None',
-          'minimumStock': 0,
-        },
-      ],
-    );
+    if (!demoInitialized) {
+      await replaceStoreEntities(
+        companyId: companyId,
+        entityType: 'StoreProduct',
+        items: const [
+          {
+            'id': '00000000-0000-4000-8000-000000000801',
+            'sku': 'DEMO-001',
+            'name': 'کالای نمونه A',
+            'barcode': '6260000000011',
+            'unitName': 'عدد',
+            'kind': 'Goods',
+            'trackInventory': true,
+            'salesPrice': 1250000,
+            'defaultPurchasePrice': 900000,
+            'isActive': true,
+            'trackingMode': 'None',
+            'minimumStock': 5,
+          },
+          {
+            'id': '00000000-0000-4000-8000-000000000802',
+            'sku': 'DEMO-002',
+            'name': 'کالای نمونه B',
+            'barcode': '6260000000028',
+            'unitName': 'عدد',
+            'kind': 'Goods',
+            'trackInventory': true,
+            'salesPrice': 2400000,
+            'defaultPurchasePrice': 1800000,
+            'isActive': true,
+            'trackingMode': 'Lot',
+            'minimumStock': 3,
+          },
+          {
+            'id': '00000000-0000-4000-8000-000000000803',
+            'sku': 'SRV-001',
+            'name': 'خدمت نمونه',
+            'barcode': null,
+            'unitName': 'سرویس',
+            'kind': 'Service',
+            'trackInventory': false,
+            'salesPrice': 3500000,
+            'defaultPurchasePrice': 0,
+            'isActive': true,
+            'trackingMode': 'None',
+            'minimumStock': 0,
+          },
+        ],
+      );
+  
+      await replaceStoreEntities(
+        companyId: companyId,
+        entityType: 'Warehouse',
+        items: const [
+          {
+            'id': '00000000-0000-4000-8000-000000000811',
+            'code': 'WH-01',
+            'name': 'انبار اصلی تست',
+            'isActive': true,
+          },
+          {
+            'id': '00000000-0000-4000-8000-000000000812',
+            'code': 'WH-02',
+            'name': 'انبار دوم تست',
+            'isActive': true,
+          },
+        ],
+      );
+  
+      await replaceStoreEntities(
+        companyId: companyId,
+        entityType: 'StockBalance',
+        items: const [
+          {
+            'productId': '00000000-0000-4000-8000-000000000801',
+            'sku': 'DEMO-001',
+            'productName': 'کالای نمونه A',
+            'warehouseId': '00000000-0000-4000-8000-000000000811',
+            'warehouseName': 'انبار اصلی تست',
+            'quantity': 25,
+            'averageCost': 900000,
+            'inventoryValue': 22500000,
+            'minimumStock': 5,
+            'isLowStock': false,
+          },
+          {
+            'productId': '00000000-0000-4000-8000-000000000802',
+            'sku': 'DEMO-002',
+            'productName': 'کالای نمونه B',
+            'warehouseId': '00000000-0000-4000-8000-000000000811',
+            'warehouseName': 'انبار اصلی تست',
+            'quantity': 2,
+            'averageCost': 1800000,
+            'inventoryValue': 3600000,
+            'minimumStock': 3,
+            'isLowStock': true,
+          },
+        ],
+      );
+  
+      await replaceStoreEntities(
+        companyId: companyId,
+        entityType: 'LowStockAlert',
+        items: const [
+          {
+            'productId': '00000000-0000-4000-8000-000000000802',
+            'sku': 'DEMO-002',
+            'productName': 'کالای نمونه B',
+            'warehouseId': '00000000-0000-4000-8000-000000000811',
+            'warehouseName': 'انبار اصلی تست',
+            'quantity': 2,
+            'minimumStock': 3,
+            'shortage': 1,
+          },
+        ],
+      );
 
-    await replaceStoreEntities(
-      companyId: companyId,
-      entityType: 'Warehouse',
-      items: const [
-        {
-          'id': '00000000-0000-4000-8000-000000000811',
-          'code': 'WH-01',
-          'name': 'انبار اصلی تست',
-          'isActive': true,
-        },
-        {
-          'id': '00000000-0000-4000-8000-000000000812',
-          'code': 'WH-02',
-          'name': 'انبار دوم تست',
-          'isActive': true,
-        },
-      ],
-    );
-
-    await replaceStoreEntities(
-      companyId: companyId,
-      entityType: 'StockBalance',
-      items: const [
-        {
-          'productId': '00000000-0000-4000-8000-000000000801',
-          'sku': 'DEMO-001',
-          'productName': 'کالای نمونه A',
-          'warehouseId': '00000000-0000-4000-8000-000000000811',
-          'warehouseName': 'انبار اصلی تست',
-          'quantity': 25,
-          'averageCost': 900000,
-          'inventoryValue': 22500000,
-          'minimumStock': 5,
-          'isLowStock': false,
-        },
-        {
-          'productId': '00000000-0000-4000-8000-000000000802',
-          'sku': 'DEMO-002',
-          'productName': 'کالای نمونه B',
-          'warehouseId': '00000000-0000-4000-8000-000000000811',
-          'warehouseName': 'انبار اصلی تست',
-          'quantity': 2,
-          'averageCost': 1800000,
-          'inventoryValue': 3600000,
-          'minimumStock': 3,
-          'isLowStock': true,
-        },
-      ],
-    );
-
-    await replaceStoreEntities(
-      companyId: companyId,
-      entityType: 'LowStockAlert',
-      items: const [
-        {
-          'productId': '00000000-0000-4000-8000-000000000802',
-          'sku': 'DEMO-002',
-          'productName': 'کالای نمونه B',
-          'warehouseId': '00000000-0000-4000-8000-000000000811',
-          'warehouseName': 'انبار اصلی تست',
-          'quantity': 2,
-          'minimumStock': 3,
-          'shortage': 1,
-        },
-      ],
-    );
+      await replaceStoreEntities(
+        companyId: companyId,
+        entityType: 'StockTrace',
+        items: const [
+          {
+            'productId': '00000000-0000-4000-8000-000000000802',
+            'sku': 'DEMO-002',
+            'productName': 'کالای نمونه B',
+            'warehouseId': '00000000-0000-4000-8000-000000000811',
+            'warehouseName': 'انبار اصلی تست',
+            'lotNumber': 'DEMO-LOT-001',
+            'serialNumber': null,
+            'expiryDate': '2027-12-31',
+            'quantity': 2,
+            'averageCost': 1800000,
+          },
+        ],
+      );
+  
+      }
 
     for (final type in const [
       'SalesInvoice',
