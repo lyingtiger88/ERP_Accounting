@@ -4,6 +4,7 @@ using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.SalesInventory;
 using ERPAccounting.Api.Treasury;
+using ERPAccounting.Api.Reporting;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -1208,6 +1209,121 @@ public sealed class DetailAccountSyncTests
                 x => x.JournalLineId == payableLine.Id);
 
         Assert.Equal(supplier.Id, dimension.DetailAccountId);
+    }
+
+    [Fact]
+    public async Task ReportsCenter_RespectsFromToDateRange_AndCalculatesProfit()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        var store = new SalesInventoryService(
+            fixture.Db,
+            accounting);
+
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+        await store.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var warehouse = (await store.GetWarehousesAsync(
+            fixture.Company.Id)).Single();
+
+        var product = await store.CreateProductAsync(
+            fixture.Company.Id,
+            new CreateProductRequest(
+                "RPT-001",
+                "کالای گزارش تست",
+                null,
+                "عدد",
+                ProductKind.Inventory,
+                true,
+                20_000m,
+                12_000m));
+
+        var firstDate = fiscalYear.StartDate.AddDays(3);
+        var secondDate = fiscalYear.StartDate.AddDays(15);
+
+        await store.AdjustStockAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateStockAdjustmentRequest(
+                warehouse.Id,
+                product.Id,
+                firstDate,
+                10m,
+                12_000m,
+                "موجودی گزارش"));
+
+        async Task PostSale(DateOnly date)
+        {
+            var invoice = await store.CreateSalesInvoiceAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                new CreateSalesInvoiceRequest(
+                    fiscalYear.Id,
+                    date,
+                    warehouse.Id,
+                    null,
+                    SalesPaymentType.Cash,
+                    "فروش گزارش",
+                    new[]
+                    {
+                        new SalesInvoiceLineRequest(
+                            product.Id,
+                            1m,
+                            20_000m,
+                            0m,
+                            0m)
+                    }));
+
+            await store.PostSalesInvoiceAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                invoice.Id);
+        }
+
+        await PostSale(firstDate);
+        await PostSale(secondDate);
+
+        var reporting = new ReportingService(fixture.Db);
+
+        var all = await reporting.GetReportsCenterAsync(
+            fixture.Company.Id,
+            firstDate,
+            secondDate);
+
+        Assert.Equal(40_000m, all.Summary.NetSales);
+        Assert.Equal(24_000m, all.Summary.CostOfGoodsSold);
+        Assert.Equal(16_000m, all.Summary.GrossProfit);
+        Assert.Equal(2m, all.Products.Single().NetSoldQuantity);
+
+        var ranged = await reporting.GetReportsCenterAsync(
+            fixture.Company.Id,
+            secondDate,
+            secondDate);
+
+        Assert.Equal(secondDate, ranged.From);
+        Assert.Equal(secondDate, ranged.To);
+        Assert.Equal(20_000m, ranged.Summary.NetSales);
+        Assert.Equal(12_000m, ranged.Summary.CostOfGoodsSold);
+        Assert.Equal(8_000m, ranged.Summary.GrossProfit);
+        Assert.Equal(
+            1m,
+            ranged.Products.Single().NetSoldQuantity);
+
+        var inventory = ranged.Inventory.Single(
+            x =>
+                x.ProductId == product.Id &&
+                x.WarehouseId == warehouse.Id);
+
+        Assert.Equal(9m, inventory.OpeningQuantity);
+        Assert.Equal(1m, inventory.OutQuantity);
+        Assert.Equal(8m, inventory.ClosingQuantity);
+        Assert.Equal(96_000m, inventory.ClosingValue);
     }
 
     [Fact]
