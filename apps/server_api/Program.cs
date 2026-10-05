@@ -4,6 +4,7 @@ using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.Security;
 using ERPAccounting.Api.SalesInventory;
+using ERPAccounting.Api.Treasury;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
@@ -64,6 +65,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AccountingService>();
 builder.Services.AddScoped<CurrencyAccountingService>();
 builder.Services.AddScoped<SalesInventoryService>();
+builder.Services.AddScoped<TreasuryService>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -82,6 +84,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await AccountingSchemaBootstrapper.EnsureExtensionsAsync(db);
     await CurrencySchemaBootstrapper.EnsureAsync(db);
     await SalesInventorySchemaBootstrapper.EnsureAsync(db);
+    await TreasurySchemaBootstrapper.EnsureAsync(db);
 }
 
 app.MapGet("/", () => Results.Ok(new
@@ -1136,6 +1139,178 @@ store.MapPost("/invoices/{invoiceId:guid}/returns", async (
     }
 });
 
+
+var treasury = app.MapGroup("/api/treasury");
+
+treasury.MapGet("/accounts", async (
+    HttpRequest request,
+    AuthService authService,
+    TreasuryService treasuryService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await treasuryService.GetAccountsAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+treasury.MapPost("/accounts", async (
+    HttpRequest request,
+    CreateTreasuryAccountRequest payload,
+    AuthService authService,
+    TreasuryService treasuryService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await treasuryService.CreateAccountAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+treasury.MapPut("/accounts/{accountId:guid}", async (
+    HttpRequest request,
+    Guid accountId,
+    UpdateTreasuryAccountRequest payload,
+    AuthService authService,
+    TreasuryService treasuryService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await treasuryService.UpdateAccountAsync(
+            user.CompanyId,
+            accountId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+treasury.MapGet("/transactions", async (
+    HttpRequest request,
+    DateOnly? from,
+    DateOnly? to,
+    AuthService authService,
+    TreasuryService treasuryService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await treasuryService.GetTransactionsAsync(
+            user.CompanyId,
+            from,
+            to,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+treasury.MapPost("/transactions", async (
+    HttpRequest request,
+    CreateTreasuryTransactionRequest payload,
+    AuthService authService,
+    TreasuryService treasuryService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteAccounting(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await treasuryService.PostTransactionAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
 
 var accounting = app.MapGroup("/api/accounting");
 
