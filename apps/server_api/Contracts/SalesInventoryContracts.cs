@@ -234,6 +234,64 @@ public sealed record PostSalesInvoiceResponse(
     decimal GrandTotal,
     decimal CostTotal);
 
+public sealed record PurchaseOrderLineRequest(
+    Guid ProductId,
+    decimal Quantity,
+    decimal? UnitCost,
+    decimal DiscountAmount,
+    decimal TaxAmount);
+
+public sealed record CreatePurchaseOrderRequest(
+    Guid FiscalYearId,
+    DateOnly DocumentDate,
+    DateOnly? ExpectedDate,
+    Guid SupplierDetailAccountId,
+    Guid WarehouseId,
+    string? Description,
+    IReadOnlyList<PurchaseOrderLineRequest> Lines,
+    Guid? CurrencyId = null,
+    decimal? ExchangeRate = null);
+
+public sealed record PurchaseOrderLineView(
+    Guid Id,
+    Guid ProductId,
+    string Sku,
+    string ProductName,
+    string UnitName,
+    decimal Quantity,
+    decimal ReceivedQuantity,
+    decimal UnitCost,
+    decimal DiscountAmount,
+    decimal TaxAmount,
+    decimal NetAmount);
+
+public sealed record PurchaseOrderView(
+    Guid Id,
+    Guid FiscalYearId,
+    string Number,
+    DateOnly DocumentDate,
+    DateOnly? ExpectedDate,
+    Guid? CurrencyId,
+    string CurrencyCode,
+    decimal ExchangeRate,
+    Guid SupplierDetailAccountId,
+    string SupplierName,
+    Guid WarehouseId,
+    string WarehouseName,
+    PurchaseOrderStatus Status,
+    string? Description,
+    decimal Subtotal,
+    decimal DiscountTotal,
+    decimal TaxTotal,
+    decimal GrandTotal,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ApprovedAt,
+    DateTimeOffset? ClosedAt,
+    IReadOnlyList<PurchaseOrderLineView> Lines);
+
+public sealed record SetPurchaseOrderStatusRequest(
+    PurchaseOrderStatus Status);
+
 public sealed record PurchaseReceiptLineRequest(
     Guid ProductId,
     decimal Quantity,
