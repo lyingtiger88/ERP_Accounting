@@ -384,16 +384,19 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                 final document = documents[index];
                 final pending = document.syncStatus == 'Pending';
                 final synced = document.syncStatus == 'Synced';
+                final postedLocal = document.status == 'PostedLocal';
 
                 return Card(
                   child: ExpansionTile(
                     leading: CircleAvatar(
                       child: Icon(
-                        synced
-                            ? Icons.cloud_done_outlined
-                            : pending
-                                ? Icons.cloud_upload_outlined
-                                : Icons.edit_note_outlined,
+                        postedLocal
+                            ? Icons.check_circle_outline
+                            : synced
+                                ? Icons.cloud_done_outlined
+                                : pending
+                                    ? Icons.cloud_upload_outlined
+                                    : Icons.edit_note_outlined,
                       ),
                     ),
                     title: Text(
@@ -421,19 +424,23 @@ class _LocalDocumentsPageState extends State<LocalDocumentsPage> {
                     ),
                     trailing: Chip(
                       avatar: Icon(
-                        synced
-                            ? Icons.cloud_done_outlined
-                            : pending
-                                ? Icons.schedule_send_outlined
-                                : Icons.save_outlined,
+                        postedLocal
+                            ? Icons.check_circle_outline
+                            : synced
+                                ? Icons.cloud_done_outlined
+                                : pending
+                                    ? Icons.schedule_send_outlined
+                                    : Icons.save_outlined,
                         size: 16,
                       ),
                       label: Text(
-                        synced
-                            ? 'Synced'
-                            : pending
-                                ? 'Pending Sync'
-                                : 'Draft',
+                        postedLocal
+                            ? 'قطعی محلی'
+                            : synced
+                                ? 'Synced'
+                                : pending
+                                    ? 'Pending Sync'
+                                    : 'Draft',
                       ),
                     ),
                     children: [
