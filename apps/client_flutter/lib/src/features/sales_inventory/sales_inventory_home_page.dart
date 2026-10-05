@@ -7,6 +7,7 @@ import '../../core/sync/accounting_sync_service.dart';
 import '../accounting/report_support.dart';
 import 'products_page.dart';
 import 'purchase_receipts_page.dart';
+import 'purchase_returns_page.dart';
 import 'sales_invoices_page.dart';
 import 'sales_inventory_settings_page.dart';
 import 'sales_returns_page.dart';
@@ -466,6 +467,19 @@ class _SalesInventoryHomePageState
                       icon: Icons.shopping_cart_checkout_outlined,
                       onTap: () => _open(
                         PurchaseReceiptsPage(
+                          companyId: widget.companyId,
+                          accessToken: widget.accessToken,
+                          localDatabase: widget.localDatabase,
+                        ),
+                      ),
+                    ),
+                    _ModuleCard(
+                      title: 'برگشت از خرید',
+                      subtitle:
+                          'برگشت جزئی/کامل، خروج موجودی و سند معکوس خرید',
+                      icon: Icons.assignment_return_outlined,
+                      onTap: () => _open(
+                        PurchaseReturnsPage(
                           companyId: widget.companyId,
                           accessToken: widget.accessToken,
                           localDatabase: widget.localDatabase,
