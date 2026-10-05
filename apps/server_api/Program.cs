@@ -1182,6 +1182,53 @@ reports.MapGet("/center", async (
     }
 });
 
+reports.MapGet("/center.csv", async (
+    HttpRequest request,
+    DateOnly? from,
+    DateOnly? to,
+    Guid? warehouseId,
+    Guid? productId,
+    Guid? detailAccountId,
+    AuthService authService,
+    ReportingService reportingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        var report = await reportingService.GetReportsCenterAsync(
+            user.CompanyId,
+            from,
+            to,
+            warehouseId,
+            productId,
+            detailAccountId,
+            cancellationToken);
+
+        var fileName = from.HasValue || to.HasValue
+            ? $"reports-center-{from?.ToString("yyyyMMdd") ?? "start"}-{to?.ToString("yyyyMMdd") ?? "today"}.csv"
+            : "reports-center.csv";
+
+        return Results.File(
+            ReportsCenterCsvExporter.Export(report),
+            "text/csv; charset=utf-8",
+            fileName);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 var treasury = app.MapGroup("/api/treasury");
 
 treasury.MapGet("/accounts", async (
