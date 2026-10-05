@@ -837,6 +837,35 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<Map<String, dynamic>> getReportsCenter({
+    required String bearerToken,
+    DateTime? from,
+    DateTime? to,
+    String? warehouseId,
+    String? productId,
+    String? detailAccountId,
+  }) async {
+    final parts = <String>[
+      if (from != null) 'from=' + _dateOnly(from),
+      if (to != null) 'to=' + _dateOnly(to),
+      if (warehouseId != null && warehouseId.isNotEmpty)
+        'warehouseId=' + Uri.encodeQueryComponent(warehouseId),
+      if (productId != null && productId.isNotEmpty)
+        'productId=' + Uri.encodeQueryComponent(productId),
+      if (detailAccountId != null && detailAccountId.isNotEmpty)
+        'detailAccountId=' + Uri.encodeQueryComponent(detailAccountId),
+    ];
+
+    final response = await _request(
+      'GET',
+      '/api/reports/center' +
+          (parts.isEmpty ? '' : '?' + parts.join('&')),
+      bearerToken: bearerToken,
+    );
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<Map<String, dynamic>> getGeneralLedger({
     required String bearerToken,
     String? accountId,
