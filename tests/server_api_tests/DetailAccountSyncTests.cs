@@ -3,6 +3,7 @@ using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.SalesInventory;
+using ERPAccounting.Api.Treasury;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -1207,6 +1208,174 @@ public sealed class DetailAccountSyncTests
                 x => x.JournalLineId == payableLine.Id);
 
         Assert.Equal(supplier.Id, dimension.DetailAccountId);
+    }
+
+    [Fact]
+    public async Task Treasury_ReceiptPaymentAndTransfer_CreateBalancedJournals()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var accounting = new AccountingService(fixture.Db);
+        await accounting.SeedDefaultAccountsAsync(
+            fixture.Company.Id);
+
+        var currency = new CurrencyAccountingService(
+            fixture.Db,
+            accounting);
+        await currency.EnsureDefaultsAsync(
+            fixture.Company.Id);
+
+        var fiscalYear =
+            await accounting.EnsureDefaultFiscalYearAsync(
+                fixture.Company.Id);
+
+        var treasury = new TreasuryService(
+            fixture.Db,
+            accounting,
+            currency);
+
+        var ledgers = await fixture.Db.Accounts
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == fixture.Company.Id &&
+                new[] { "1110", "1120", "1200", "2100" }
+                    .Contains(x.Code))
+            .ToDictionaryAsync(x => x.Code);
+
+        var cashbox = await treasury.CreateAccountAsync(
+            fixture.Company.Id,
+            new CreateTreasuryAccountRequest(
+                "CASH-01",
+                "صندوق اصلی",
+                TreasuryAccountType.Cashbox,
+                ledgers["1110"].Id));
+
+        var bank = await treasury.CreateAccountAsync(
+            fixture.Company.Id,
+            new CreateTreasuryAccountRequest(
+                "BANK-01",
+                "بانک اصلی",
+                TreasuryAccountType.Bank,
+                ledgers["1120"].Id));
+
+        var customer = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "CUS-TR",
+                "مشتری خزانه",
+                DetailAccountType.Customer,
+                null));
+
+        var supplier = await accounting.CreateDetailAccountAsync(
+            fixture.Company.Id,
+            new CreateDetailAccountRequest(
+                "SUP-TR",
+                "تامین‌کننده خزانه",
+                DetailAccountType.Supplier,
+                null));
+
+        var date = fiscalYear.StartDate.AddDays(15);
+
+        var receipt = await treasury.PostTransactionAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateTreasuryTransactionRequest(
+                fiscalYear.Id,
+                date,
+                TreasuryTransactionType.Receipt,
+                100_000m,
+                "وصول از مشتری",
+                ToTreasuryAccountId: cashbox.Id,
+                CounterAccountId: ledgers["1200"].Id,
+                DetailAccountId: customer.Id));
+
+        var payment = await treasury.PostTransactionAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateTreasuryTransactionRequest(
+                fiscalYear.Id,
+                date.AddDays(1),
+                TreasuryTransactionType.Payment,
+                70_000m,
+                "پرداخت به تامین‌کننده",
+                FromTreasuryAccountId: cashbox.Id,
+                CounterAccountId: ledgers["2100"].Id,
+                DetailAccountId: supplier.Id));
+
+        var transfer = await treasury.PostTransactionAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateTreasuryTransactionRequest(
+                fiscalYear.Id,
+                date.AddDays(2),
+                TreasuryTransactionType.Transfer,
+                20_000m,
+                "انتقال صندوق به بانک",
+                FromTreasuryAccountId: cashbox.Id,
+                ToTreasuryAccountId: bank.Id));
+
+        Assert.NotNull(receipt.AccountingJournalEntryId);
+        Assert.NotNull(payment.AccountingJournalEntryId);
+        Assert.NotNull(transfer.AccountingJournalEntryId);
+
+        var journalIds = new[]
+        {
+            receipt.AccountingJournalEntryId!.Value,
+            payment.AccountingJournalEntryId!.Value,
+            transfer.AccountingJournalEntryId!.Value
+        };
+
+        var journals = await fixture.Db.JournalEntries
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x => journalIds.Contains(x.Id))
+            .ToArrayAsync();
+
+        Assert.Equal(3, journals.Length);
+        Assert.All(
+            journals,
+            journal => Assert.Equal(
+                journal.Lines.Sum(x => x.Debit),
+                journal.Lines.Sum(x => x.Credit)));
+
+        var receiptJournal = journals.Single(
+            x => x.Id == receipt.AccountingJournalEntryId);
+        Assert.Contains(
+            receiptJournal.Lines,
+            x =>
+                x.AccountId == ledgers["1110"].Id &&
+                x.Debit == 100_000m);
+        Assert.Contains(
+            receiptJournal.Lines,
+            x =>
+                x.AccountId == ledgers["1200"].Id &&
+                x.Credit == 100_000m);
+
+        var paymentJournal = journals.Single(
+            x => x.Id == payment.AccountingJournalEntryId);
+        Assert.Contains(
+            paymentJournal.Lines,
+            x =>
+                x.AccountId == ledgers["2100"].Id &&
+                x.Debit == 70_000m);
+        Assert.Contains(
+            paymentJournal.Lines,
+            x =>
+                x.AccountId == ledgers["1110"].Id &&
+                x.Credit == 70_000m);
+
+        var transferJournal = journals.Single(
+            x => x.Id == transfer.AccountingJournalEntryId);
+        Assert.Contains(
+            transferJournal.Lines,
+            x =>
+                x.AccountId == ledgers["1120"].Id &&
+                x.Debit == 20_000m);
+        Assert.Contains(
+            transferJournal.Lines,
+            x =>
+                x.AccountId == ledgers["1110"].Id &&
+                x.Credit == 20_000m);
     }
 
     [Fact]
