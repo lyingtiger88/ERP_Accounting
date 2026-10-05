@@ -920,6 +920,7 @@ class LocalDatabase {
 
     for (final type in const [
       'SalesInvoice',
+      'PurchaseOrder',
       'PurchaseReceipt',
       'PurchaseReturn',
       'SalesReturn',
