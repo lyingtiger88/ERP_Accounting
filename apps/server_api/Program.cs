@@ -720,6 +720,106 @@ store.MapGet("/stock/trace", async (
             cancellationToken));
 });
 
+store.MapGet("/purchase-orders", async (
+    HttpRequest request,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await storeService.GetPurchaseOrdersAsync(
+            user.CompanyId,
+            cancellationToken));
+});
+
+store.MapPost("/purchase-orders", async (
+    HttpRequest request,
+    CreatePurchaseOrderRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSalesInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.CreatePurchaseOrderAsync(
+            user.CompanyId,
+            user.Id,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+store.MapPost("/purchase-orders/{orderId:guid}/status", async (
+    HttpRequest request,
+    Guid orderId,
+    SetPurchaseOrderStatusRequest payload,
+    AuthService authService,
+    SalesInventoryService storeService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanWriteSalesInventory(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await storeService.SetPurchaseOrderStatusAsync(
+            user.CompanyId,
+            user.Id,
+            orderId,
+            payload.Status,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
 store.MapGet("/purchases", async (
     HttpRequest request,
     AuthService authService,
