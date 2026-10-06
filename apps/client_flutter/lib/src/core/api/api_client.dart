@@ -866,6 +866,60 @@ class ApiClient {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<List<int>> getReportsCenterCsv({
+    required String bearerToken,
+    DateTime? from,
+    DateTime? to,
+    String? warehouseId,
+    String? productId,
+    String? detailAccountId,
+  }) async {
+    final parts = <String>[
+      if (from != null) 'from=' + _dateOnly(from),
+      if (to != null) 'to=' + _dateOnly(to),
+      if (warehouseId != null && warehouseId.isNotEmpty)
+        'warehouseId=' + Uri.encodeQueryComponent(warehouseId),
+      if (productId != null && productId.isNotEmpty)
+        'productId=' + Uri.encodeQueryComponent(productId),
+      if (detailAccountId != null && detailAccountId.isNotEmpty)
+        'detailAccountId=' + Uri.encodeQueryComponent(detailAccountId),
+    ];
+
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(
+        Uri.parse(
+          baseUrl +
+              '/api/reports/center.csv' +
+              (parts.isEmpty ? '' : '?' + parts.join('&')),
+        ),
+      );
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer ' + bearerToken,
+      );
+      final response = await request.close();
+      final bytes = await response.fold<List<int>>(
+        <int>[],
+        (buffer, chunk) => buffer..addAll(chunk),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(
+          utf8.decode(bytes, allowMalformed: true),
+          response.statusCode,
+        );
+      }
+      return bytes;
+    } on SocketException {
+      throw const ApiException(
+        'اتصال به سرور برقرار نشد. آدرس API و اجرای سرور را بررسی کنید.',
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   Future<Map<String, dynamic>> getGeneralLedger({
     required String bearerToken,
     String? accountId,
