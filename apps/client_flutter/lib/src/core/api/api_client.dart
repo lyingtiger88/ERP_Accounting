@@ -1983,7 +1983,7 @@ class ApiClient {
           bearerToken != null) {
         final refreshed = await refreshSession();
         if (refreshed != null) {
-          return _request(
+          return await _request(
             method,
             path,
             body: body,
