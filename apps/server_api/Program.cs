@@ -243,6 +243,149 @@ app.MapGet("/api/me", async (
         });
 });
 
+var admin = app.MapGroup("/api/admin");
+
+admin.MapGet("/users", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanManageUsers(user))
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await authService.GetUsersAsync(
+        user.CompanyId,
+        cancellationToken));
+});
+
+admin.MapPost("/users", async (
+    HttpRequest request,
+    CreateUserRequest payload,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanManageUsers(user))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await authService.CreateUserAsync(
+            user.CompanyId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+admin.MapPut("/users/{userId:guid}", async (
+    HttpRequest request,
+    Guid userId,
+    UpdateUserRequest payload,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var actor = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (actor is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanManageUsers(actor))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        return Results.Ok(await authService.UpdateUserAsync(
+            actor.CompanyId,
+            actor.Id,
+            userId,
+            payload,
+            cancellationToken));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+admin.MapPost("/users/{userId:guid}/reset-password", async (
+    HttpRequest request,
+    Guid userId,
+    ResetUserPasswordRequest payload,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var actor = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (actor is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanManageUsers(actor))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        await authService.ResetUserPasswordAsync(
+            actor.CompanyId,
+            userId,
+            payload,
+            cancellationToken);
+        return Results.Ok(new { reset = true });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 var store = app.MapGroup("/api/sales-inventory");
 
 store.MapPost("/defaults/ensure", async (
@@ -2883,6 +3026,13 @@ static async Task<AppUser?> CurrentUserAsync(
     return await authService.ResolveAsync(
         token,
         cancellationToken);
+}
+
+static bool CanManageUsers(AppUser user)
+{
+    return user.Role is
+        UserRole.Owner or
+        UserRole.Administrator;
 }
 
 static bool CanWriteSalesInventory(AppUser user)
