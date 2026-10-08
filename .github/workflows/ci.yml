@@ -54,3 +54,78 @@ jobs:
       - name: Analyze
         working-directory: apps/client_flutter
         run: flutter analyze --no-fatal-infos
+
+  android-build:
+    name: Android APK smoke build
+    runs-on: ubuntu-latest
+    needs: flutter
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android shell
+        working-directory: apps/client_flutter
+        run: flutter create . --platforms=android --project-name erp_accounting
+
+      - name: Packages
+        working-directory: apps/client_flutter
+        run: flutter pub get
+
+      - name: Build beta APK
+        working-directory: apps/client_flutter
+        run: flutter build apk --debug
+
+      - name: Upload Android beta artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ERP-Accounting-Android-Beta
+          path: apps/client_flutter/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-build:
+    name: Windows executable smoke build
+    runs-on: windows-latest
+    needs: flutter
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Windows shell
+        working-directory: apps/client_flutter
+        run: flutter create . --platforms=windows --project-name erp_accounting
+
+      - name: Packages
+        working-directory: apps/client_flutter
+        run: flutter pub get
+
+      - name: Build Windows beta
+        working-directory: apps/client_flutter
+        run: flutter build windows --release
+
+      - name: Upload Windows beta artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ERP-Accounting-Windows-Beta
+          path: apps/client_flutter/build/windows/x64/runner/Release/**
+          if-no-files-found: error
+          retention-days: 14
+
