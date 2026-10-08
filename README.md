@@ -48,7 +48,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] PostgreSQL migration strategy
 - [x] SQLite local database strategy
 
-### Phase 1 — Identity + Accounting Core **← CURRENT**
+### Phase 1 — Identity + Accounting Core
 
 #### Identity & Security
 - [x] Company bootstrap
@@ -58,15 +58,15 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Login API
 - [x] Client login connected to API
 - [x] Trusted-device domain model
-- [ ] Persistent sessions + refresh tokens
-- [ ] User/role administration screens
+- [x] Persistent sessions + rotating refresh tokens
+- [x] User/role administration screens
 - [ ] TOTP 2FA
 - [ ] Backup recovery codes
-- [ ] Trusted-device management
+- [x] Trusted-device management + session revocation
 - [ ] Optional QR device pairing
 - [ ] Step-up authentication for sensitive operations
 - [x] Accounting audit log
-- [ ] Security audit log
+- [x] Security audit log
 - [ ] Passkey / Windows Hello / Android biometrics
 
 #### Accounting
@@ -105,7 +105,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Shared client SQLite storage layer (Windows/Android)
 - [x] Windows offline cache validation path
 - [ ] Android device validation
-- [ ] Secure local credential storage
+- [x] Secure local credential storage
 
 ### Phase 2 — Synchronization Engine
 
@@ -140,16 +140,16 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Suppliers
 - [ ] Quotations / proforma invoices
 - [x] Sales invoices
-- [ ] Sales returns
+- [x] Sales returns
 - [ ] Purchase invoices
-- [ ] Purchase returns
+- [x] Purchase returns
 - [x] Sales-line discounts
 - [x] Sales invoice tax amounts + accounting mapping
-- [ ] Receipts
-- [ ] Payments
-- [ ] Cashboxes
-- [ ] Bank accounts
-- [ ] Transfers
+- [x] Receipts
+- [x] Payments
+- [x] Cashboxes
+- [x] Bank accounts
+- [x] Transfers
 - [ ] Cheques
 - [ ] Due-date tracking
 - [ ] Accounts receivable
@@ -161,14 +161,14 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Products and services
 - [x] Multiple warehouses
 - [x] Inventory issues + manual stock adjustments
-- [ ] Warehouse transfers
+- [x] Warehouse transfers
 - [x] Real-time stock balances
-- [ ] Minimum stock alerts
-- [ ] Barcode support
+- [x] Minimum stock alerts
+- [x] Barcode support
 - [ ] QR support
-- [ ] Serial numbers
-- [ ] Batch/lot tracking
-- [ ] Expiration dates
+- [x] Serial numbers
+- [x] Batch/lot tracking
+- [x] Expiration dates
 - [x] Moving-average stock valuation for sales
 - [ ] Fixed assets
 - [ ] Depreciation
@@ -181,8 +181,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] CRM
 - [ ] Customer interaction history
 - [ ] Contracts
-- [ ] Projects
-- [ ] Cost centers
+- [x] Projects
+- [x] Cost centers
 - [ ] Branches / organizational units
 - [ ] HR employee records
 - [ ] Attendance
@@ -202,13 +202,31 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Notifications
 - [ ] Role-based dashboards
 
+## Current release stage
+
+**0.5.0-beta.1 — Controlled Beta Candidate**
+
+The current target is a small real-user pilot (approximately 5–20 users), not unrestricted production deployment. The beta scope, known exclusions and acceptance checklist are documented in `docs/BETA_TESTING.md`.
+
+Key beta hardening now implemented:
+- persistent hashed server sessions with rotating refresh tokens
+- OS secure token storage on the client
+- login/refresh rate limiting
+- user/role administration with last-Owner protection
+- trusted-device session revocation
+- security audit trail
+- configurable API endpoint before login
+- local SQLite backup/restore with integrity validation and safety copy
+- SQLite/PostgreSQL server backup/restore scripts
+- CI smoke builds for Windows and Android artifacts
+
 ### Phase 6 — Production, Distribution & Hardening
 
 - [x] Initial automated sync/revision tests
 - [ ] Broader unit-test coverage
 - [ ] Integration tests
 - [ ] End-to-end tests
-- [ ] Backup / restore
+- [x] Local backup/restore + server backup/restore tooling
 - [ ] Disaster recovery
 - [ ] Security review
 - [ ] Performance profiling
