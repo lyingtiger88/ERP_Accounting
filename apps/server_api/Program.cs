@@ -73,12 +73,28 @@ builder.Services.AddProblemDetails();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddFixedWindowLimiter("auth", limiter =>
+    options.AddPolicy("auth", httpContext =>
     {
-        limiter.PermitLimit = 10;
-        limiter.Window = TimeSpan.FromMinutes(1);
-        limiter.QueueLimit = 0;
-        limiter.AutoReplenishment = true;
+        var forwardedFor = httpContext.Request.Headers["X-Forwarded-For"]
+            .FirstOrDefault()?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()?
+            .Trim();
+
+        var key = !string.IsNullOrWhiteSpace(forwardedFor)
+            ? forwardedFor
+            : httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: key,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
     });
 });
 builder.Services.ConfigureHttpJsonOptions(options =>
