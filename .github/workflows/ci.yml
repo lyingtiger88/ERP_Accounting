@@ -83,15 +83,29 @@ jobs:
         working-directory: apps/client_flutter
         run: flutter pub get
 
-      - name: Build beta APK
+      - name: Enable Android internet permission
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("apps/client_flutter/android/app/src/main/AndroidManifest.xml")
+          text = path.read_text(encoding="utf-8")
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+          if permission not in text:
+              marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+              text = text.replace(marker, marker + "\n    " + permission)
+              path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Build beta release APK
         working-directory: apps/client_flutter
-        run: flutter build apk --debug
+        run: flutter build apk --release
 
       - name: Upload Android beta artifact
         uses: actions/upload-artifact@v6
         with:
           name: ERP-Accounting-Android-Beta
-          path: apps/client_flutter/build/app/outputs/flutter-apk/app-debug.apk
+          path: apps/client_flutter/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
