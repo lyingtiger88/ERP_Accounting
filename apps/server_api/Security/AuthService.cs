@@ -298,6 +298,61 @@ public sealed class AuthService(
                 cancellationToken);
     }
 
+    public async Task<IReadOnlyList<DeviceResponse>> GetDevicesAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await db.Devices
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .OrderByDescending(x => x.LastSeenAt)
+            .ThenByDescending(x => x.FirstSeenAt)
+            .Select(x => new DeviceResponse(
+                x.Id,
+                x.DeviceName,
+                x.Platform,
+                x.TrustState.ToString(),
+                x.FirstSeenAt,
+                x.LastSeenAt))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<bool> RevokeDeviceAsync(
+        Guid userId,
+        Guid deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await db.Devices
+            .FirstOrDefaultAsync(
+                x => x.Id == deviceId && x.UserId == userId,
+                cancellationToken);
+
+        if (device is null)
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        device.TrustState = DeviceTrustState.Revoked;
+        device.RevokedAt = now;
+
+        var sessions = await db.AuthSessions
+            .Where(x =>
+                x.UserId == userId &&
+                x.DeviceId == deviceId &&
+                x.RevokedAt == null)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var session in sessions)
+        {
+            session.RevokedAt = now;
+            session.RevokeReason = "DeviceRevoked";
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<IReadOnlyList<AdminUserView>> GetUsersAsync(
         Guid companyId,
         CancellationToken cancellationToken = default)
