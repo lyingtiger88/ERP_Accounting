@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../auth/secure_session_store.dart';
 import '../demo/demo_mode.dart';
 import '../sync/sync_models.dart';
 
@@ -23,6 +24,8 @@ class LoginResult {
     required this.displayName,
     required this.role,
     required this.mfaRequired,
+    required this.refreshToken,
+    required this.refreshExpiresAt,
   });
 
   final String accessToken;
@@ -32,6 +35,8 @@ class LoginResult {
   final String displayName;
   final String role;
   final bool mfaRequired;
+  final String refreshToken;
+  final DateTime refreshExpiresAt;
 
   factory LoginResult.fromJson(Map<String, dynamic> json) {
     return LoginResult(
@@ -42,6 +47,23 @@ class LoginResult {
       displayName: json['displayName'] as String,
       role: json['role'] as String,
       mfaRequired: json['mfaRequired'] as bool? ?? false,
+      refreshToken: json['refreshToken'] as String,
+      refreshExpiresAt:
+          DateTime.parse(json['refreshExpiresAt'] as String),
+    );
+  }
+
+  SecureSession toSecureSession() {
+    return SecureSession(
+      accessToken: accessToken,
+      accessExpiresAt: expiresAt,
+      refreshToken: refreshToken,
+      refreshExpiresAt: refreshExpiresAt,
+      userId: userId,
+      companyId: companyId,
+      displayName: displayName,
+      role: role,
+      mfaRequired: mfaRequired,
     );
   }
 }
@@ -167,6 +189,56 @@ class ApiClient {
     );
 
     return LoginResult.fromJson(payload as Map<String, dynamic>);
+  }
+
+  Future<LoginResult?> refreshSession({
+    String? refreshToken,
+  }) async {
+    final token = refreshToken ??
+        await SecureSessionStore.instance.currentRefreshToken();
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    try {
+      final payload = await _request(
+        'POST',
+        '/api/auth/refresh',
+        body: {'refreshToken': token},
+        allowRefresh: false,
+      );
+      final result = LoginResult.fromJson(
+        Map<String, dynamic>.from(payload as Map),
+      );
+      await SecureSessionStore.instance.write(
+        result.toSecureSession(),
+      );
+      return result;
+    } on ApiException catch (error) {
+      if (error.statusCode == 401) {
+        await SecureSessionStore.instance.clear();
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> logout({
+    String? bearerToken,
+  }) async {
+    final refresh =
+        await SecureSessionStore.instance.currentRefreshToken();
+    try {
+      await _request(
+        'POST',
+        '/api/auth/logout',
+        bearerToken: bearerToken,
+        body: {'refreshToken': refresh},
+        allowRefresh: false,
+      );
+    } finally {
+      await SecureSessionStore.instance.clear();
+    }
   }
 
   Future<List<Map<String, dynamic>>> getCurrencies({
@@ -1793,11 +1865,21 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
     String? bearerToken,
+    bool allowRefresh = true,
   }) async {
     if (DemoMode.isDemoToken(bearerToken)) {
       throw const ApiException(
         'حالت تست آفلاین است و به سرور متصل نمی‌شود.',
       );
+    }
+
+    var effectiveBearerToken = bearerToken;
+    if (bearerToken != null) {
+      final current =
+          await SecureSessionStore.instance.currentAccessToken();
+      if (current != null && current.isNotEmpty) {
+        effectiveBearerToken = current;
+      }
     }
 
     final client = HttpClient();
@@ -1810,10 +1892,10 @@ class ApiClient {
 
       request.headers.contentType = ContentType.json;
 
-      if (bearerToken != null) {
+      if (effectiveBearerToken != null) {
         request.headers.set(
           HttpHeaders.authorizationHeader,
-          'Bearer ' + bearerToken,
+          'Bearer ' + effectiveBearerToken,
         );
       }
 
@@ -1825,6 +1907,21 @@ class ApiClient {
       final responseText = await response.transform(utf8.decoder).join();
       final dynamic decoded =
           responseText.isEmpty ? null : jsonDecode(responseText);
+
+      if (response.statusCode == 401 &&
+          allowRefresh &&
+          bearerToken != null) {
+        final refreshed = await refreshSession();
+        if (refreshed != null) {
+          return _request(
+            method,
+            path,
+            body: body,
+            bearerToken: refreshed.accessToken,
+            allowRefresh: false,
+          );
+        }
+      }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         String message =
