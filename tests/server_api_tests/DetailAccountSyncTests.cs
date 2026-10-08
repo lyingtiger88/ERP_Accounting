@@ -5,6 +5,8 @@ using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.SalesInventory;
 using ERPAccounting.Api.Treasury;
 using ERPAccounting.Api.Reporting;
+using ERPAccounting.Api.Security;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -1209,6 +1211,77 @@ public sealed class DetailAccountSyncTests
                 x => x.JournalLineId == payableLine.Id);
 
         Assert.Equal(supplier.Id, dimension.DetailAccountId);
+    }
+
+    [Fact]
+    public async Task AuthSession_Persists_RotatesRefresh_AndRejectsReplay()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var hasher = new PasswordHasher<AppUser>();
+        const string password = "Strong-Test-Password-123!";
+        fixture.User.PasswordHash = hasher.HashPassword(
+            fixture.User,
+            password);
+        await fixture.Db.SaveChangesAsync();
+
+        var auth = new AuthService(
+            fixture.Db,
+            hasher);
+
+        var login = await auth.LoginAsync(
+            new LoginRequest(
+                fixture.User.Username,
+                password,
+                "CI Device",
+                "test"));
+
+        Assert.NotNull(login);
+        Assert.NotEmpty(login!.AccessToken);
+        Assert.NotEmpty(login.RefreshToken);
+        Assert.True(login.RefreshExpiresAt > login.ExpiresAt);
+
+        var resolved = await auth.ResolveAsync(login.AccessToken);
+        Assert.Equal(fixture.User.Id, resolved?.Id);
+
+        var restartedAuth = new AuthService(
+            fixture.Db,
+            hasher);
+        var afterRestart = await restartedAuth.ResolveAsync(
+            login.AccessToken);
+        Assert.Equal(fixture.User.Id, afterRestart?.Id);
+
+        var refreshed = await restartedAuth.RefreshAsync(
+            new RefreshSessionRequest(login.RefreshToken));
+
+        Assert.NotNull(refreshed);
+        Assert.NotEqual(login.AccessToken, refreshed!.AccessToken);
+        Assert.NotEqual(login.RefreshToken, refreshed.RefreshToken);
+
+        Assert.Null(
+            await restartedAuth.ResolveAsync(login.AccessToken));
+
+        Assert.Null(
+            await restartedAuth.RefreshAsync(
+                new RefreshSessionRequest(login.RefreshToken)));
+
+        Assert.Equal(
+            fixture.User.Id,
+            (await restartedAuth.ResolveAsync(
+                refreshed.AccessToken))?.Id);
+
+        Assert.True(
+            await restartedAuth.RevokeAsync(
+                refreshed.AccessToken,
+                refreshed.RefreshToken));
+
+        Assert.Null(
+            await restartedAuth.ResolveAsync(
+                refreshed.AccessToken));
+        Assert.Null(
+            await restartedAuth.RefreshAsync(
+                new RefreshSessionRequest(
+                    refreshed.RefreshToken)));
     }
 
     [Fact]
