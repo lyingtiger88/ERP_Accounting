@@ -299,6 +299,185 @@ public sealed class AuthService(
                 cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AdminUserView>> GetUsersAsync(
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        return await db.Users
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .OrderBy(x => x.Username)
+            .Select(x => new AdminUserView(
+                x.Id,
+                x.Username,
+                x.DisplayName,
+                x.Role,
+                x.IsActive,
+                x.MfaEnabled,
+                x.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<AdminUserView> CreateUserAsync(
+        Guid companyId,
+        CreateUserRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var username = request.Username.Trim();
+        var displayName = request.DisplayName.Trim();
+
+        if (username.Length == 0 ||
+            displayName.Length == 0 ||
+            request.Password.Length < 10)
+        {
+            throw new ArgumentException(
+                "Username and display name are required; password must be at least 10 characters.");
+        }
+
+        var normalized = username.ToLowerInvariant();
+        if (await db.Users.AnyAsync(
+                x => x.Username.ToLower() == normalized,
+                cancellationToken))
+        {
+            throw new InvalidOperationException("Username already exists.");
+        }
+
+        var user = new AppUser
+        {
+            CompanyId = companyId,
+            Username = username,
+            DisplayName = displayName,
+            PasswordHash = string.Empty,
+            Role = request.Role,
+            IsActive = true
+        };
+
+        user.PasswordHash = passwordHasher.HashPassword(
+            user,
+            request.Password);
+
+        db.Users.Add(user);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ToAdminView(user);
+    }
+
+    public async Task<AdminUserView> UpdateUserAsync(
+        Guid companyId,
+        Guid actorUserId,
+        Guid userId,
+        UpdateUserRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(
+            x => x.Id == userId && x.CompanyId == companyId,
+            cancellationToken)
+            ?? throw new ArgumentException(
+                "User does not exist in this company.");
+
+        var displayName = request.DisplayName.Trim();
+        if (displayName.Length == 0)
+        {
+            throw new ArgumentException("Display name is required.");
+        }
+
+        if (user.Id == actorUserId && !request.IsActive)
+        {
+            throw new InvalidOperationException(
+                "You cannot deactivate your own account.");
+        }
+
+        if (user.Role == UserRole.Owner &&
+            (request.Role != UserRole.Owner || !request.IsActive))
+        {
+            var otherActiveOwners = await db.Users.CountAsync(
+                x =>
+                    x.CompanyId == companyId &&
+                    x.Id != user.Id &&
+                    x.IsActive &&
+                    x.Role == UserRole.Owner,
+                cancellationToken);
+
+            if (otherActiveOwners == 0)
+            {
+                throw new InvalidOperationException(
+                    "The company must keep at least one active Owner.");
+            }
+        }
+
+        user.DisplayName = displayName;
+        user.Role = request.Role;
+        user.IsActive = request.IsActive;
+
+        if (!user.IsActive)
+        {
+            await RevokeUserSessionsAsync(
+                user.Id,
+                "UserDeactivated",
+                cancellationToken);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ToAdminView(user);
+    }
+
+    public async Task ResetUserPasswordAsync(
+        Guid companyId,
+        Guid userId,
+        ResetUserPasswordRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.NewPassword.Length < 10)
+        {
+            throw new ArgumentException(
+                "Password must be at least 10 characters.");
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(
+            x => x.Id == userId && x.CompanyId == companyId,
+            cancellationToken)
+            ?? throw new ArgumentException(
+                "User does not exist in this company.");
+
+        user.PasswordHash = passwordHasher.HashPassword(
+            user,
+            request.NewPassword);
+
+        await RevokeUserSessionsAsync(
+            user.Id,
+            "PasswordReset",
+            cancellationToken);
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task RevokeUserSessionsAsync(
+        Guid userId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var sessions = await db.AuthSessions
+            .Where(x => x.UserId == userId && x.RevokedAt == null)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var session in sessions)
+        {
+            session.RevokedAt = now;
+            session.RevokeReason = reason;
+        }
+    }
+
+    private static AdminUserView ToAdminView(AppUser user) =>
+        new(
+            user.Id,
+            user.Username,
+            user.DisplayName,
+            user.Role,
+            user.IsActive,
+            user.MfaEnabled,
+            user.CreatedAt);
+
     private async Task RevokeExpiredSessionsAsync(
         DateTimeOffset now,
         CancellationToken cancellationToken)
