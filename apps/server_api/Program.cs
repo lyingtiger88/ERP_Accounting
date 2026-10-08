@@ -302,6 +302,33 @@ app.MapGet("/api/me", async (
 
 var admin = app.MapGroup("/api/admin");
 
+admin.MapGet("/security-audit", async (
+    HttpRequest request,
+    int? limit,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!CanManageUsers(user))
+    {
+        return Results.Forbid();
+    }
+
+    return Results.Ok(await authService.GetSecurityAuditAsync(
+        user.CompanyId,
+        limit ?? 200,
+        cancellationToken));
+});
+
 admin.MapGet("/users", async (
     HttpRequest request,
     AuthService authService,
