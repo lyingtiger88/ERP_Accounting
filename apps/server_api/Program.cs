@@ -61,7 +61,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
-builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AccountingService>();
 builder.Services.AddScoped<CurrencyAccountingService>();
@@ -87,6 +86,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await CurrencySchemaBootstrapper.EnsureAsync(db);
     await SalesInventorySchemaBootstrapper.EnsureAsync(db);
     await TreasurySchemaBootstrapper.EnsureAsync(db);
+    await SecuritySchemaBootstrapper.EnsureAsync(db);
 }
 
 app.MapGet("/", () => Results.Ok(new
@@ -183,6 +183,41 @@ auth.MapPost("/login", async (
         cancellationToken);
 
     return Results.Ok(result);
+});
+
+auth.MapPost("/refresh", async (
+    RefreshSessionRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await authService.RefreshAsync(
+        request,
+        cancellationToken);
+
+    return result is null
+        ? Results.Unauthorized()
+        : Results.Ok(result);
+});
+
+auth.MapPost("/logout", async (
+    HttpRequest request,
+    LogoutRequest payload,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var rawHeader = request.Headers.Authorization.ToString();
+    var accessToken = rawHeader.StartsWith(
+        "Bearer ",
+        StringComparison.OrdinalIgnoreCase)
+        ? rawHeader["Bearer ".Length..].Trim()
+        : null;
+
+    var revoked = await authService.RevokeAsync(
+        accessToken,
+        payload.RefreshToken,
+        cancellationToken);
+
+    return Results.Ok(new { revoked });
 });
 
 app.MapGet("/api/me", async (
