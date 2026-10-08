@@ -82,6 +82,14 @@ public sealed class AuthService(
 
         if (user is null)
         {
+            AddSecurityAudit(
+                null,
+                null,
+                "LOGIN",
+                "DENIED",
+                request.Username.Trim(),
+                "Unknown or inactive user.");
+            await db.SaveChangesAsync(cancellationToken);
             return null;
         }
 
@@ -92,6 +100,14 @@ public sealed class AuthService(
 
         if (verified == PasswordVerificationResult.Failed)
         {
+            AddSecurityAudit(
+                user.CompanyId,
+                user.Id,
+                "LOGIN",
+                "DENIED",
+                user.Username,
+                "Password verification failed.");
+            await db.SaveChangesAsync(cancellationToken);
             return null;
         }
 
@@ -145,6 +161,13 @@ public sealed class AuthService(
         };
 
         db.AuthSessions.Add(session);
+        AddSecurityAudit(
+            user.CompanyId,
+            user.Id,
+            "LOGIN",
+            "SUCCESS",
+            user.Username,
+            "Device=" + deviceName + "; Platform=" + platform);
         await db.SaveChangesAsync(cancellationToken);
 
         return ToLoginResponse(user, pair);
@@ -222,6 +245,15 @@ public sealed class AuthService(
             }
         }
 
+        AddSecurityAudit(
+            user.CompanyId,
+            user.Id,
+            "REFRESH_SESSION",
+            "SUCCESS",
+            user.Username,
+            session.DeviceId.HasValue
+                ? "DeviceId=" + session.DeviceId.Value
+                : null);
         await db.SaveChangesAsync(cancellationToken);
 
         return ToLoginResponse(user, pair);
@@ -262,6 +294,22 @@ public sealed class AuthService(
 
         session.RevokedAt = DateTimeOffset.UtcNow;
         session.RevokeReason = "Logout";
+
+        var logoutUser = await db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == session.UserId,
+                cancellationToken);
+
+        AddSecurityAudit(
+            session.CompanyId,
+            session.UserId,
+            "LOGOUT",
+            "SUCCESS",
+            logoutUser?.Username,
+            session.DeviceId.HasValue
+                ? "DeviceId=" + session.DeviceId.Value
+                : null);
         await db.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -296,6 +344,33 @@ public sealed class AuthService(
             .FirstOrDefaultAsync(
                 x => x.Id == session.UserId && x.IsActive,
                 cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SecurityAuditView>>
+        GetSecurityAuditAsync(
+            Guid companyId,
+            int limit = 200,
+            CancellationToken cancellationToken = default)
+    {
+        limit = Math.Clamp(limit, 1, 1000);
+
+        var rows = await db.SecurityAuditLogs
+            .AsNoTracking()
+            .Where(x => x.CompanyId == companyId)
+            .ToArrayAsync(cancellationToken);
+
+        return rows
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(limit)
+            .Select(x => new SecurityAuditView(
+                x.Id,
+                x.UserId,
+                x.EventType,
+                x.Outcome,
+                x.Username,
+                x.Details,
+                x.CreatedAt))
+            .ToArray();
     }
 
     public async Task<IReadOnlyList<DeviceResponse>> GetDevicesAsync(
@@ -349,6 +424,20 @@ public sealed class AuthService(
             session.RevokeReason = "DeviceRevoked";
         }
 
+        var user = await db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == userId,
+                cancellationToken);
+
+        AddSecurityAudit(
+            device.CompanyId,
+            userId,
+            "DEVICE_REVOKE",
+            "SUCCESS",
+            user?.Username,
+            "Device=" + device.DeviceName +
+            "; Platform=" + device.Platform);
         await db.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -411,6 +500,13 @@ public sealed class AuthService(
             request.Password);
 
         db.Users.Add(user);
+        AddSecurityAudit(
+            companyId,
+            null,
+            "USER_CREATE",
+            "SUCCESS",
+            username,
+            "Role=" + request.Role);
         await db.SaveChangesAsync(cancellationToken);
 
         return ToAdminView(user);
@@ -471,6 +567,21 @@ public sealed class AuthService(
                 cancellationToken);
         }
 
+        var actor = await db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == actorUserId,
+                cancellationToken);
+
+        AddSecurityAudit(
+            companyId,
+            actorUserId,
+            "USER_UPDATE",
+            "SUCCESS",
+            actor?.Username,
+            "TargetUser=" + user.Username +
+            "; Role=" + user.Role +
+            "; Active=" + user.IsActive);
         await db.SaveChangesAsync(cancellationToken);
         return ToAdminView(user);
     }
@@ -502,6 +613,13 @@ public sealed class AuthService(
             "PasswordReset",
             cancellationToken);
 
+        AddSecurityAudit(
+            companyId,
+            user.Id,
+            "PASSWORD_RESET",
+            "SUCCESS",
+            user.Username,
+            "All active sessions revoked.");
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -531,6 +649,25 @@ public sealed class AuthService(
             user.IsActive,
             user.MfaEnabled,
             user.CreatedAt);
+
+    private void AddSecurityAudit(
+        Guid? companyId,
+        Guid? userId,
+        string eventType,
+        string outcome,
+        string? username,
+        string? details)
+    {
+        db.SecurityAuditLogs.Add(new SecurityAuditLog
+        {
+            CompanyId = companyId,
+            UserId = userId,
+            EventType = eventType,
+            Outcome = outcome,
+            Username = username,
+            Details = details
+        });
+    }
 
     private async Task RevokeExpiredSessionsAsync(
         DateTimeOffset now,
