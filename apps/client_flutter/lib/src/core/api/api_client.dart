@@ -245,6 +245,34 @@ class ApiClient {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getTrustedDevices({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/auth/devices',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> revokeTrustedDevice({
+    required String bearerToken,
+    required String deviceId,
+  }) async {
+    await _request(
+      'POST',
+      '/api/auth/devices/' + deviceId + '/revoke',
+      bearerToken: bearerToken,
+      body: const <String, dynamic>{},
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getAdminUsers({
     required String bearerToken,
   }) async {
