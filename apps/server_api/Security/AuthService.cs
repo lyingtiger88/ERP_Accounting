@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
@@ -9,10 +10,12 @@ namespace ERPAccounting.Api.Security;
 
 public sealed class AuthService(
     AppDbContext db,
-    PasswordHasher<AppUser> passwordHasher,
-    SessionStore sessions)
+    PasswordHasher<AppUser> passwordHasher)
 {
-    private static readonly TimeSpan SessionLifetime = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan AccessLifetime =
+        TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan RefreshLifetime =
+        TimeSpan.FromDays(30);
 
     public async Task<(Company Company, AppUser User)> BootstrapAsync(
         BootstrapRequest request,
@@ -53,7 +56,9 @@ public sealed class AuthService(
             Role = UserRole.Owner
         };
 
-        user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
+        user.PasswordHash = passwordHasher.HashPassword(
+            user,
+            request.Password);
 
         db.Companies.Add(company);
         db.Users.Add(user);
@@ -66,10 +71,13 @@ public sealed class AuthService(
         LoginRequest request,
         CancellationToken cancellationToken = default)
     {
-        var normalizedUsername = request.Username.Trim().ToLowerInvariant();
+        var normalizedUsername =
+            request.Username.Trim().ToLowerInvariant();
 
         var user = await db.Users.FirstOrDefaultAsync(
-            x => x.IsActive && x.Username.ToLower() == normalizedUsername,
+            x =>
+                x.IsActive &&
+                x.Username.ToLower() == normalizedUsername,
             cancellationToken);
 
         if (user is null)
@@ -88,19 +96,17 @@ public sealed class AuthService(
         }
 
         var now = DateTimeOffset.UtcNow;
-        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        var expiresAt = now.Add(SessionLifetime);
-
         var deviceName = request.DeviceName.Trim();
         var platform = request.Platform.Trim();
         var normalizedDeviceName = deviceName.ToLowerInvariant();
         var normalizedPlatform = platform.ToLowerInvariant();
 
         var device = await db.Devices.FirstOrDefaultAsync(
-            x => x.UserId == user.Id &&
-                 x.TrustState != DeviceTrustState.Revoked &&
-                 x.DeviceName.ToLower() == normalizedDeviceName &&
-                 x.Platform.ToLower() == normalizedPlatform,
+            x =>
+                x.UserId == user.Id &&
+                x.TrustState != DeviceTrustState.Revoked &&
+                x.DeviceName.ToLower() == normalizedDeviceName &&
+                x.Platform.ToLower() == normalizedPlatform,
             cancellationToken);
 
         if (device is null)
@@ -122,17 +128,142 @@ public sealed class AuthService(
             device.LastSeenAt = now;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
-        sessions.Add(token, user.Id, expiresAt);
+        await RevokeExpiredSessionsAsync(now, cancellationToken);
 
-        return new LoginResponse(
-            token,
-            expiresAt,
-            user.Id,
-            user.CompanyId,
-            user.DisplayName,
-            user.Role.ToString(),
-            user.MfaEnabled);
+        var pair = CreateTokenPair(now);
+        var session = new AuthSession
+        {
+            CompanyId = user.CompanyId,
+            UserId = user.Id,
+            DeviceId = device.Id,
+            AccessTokenHash = HashToken(pair.AccessToken),
+            RefreshTokenHash = HashToken(pair.RefreshToken),
+            AccessExpiresAt = pair.AccessExpiresAt,
+            RefreshExpiresAt = pair.RefreshExpiresAt,
+            CreatedAt = now,
+            LastRefreshedAt = now
+        };
+
+        db.AuthSessions.Add(session);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ToLoginResponse(user, pair);
+    }
+
+    public async Task<LoginResponse?> RefreshAsync(
+        RefreshSessionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var refreshHash = HashToken(request.RefreshToken);
+
+        var session = await db.AuthSessions
+            .FirstOrDefaultAsync(
+                x =>
+                    x.RefreshTokenHash == refreshHash &&
+                    x.RevokedAt == null,
+                cancellationToken);
+
+        if (session is null ||
+            session.RefreshExpiresAt <= now)
+        {
+            if (session is not null && session.RevokedAt is null)
+            {
+                session.RevokedAt = now;
+                session.RevokeReason = "RefreshExpired";
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            return null;
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(
+            x => x.Id == session.UserId && x.IsActive,
+            cancellationToken);
+
+        if (user is null)
+        {
+            session.RevokedAt = now;
+            session.RevokeReason = "UserInactive";
+            await db.SaveChangesAsync(cancellationToken);
+            return null;
+        }
+
+        var pair = CreateTokenPair(now);
+
+        session.AccessTokenHash = HashToken(pair.AccessToken);
+        session.RefreshTokenHash = HashToken(pair.RefreshToken);
+        session.AccessExpiresAt = pair.AccessExpiresAt;
+        session.RefreshExpiresAt = pair.RefreshExpiresAt;
+        session.LastRefreshedAt = now;
+
+        if (session.DeviceId is Guid deviceId)
+        {
+            var device = await db.Devices.FirstOrDefaultAsync(
+                x => x.Id == deviceId,
+                cancellationToken);
+
+            if (device is not null)
+            {
+                if (device.TrustState == DeviceTrustState.Revoked)
+                {
+                    session.RevokedAt = now;
+                    session.RevokeReason = "DeviceRevoked";
+                    await db.SaveChangesAsync(cancellationToken);
+                    return null;
+                }
+
+                device.LastSeenAt = now;
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ToLoginResponse(user, pair);
+    }
+
+    public async Task<bool> RevokeAsync(
+        string? accessToken,
+        string? refreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        AuthSession? session = null;
+
+        if (!string.IsNullOrWhiteSpace(accessToken))
+        {
+            var accessHash = HashToken(accessToken);
+            session = await db.AuthSessions.FirstOrDefaultAsync(
+                x =>
+                    x.AccessTokenHash == accessHash &&
+                    x.RevokedAt == null,
+                cancellationToken);
+        }
+
+        if (session is null &&
+            !string.IsNullOrWhiteSpace(refreshToken))
+        {
+            var refreshHash = HashToken(refreshToken);
+            session = await db.AuthSessions.FirstOrDefaultAsync(
+                x =>
+                    x.RefreshTokenHash == refreshHash &&
+                    x.RevokedAt == null,
+                cancellationToken);
+        }
+
+        if (session is null)
+        {
+            return false;
+        }
+
+        session.RevokedAt = DateTimeOffset.UtcNow;
+        session.RevokeReason = "Logout";
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<AppUser?> ResolveAsync(
@@ -144,7 +275,19 @@ public sealed class AuthService(
             return null;
         }
 
-        if (!sessions.TryResolve(bearerToken, out var userId))
+        var now = DateTimeOffset.UtcNow;
+        var accessHash = HashToken(bearerToken);
+
+        var session = await db.AuthSessions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x =>
+                    x.AccessTokenHash == accessHash &&
+                    x.RevokedAt == null &&
+                    x.AccessExpiresAt > now,
+                cancellationToken);
+
+        if (session is null)
         {
             return null;
         }
@@ -152,7 +295,65 @@ public sealed class AuthService(
         return await db.Users
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                x => x.Id == userId && x.IsActive,
+                x => x.Id == session.UserId && x.IsActive,
                 cancellationToken);
     }
+
+    private async Task RevokeExpiredSessionsAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var expired = await db.AuthSessions
+            .Where(x =>
+                x.RevokedAt == null &&
+                x.RefreshExpiresAt <= now)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var session in expired)
+        {
+            session.RevokedAt = now;
+            session.RevokeReason = "RefreshExpired";
+        }
+    }
+
+    private static LoginResponse ToLoginResponse(
+        AppUser user,
+        TokenPair pair)
+    {
+        return new LoginResponse(
+            pair.AccessToken,
+            pair.AccessExpiresAt,
+            user.Id,
+            user.CompanyId,
+            user.DisplayName,
+            user.Role.ToString(),
+            user.MfaEnabled,
+            pair.RefreshToken,
+            pair.RefreshExpiresAt);
+    }
+
+    private static TokenPair CreateTokenPair(
+        DateTimeOffset now)
+    {
+        return new TokenPair(
+            NewToken(),
+            now.Add(AccessLifetime),
+            NewToken(),
+            now.Add(RefreshLifetime));
+    }
+
+    private static string NewToken() =>
+        Convert.ToHexString(
+            RandomNumberGenerator.GetBytes(32));
+
+    private static string HashToken(string token) =>
+        Convert.ToHexString(
+            SHA256.HashData(
+                Encoding.UTF8.GetBytes(token)));
+
+    private sealed record TokenPair(
+        string AccessToken,
+        DateTimeOffset AccessExpiresAt,
+        string RefreshToken,
+        DateTimeOffset RefreshExpiresAt);
 }
