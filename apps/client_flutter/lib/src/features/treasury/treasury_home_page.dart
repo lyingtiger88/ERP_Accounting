@@ -994,8 +994,7 @@ class _TreasuryHomePageState extends State<TreasuryHomePage> {
                       : ' • ' + item['detailAccountName'].toString()) +
                   (item['description'] == null
                       ? ''
-                      : '
-' + item['description'].toString()),
+                      : '\n' + item['description'].toString()),
             ),
             isThreeLine: item['description'] != null,
             trailing: Column(
