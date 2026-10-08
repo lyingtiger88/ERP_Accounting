@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/api/api_client.dart';
+import '../../core/auth/secure_session_store.dart';
 import '../../core/database/local_database.dart';
 import '../../core/demo/demo_mode.dart';
 import '../auth/login_page.dart';
@@ -523,6 +524,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _busy = true);
     try {
       await widget.localDatabase.restoreBackup(path);
+      await SecureSessionStore.instance.clear();
       if (!mounted) return;
 
       Navigator.of(context).pushAndRemoveUntil(
