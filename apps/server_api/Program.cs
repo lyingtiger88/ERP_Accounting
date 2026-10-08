@@ -7,6 +7,8 @@ using ERPAccounting.Api.Reporting;
 using ERPAccounting.Api.SalesInventory;
 using ERPAccounting.Api.Treasury;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 
@@ -68,6 +70,17 @@ builder.Services.AddScoped<SalesInventoryService>();
 builder.Services.AddScoped<TreasuryService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddProblemDetails();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("auth", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+    });
+});
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(
@@ -77,6 +90,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 var app = builder.Build();
 
 app.UseExceptionHandler();
+app.UseRateLimiter();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
@@ -154,7 +168,7 @@ auth.MapPost("/bootstrap", async (
     {
         return Results.Conflict(new { error = ex.Message });
     }
-});
+}).RequireRateLimiting("auth");
 
 auth.MapPost("/login", async (
     LoginRequest request,
@@ -183,7 +197,7 @@ auth.MapPost("/login", async (
         cancellationToken);
 
     return Results.Ok(result);
-});
+}).RequireRateLimiting("auth");
 
 auth.MapPost("/refresh", async (
     RefreshSessionRequest request,
@@ -197,7 +211,7 @@ auth.MapPost("/refresh", async (
     return result is null
         ? Results.Unauthorized()
         : Results.Ok(result);
-});
+}).RequireRateLimiting("auth");
 
 auth.MapPost("/logout", async (
     HttpRequest request,
