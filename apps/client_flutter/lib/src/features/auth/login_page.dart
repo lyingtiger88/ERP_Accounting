@@ -91,7 +91,33 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     final value = controller.text.trim().replaceAll(
-          RegExp(r'/+    setState(() {
+          RegExp(r'/+$'),
+          '',
+        );
+    controller.dispose();
+
+    await widget.localDatabase.setMeta(
+      'api_base_url',
+      value,
+    );
+    await SecureSessionStore.instance.clear();
+    ApiClient.configureBaseUrl(value);
+
+    if (!mounted) return;
+    setState(() {
+      _apiClient = ApiClient();
+      _error = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('آدرس سرور ذخیره شد.'),
+      ),
+    );
+  }
+
+  Future<void> _login() async {
+    setState(() {
       _busy = true;
       _error = null;
     });
