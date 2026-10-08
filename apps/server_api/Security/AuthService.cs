@@ -377,9 +377,12 @@ public sealed class AuthService(
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        return await db.Devices
+        var devices = await db.Devices
             .AsNoTracking()
             .Where(x => x.UserId == userId)
+            .ToArrayAsync(cancellationToken);
+
+        return devices
             .OrderByDescending(x => x.LastSeenAt)
             .ThenByDescending(x => x.FirstSeenAt)
             .Select(x => new DeviceResponse(
@@ -389,7 +392,7 @@ public sealed class AuthService(
                 x.TrustState.ToString(),
                 x.FirstSeenAt,
                 x.LastSeenAt))
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
     }
 
     public async Task<bool> RevokeDeviceAsync(
