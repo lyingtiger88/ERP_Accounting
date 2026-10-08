@@ -40,8 +40,10 @@ class _SettingsPageState extends State<SettingsPage> {
   final _api = ApiClient();
 
   bool _loadingUsers = false;
+  bool _loadingDevices = false;
   bool _busy = false;
   List<Map<String, dynamic>> _users = const [];
+  List<Map<String, dynamic>> _devices = const [];
   List<String> _backups = const [];
 
   bool get _isDemo => DemoMode.isDemoToken(widget.accessToken);
@@ -59,8 +61,74 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _loadAll() async {
     await Future.wait([
       _loadUsers(),
+      _loadDevices(),
       _loadBackups(),
     ]);
+  }
+
+  Future<void> _loadDevices() async {
+    if (_isDemo) return;
+
+    if (mounted) {
+      setState(() => _loadingDevices = true);
+    }
+
+    try {
+      final devices = await _api.getTrustedDevices(
+        bearerToken: widget.accessToken,
+      );
+
+      if (!mounted) return;
+      setState(() => _devices = devices);
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _loadingDevices = false);
+      }
+    }
+  }
+
+  Future<void> _revokeDevice(
+    Map<String, dynamic> device,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('لغو دسترسی دستگاه'),
+        content: Text(
+          'Sessionهای دستگاه «' +
+              device['deviceName'].toString() +
+              '» باطل می‌شوند. ادامه می‌دهید؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('لغو دسترسی'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await _api.revokeTrustedDevice(
+        bearerToken: widget.accessToken,
+        deviceId: device['id'].toString(),
+      );
+      _message('دسترسی دستگاه و Sessionهای آن باطل شد.');
+      await _loadDevices();
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _loadUsers() async {
@@ -486,7 +554,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final tabs = _canManageUsers ? 2 : 1;
+    final showDevices = !_isDemo;
+    final tabs =
+        1 + (_canManageUsers ? 1 : 0) + (showDevices ? 1 : 0);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -505,6 +575,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icon(Icons.manage_accounts_outlined),
                       text: 'کاربران و نقش‌ها',
                     ),
+                  if (showDevices)
+                    const Tab(
+                      icon: Icon(Icons.devices_outlined),
+                      text: 'دستگاه‌ها',
+                    ),
                   const Tab(
                     icon: Icon(Icons.backup_outlined),
                     text: 'پشتیبان محلی',
@@ -515,6 +590,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: TabBarView(
                   children: [
                     if (_canManageUsers) _usersTab(),
+                    if (showDevices) _devicesTab(),
                     _backupTab(),
                   ],
                 ),
@@ -605,6 +681,64 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _devicesTab() {
+    if (_loadingDevices) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_devices.isEmpty) {
+      return const Center(
+        child: Text('دستگاه ثبت‌شده‌ای وجود ندارد.'),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(20),
+      itemCount: _devices.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final device = _devices[index];
+        final state = device['trustState']?.toString() ?? 'Pending';
+        final revoked = state == 'Revoked';
+
+        return Card(
+          child: ListTile(
+            leading: CircleAvatar(
+              child: Icon(
+                device['platform']?.toString().toLowerCase() == 'android'
+                    ? Icons.phone_android_outlined
+                    : Icons.computer_outlined,
+              ),
+            ),
+            title: Text(device['deviceName'].toString()),
+            subtitle: Text(
+              device['platform'].toString() +
+                  ' • ' +
+                  (revoked
+                      ? 'لغو شده'
+                      : state == 'Trusted'
+                          ? 'قابل اعتماد'
+                          : 'در انتظار اعتماد') +
+                  (device['lastSeenAt'] == null
+                      ? ''
+                      : ' • آخرین فعالیت: ' +
+                          device['lastSeenAt'].toString()),
+            ),
+            trailing: revoked
+                ? const Chip(label: Text('Revoked'))
+                : OutlinedButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _revokeDevice(device),
+                    icon: const Icon(Icons.phonelink_erase_outlined),
+                    label: const Text('لغو دسترسی'),
+                  ),
+          ),
+        );
+      },
     );
   }
 
