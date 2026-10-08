@@ -405,16 +405,11 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context) => AlertDialog(
         title: const Text('بازیابی پشتیبان'),
         content: Text(
-          'این کار دیتابیس محلی فعلی را با پشتیبان زیر جایگزین می‌کند:
-
-' +
+          'این کار دیتابیس محلی فعلی را با پشتیبان زیر جایگزین می‌کند:\n\n' +
               p.basename(path) +
-              '
-' +
+              '\n' +
               _fileSize(stat.size) +
-              '
-
-قبل از جایگزینی، نسخه ایمنی خودکار ساخته می‌شود.',
+              '\n\nقبل از جایگزینی، نسخه ایمنی خودکار ساخته می‌شود.',
         ),
         actions: [
           TextButton(
