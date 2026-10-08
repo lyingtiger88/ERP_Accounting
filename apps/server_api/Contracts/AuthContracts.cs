@@ -19,7 +19,15 @@ public sealed record LoginResponse(
     Guid CompanyId,
     string DisplayName,
     string Role,
-    bool MfaRequired);
+    bool MfaRequired,
+    string RefreshToken,
+    DateTimeOffset RefreshExpiresAt);
+
+public sealed record RefreshSessionRequest(
+    string RefreshToken);
+
+public sealed record LogoutRequest(
+    string? RefreshToken = null);
 
 public sealed record DeviceResponse(
     Guid Id,
