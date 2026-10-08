@@ -6,6 +6,7 @@ import '../accounting/accounting_home_page.dart';
 import '../auth/login_page.dart';
 import '../reports/reports_center_page.dart';
 import '../sales_inventory/sales_inventory_home_page.dart';
+import '../settings/settings_page.dart';
 import '../treasury/treasury_home_page.dart';
 
 class DashboardPage extends StatelessWidget {
@@ -144,6 +145,20 @@ class _Navigation extends StatelessWidget {
                         accessToken: accessToken,
                         localDatabase: localDatabase,
                         isDemoMode: isDemoMode,
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (item.label == 'تنظیمات') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SettingsPage(
+                        role: role,
+                        companyId: companyId,
+                        accessToken: accessToken,
+                        localDatabase: localDatabase,
                       ),
                     ),
                   );
