@@ -41,9 +41,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _loadingUsers = false;
   bool _loadingDevices = false;
+  bool _loadingAudit = false;
   bool _busy = false;
   List<Map<String, dynamic>> _users = const [];
   List<Map<String, dynamic>> _devices = const [];
+  List<Map<String, dynamic>> _audit = const [];
   List<String> _backups = const [];
 
   bool get _isDemo => DemoMode.isDemoToken(widget.accessToken);
@@ -62,6 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await Future.wait([
       _loadUsers(),
       _loadDevices(),
+      _loadAudit(),
       _loadBackups(),
     ]);
   }
@@ -128,6 +131,29 @@ class _SettingsPageState extends State<SettingsPage> {
       _message(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _loadAudit() async {
+    if (!_canManageUsers) return;
+
+    if (mounted) {
+      setState(() => _loadingAudit = true);
+    }
+
+    try {
+      final rows = await _api.getSecurityAudit(
+        bearerToken: widget.accessToken,
+      );
+
+      if (!mounted) return;
+      setState(() => _audit = rows);
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _loadingAudit = false);
+      }
     }
   }
 
@@ -556,7 +582,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final showDevices = !_isDemo;
     final tabs =
-        1 + (_canManageUsers ? 1 : 0) + (showDevices ? 1 : 0);
+        1 +
+        (_canManageUsers ? 2 : 0) +
+        (showDevices ? 1 : 0);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -580,6 +608,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icon(Icons.devices_outlined),
                       text: 'دستگاه‌ها',
                     ),
+                  if (_canManageUsers)
+                    const Tab(
+                      icon: Icon(Icons.security_outlined),
+                      text: 'رویدادهای امنیتی',
+                    ),
                   const Tab(
                     icon: Icon(Icons.backup_outlined),
                     text: 'پشتیبان محلی',
@@ -591,6 +624,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     if (_canManageUsers) _usersTab(),
                     if (showDevices) _devicesTab(),
+                    if (_canManageUsers) _auditTab(),
                     _backupTab(),
                   ],
                 ),
@@ -739,6 +773,72 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _auditTab() {
+    if (_loadingAudit) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_audit.isEmpty) {
+      return const Center(
+        child: Text('رویداد امنیتی ثبت نشده است.'),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _loadAudit,
+              icon: const Icon(Icons.refresh),
+              label: const Text('بازخوانی'),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            itemCount: _audit.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final row = _audit[index];
+              final success =
+                  row['outcome']?.toString() == 'SUCCESS';
+
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    child: Icon(
+                      success
+                          ? Icons.verified_user_outlined
+                          : Icons.gpp_bad_outlined,
+                    ),
+                  ),
+                  title: Text(
+                    row['eventType'].toString() +
+                        ' • ' +
+                        row['outcome'].toString(),
+                  ),
+                  subtitle: Text(
+                    (row['username']?.toString() ?? 'سیستم') +
+                        (row['details'] == null
+                            ? ''
+                            : '\n' + row['details'].toString()) +
+                        '\n' +
+                        row['createdAt'].toString(),
+                  ),
+                  isThreeLine: true,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
