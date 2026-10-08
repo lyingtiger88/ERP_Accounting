@@ -68,6 +68,28 @@ public static class SecuritySchemaBootstrapper
         """
         CREATE INDEX IF NOT EXISTS "IX_auth_sessions_RefreshExpiresAt"
         ON auth_sessions ("RefreshExpiresAt");
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS security_audit_logs (
+            "Id" TEXT NOT NULL CONSTRAINT "PK_security_audit_logs" PRIMARY KEY,
+            "CompanyId" TEXT NULL,
+            "UserId" TEXT NULL,
+            "EventType" TEXT NOT NULL,
+            "Outcome" TEXT NOT NULL,
+            "Username" TEXT NULL,
+            "Details" TEXT NULL,
+            "CreatedAt" TEXT NOT NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE SET NULL
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_security_audit_logs_CompanyId_CreatedAt"
+        ON security_audit_logs ("CompanyId", "CreatedAt");
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_security_audit_logs_UserId_CreatedAt"
+        ON security_audit_logs ("UserId", "CreatedAt");
         """
     ];
 
@@ -107,6 +129,28 @@ public static class SecuritySchemaBootstrapper
         """
         CREATE INDEX IF NOT EXISTS "IX_auth_sessions_RefreshExpiresAt"
         ON auth_sessions ("RefreshExpiresAt");
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS security_audit_logs (
+            "Id" uuid NOT NULL CONSTRAINT "PK_security_audit_logs" PRIMARY KEY,
+            "CompanyId" uuid NULL,
+            "UserId" uuid NULL,
+            "EventType" character varying(80) NOT NULL,
+            "Outcome" character varying(40) NOT NULL,
+            "Username" character varying(120) NULL,
+            "Details" character varying(1000) NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE SET NULL
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_security_audit_logs_CompanyId_CreatedAt"
+        ON security_audit_logs ("CompanyId", "CreatedAt");
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_security_audit_logs_UserId_CreatedAt"
+        ON security_audit_logs ("UserId", "CreatedAt");
         """
     ];
 }
