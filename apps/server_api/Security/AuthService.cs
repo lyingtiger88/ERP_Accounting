@@ -283,11 +283,10 @@ public sealed class AuthService(
             .FirstOrDefaultAsync(
                 x =>
                     x.AccessTokenHash == accessHash &&
-                    x.RevokedAt == null &&
-                    x.AccessExpiresAt > now,
+                    x.RevokedAt == null,
                 cancellationToken);
 
-        if (session is null)
+        if (session is null || session.AccessExpiresAt <= now)
         {
             return null;
         }
@@ -482,11 +481,13 @@ public sealed class AuthService(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var expired = await db.AuthSessions
-            .Where(x =>
-                x.RevokedAt == null &&
-                x.RefreshExpiresAt <= now)
+        var active = await db.AuthSessions
+            .Where(x => x.RevokedAt == null)
             .ToArrayAsync(cancellationToken);
+
+        var expired = active
+            .Where(x => x.RefreshExpiresAt <= now)
+            .ToArray();
 
         foreach (var session in expired)
         {
