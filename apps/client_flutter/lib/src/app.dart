@@ -62,7 +62,13 @@ class _SessionGateState extends State<_SessionGate> {
   }
 
   Future<_RestoredSession?> _restore() async {
-    final stored = await SecureSessionStore.instance.read();
+    SecureSession? stored;
+    try {
+      stored = await SecureSessionStore.instance.read();
+    } catch (_) {
+      return null;
+    }
+
     if (stored == null) {
       return null;
     }
