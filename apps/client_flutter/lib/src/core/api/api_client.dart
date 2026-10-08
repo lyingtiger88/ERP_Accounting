@@ -273,6 +273,23 @@ class ApiClient {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getSecurityAudit({
+    required String bearerToken,
+    int limit = 200,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/admin/security-audit?limit=' + limit.toString(),
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map(
+          (item) => Map<String, dynamic>.from(item as Map),
+        )
+        .toList(growable: false);
+  }
+
   Future<List<Map<String, dynamic>>> getAdminUsers({
     required String bearerToken,
   }) async {
