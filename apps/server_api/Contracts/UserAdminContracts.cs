@@ -24,3 +24,13 @@ public sealed record UpdateUserRequest(
 
 public sealed record ResetUserPasswordRequest(
     string NewPassword);
+
+
+public sealed record SecurityAuditView(
+    Guid Id,
+    Guid? UserId,
+    string EventType,
+    string Outcome,
+    string? Username,
+    string? Details,
+    DateTimeOffset CreatedAt);
