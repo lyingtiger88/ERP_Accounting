@@ -234,6 +234,49 @@ auth.MapPost("/logout", async (
     return Results.Ok(new { revoked });
 });
 
+auth.MapGet("/devices", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await authService.GetDevicesAsync(
+            user.Id,
+            cancellationToken));
+});
+
+auth.MapPost("/devices/{deviceId:guid}/revoke", async (
+    HttpRequest request,
+    Guid deviceId,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(
+        request,
+        authService,
+        cancellationToken);
+
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var revoked = await authService.RevokeDeviceAsync(
+        user.Id,
+        deviceId,
+        cancellationToken);
+
+    return revoked
+        ? Results.Ok(new { revoked = true })
+        : Results.NotFound(new { error = "Device was not found." });
+});
+
 app.MapGet("/api/me", async (
     HttpRequest request,
     AuthService authService,
