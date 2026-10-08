@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/auth/secure_session_store.dart';
 import '../../core/database/local_database.dart';
 import '../../core/demo/demo_mode.dart';
 import '../../core/demo/local_demo_business_engine.dart';
@@ -60,6 +61,10 @@ class _LoginPageState extends State<LoginPage> {
         });
         return;
       }
+
+      await SecureSessionStore.instance.write(
+        result.toSecureSession(),
+      );
 
       await widget.localDatabase.cacheUserProfile(
         userId: result.userId,
