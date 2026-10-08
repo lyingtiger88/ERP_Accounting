@@ -1,7 +1,7 @@
 name: erp_accounting
 description: Cross-platform ERP and accounting client for Windows and Android.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.5.0-beta.1+5
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
