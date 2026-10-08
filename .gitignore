@@ -41,3 +41,5 @@ Thumbs.db
 *.pem
 *.key
 secrets/
+backups/
+*.pre_restore*
