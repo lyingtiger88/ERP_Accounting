@@ -10,6 +10,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<TrustedDevice> Devices => Set<TrustedDevice>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
+    public DbSet<SecurityAuditLog> SecurityAuditLogs => Set<SecurityAuditLog>();
     public DbSet<LedgerAccount> Accounts => Set<LedgerAccount>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
@@ -118,6 +119,26 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<TrustedDevice>()
                 .WithMany()
                 .HasForeignKey(x => x.DeviceId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<SecurityAuditLog>(entity =>
+        {
+            entity.ToTable("security_audit_logs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.EventType).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Outcome).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Username).HasMaxLength(120);
+            entity.Property(x => x.Details).HasMaxLength(1000);
+            entity.HasIndex(x => new { x.CompanyId, x.CreatedAt });
+            entity.HasIndex(x => new { x.UserId, x.CreatedAt });
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
