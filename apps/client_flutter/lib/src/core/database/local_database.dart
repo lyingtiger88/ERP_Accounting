@@ -60,6 +60,149 @@ class LocalDatabase {
     );
   }
 
+  Future<String> backupDirectoryPath() async {
+    final directory = await getApplicationDocumentsDirectory();
+    final backupDirectory = Directory(
+      p.join(directory.path, 'ERP_Accounting', 'Backups'),
+    );
+    await backupDirectory.create(recursive: true);
+    return backupDirectory.path;
+  }
+
+  Future<List<String>> listBackupFiles() async {
+    final directory = Directory(await backupDirectoryPath());
+    final files = await directory
+        .list()
+        .where(
+          (item) =>
+              item is File &&
+              item.path.toLowerCase().endsWith('.db'),
+        )
+        .map((item) => item.path)
+        .toList();
+
+    files.sort((a, b) => b.compareTo(a));
+    return files;
+  }
+
+  Future<String> createBackup() async {
+    final directory = await backupDirectoryPath();
+    final now = DateTime.now();
+    final stamp = [
+      now.year.toString().padLeft(4, '0'),
+      now.month.toString().padLeft(2, '0'),
+      now.day.toString().padLeft(2, '0'),
+      '_',
+      now.hour.toString().padLeft(2, '0'),
+      now.minute.toString().padLeft(2, '0'),
+      now.second.toString().padLeft(2, '0'),
+    ].join();
+
+    final destination = p.join(
+      directory,
+      'ERP_Accounting_Backup_' + stamp + '.db',
+    );
+    final escaped = destination.replaceAll("'", "''");
+
+    if (await File(destination).exists()) {
+      await File(destination).delete();
+    }
+
+    await _db.execute("VACUUM INTO '" + escaped + "'");
+    return destination;
+  }
+
+  Future<void> restoreBackup(String sourcePath) async {
+    final source = File(sourcePath);
+    if (!await source.exists()) {
+      throw StateError('فایل پشتیبان پیدا نشد.');
+    }
+
+    final DatabaseFactory factory;
+    if (Platform.isWindows) {
+      sqfliteFfiInit();
+      factory = databaseFactoryFfi;
+    } else {
+      factory = mobile.databaseFactory;
+    }
+
+    Database? validationDb;
+    try {
+      validationDb = await factory.openDatabase(
+        sourcePath,
+        options: OpenDatabaseOptions(readOnly: true),
+      );
+      final integrity = await validationDb.rawQuery(
+        'PRAGMA integrity_check',
+      );
+      final result = integrity.isEmpty
+          ? null
+          : integrity.first.values.first?.toString();
+      if (result?.toLowerCase() != 'ok') {
+        throw StateError(
+          'فایل پشتیبان SQLite سالم نیست.',
+        );
+      }
+
+      final versionRows = await validationDb.rawQuery(
+        'PRAGMA user_version',
+      );
+      final version = versionRows.isEmpty
+          ? 0
+          : (versionRows.first.values.first as num?)?.toInt() ?? 0;
+      if (version > _databaseVersion) {
+        throw StateError(
+          'نسخه فایل پشتیبان از نسخه این برنامه جدیدتر است.',
+        );
+      }
+    } finally {
+      await validationDb?.close();
+    }
+
+    final dbPath = _databasePath;
+    if (dbPath == null) {
+      throw StateError('مسیر دیتابیس محلی مشخص نیست.');
+    }
+
+    final live = File(dbPath);
+    final safetyPath = dbPath + '.pre_restore';
+    final safety = File(safetyPath);
+
+    await _database?.close();
+    _database = null;
+
+    if (await safety.exists()) {
+      await safety.delete();
+    }
+
+    if (await live.exists()) {
+      await live.copy(safetyPath);
+    }
+
+    try {
+      if (await live.exists()) {
+        await live.delete();
+      }
+      await source.copy(dbPath);
+      await initialize();
+
+      if (await safety.exists()) {
+        await safety.delete();
+      }
+    } catch (_) {
+      _database = null;
+      if (await live.exists()) {
+        await live.delete();
+      }
+      if (await safety.exists()) {
+        await safety.copy(dbPath);
+        await safety.delete();
+      }
+      await initialize();
+      rethrow;
+    }
+  }
+
   Future<void> _createSchema(Database db, int version) async {
     await db.execute('''
       CREATE TABLE local_meta (
