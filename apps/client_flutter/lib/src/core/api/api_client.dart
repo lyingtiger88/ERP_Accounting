@@ -241,6 +241,76 @@ class ApiClient {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getAdminUsers({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/admin/users',
+      bearerToken: bearerToken,
+    );
+
+    return (payload as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createAdminUser({
+    required String bearerToken,
+    required String username,
+    required String displayName,
+    required String password,
+    required String role,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/admin/users',
+      bearerToken: bearerToken,
+      body: {
+        'username': username,
+        'displayName': displayName,
+        'password': password,
+        'role': role,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> updateAdminUser({
+    required String bearerToken,
+    required String userId,
+    required String displayName,
+    required String role,
+    required bool isActive,
+  }) async {
+    final payload = await _request(
+      'PUT',
+      '/api/admin/users/' + userId,
+      bearerToken: bearerToken,
+      body: {
+        'displayName': displayName,
+        'role': role,
+        'isActive': isActive,
+      },
+    );
+
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<void> resetAdminUserPassword({
+    required String bearerToken,
+    required String userId,
+    required String newPassword,
+  }) async {
+    await _request(
+      'POST',
+      '/api/admin/users/' + userId + '/reset-password',
+      bearerToken: bearerToken,
+      body: {'newPassword': newPassword},
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getCurrencies({
     required String bearerToken,
   }) async {
