@@ -9,6 +9,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<TrustedDevice> Devices => Set<TrustedDevice>();
+    public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<LedgerAccount> Accounts => Set<LedgerAccount>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
@@ -93,6 +94,31 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .WithMany()
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AuthSession>(entity =>
+        {
+            entity.ToTable("auth_sessions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.AccessTokenHash).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.RefreshTokenHash).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.RevokeReason).HasMaxLength(250);
+            entity.HasIndex(x => x.AccessTokenHash).IsUnique();
+            entity.HasIndex(x => x.RefreshTokenHash).IsUnique();
+            entity.HasIndex(x => new { x.UserId, x.RevokedAt });
+            entity.HasIndex(x => x.RefreshExpiresAt);
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<TrustedDevice>()
+                .WithMany()
+                .HasForeignKey(x => x.DeviceId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<LedgerAccount>(entity =>
