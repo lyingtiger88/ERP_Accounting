@@ -1214,6 +1214,119 @@ public sealed class DetailAccountSyncTests
     }
 
     [Fact]
+    public async Task UserAdministration_ProtectsOwner_AndRevokesSessions()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+
+        var hasher = new PasswordHasher<AppUser>();
+        const string ownerPassword = "Owner-Strong-Password-123!";
+        fixture.User.PasswordHash = hasher.HashPassword(
+            fixture.User,
+            ownerPassword);
+        await fixture.Db.SaveChangesAsync();
+
+        var auth = new AuthService(
+            fixture.Db,
+            hasher);
+
+        var admin = await auth.CreateUserAsync(
+            fixture.Company.Id,
+            new CreateUserRequest(
+                "admin-beta",
+                "Beta Administrator",
+                "Admin-Strong-Password-123!",
+                UserRole.Administrator));
+
+        var adminLogin = await auth.LoginAsync(
+            new LoginRequest(
+                "admin-beta",
+                "Admin-Strong-Password-123!",
+                "Admin Device",
+                "test"));
+
+        Assert.NotNull(adminLogin);
+        Assert.Equal(
+            admin.Id,
+            (await auth.ResolveAsync(
+                adminLogin!.AccessToken))?.Id);
+
+        await auth.UpdateUserAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            admin.Id,
+            new UpdateUserRequest(
+                admin.DisplayName,
+                UserRole.Administrator,
+                false));
+
+        Assert.Null(
+            await auth.ResolveAsync(
+                adminLogin.AccessToken));
+        Assert.Null(
+            await auth.RefreshAsync(
+                new RefreshSessionRequest(
+                    adminLogin.RefreshToken)));
+
+        await auth.UpdateUserAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            admin.Id,
+            new UpdateUserRequest(
+                admin.DisplayName,
+                UserRole.Administrator,
+                true));
+
+        var secondLogin = await auth.LoginAsync(
+            new LoginRequest(
+                "admin-beta",
+                "Admin-Strong-Password-123!",
+                "Admin Device",
+                "test"));
+
+        Assert.NotNull(secondLogin);
+
+        await auth.ResetUserPasswordAsync(
+            fixture.Company.Id,
+            admin.Id,
+            new ResetUserPasswordRequest(
+                "New-Admin-Password-456!"));
+
+        Assert.Null(
+            await auth.ResolveAsync(
+                secondLogin!.AccessToken));
+        Assert.Null(
+            await auth.RefreshAsync(
+                new RefreshSessionRequest(
+                    secondLogin.RefreshToken)));
+
+        Assert.Null(
+            await auth.LoginAsync(
+                new LoginRequest(
+                    "admin-beta",
+                    "Admin-Strong-Password-123!",
+                    "Admin Device",
+                    "test")));
+
+        Assert.NotNull(
+            await auth.LoginAsync(
+                new LoginRequest(
+                    "admin-beta",
+                    "New-Admin-Password-456!",
+                    "Admin Device",
+                    "test")));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => auth.UpdateUserAsync(
+                fixture.Company.Id,
+                admin.Id,
+                fixture.User.Id,
+                new UpdateUserRequest(
+                    fixture.User.DisplayName,
+                    UserRole.Viewer,
+                    true)));
+    }
+
+    [Fact]
     public async Task AuthSession_Persists_RotatesRefresh_AndRejectsReplay()
     {
         await using var fixture = await TestFixture.CreateAsync();
