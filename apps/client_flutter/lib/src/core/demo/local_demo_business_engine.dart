@@ -1273,6 +1273,279 @@ class LocalDemoBusinessEngine {
     });
   }
 
+  Future<Map<String, dynamic>> saveTreasuryAccount({
+    String? id,
+    required String code,
+    required String name,
+    required String type,
+    required String ledgerAccountId,
+    bool isActive = true,
+  }) {
+    return localDatabase.runDemoBusinessTransaction((txn) async {
+      final trimmedCode = code.trim();
+      final trimmedName = name.trim();
+      if (trimmedCode.isEmpty || trimmedName.isEmpty) {
+        throw StateError('کد و نام صندوق/بانک الزامی است.');
+      }
+      if (type != 'Cashbox' && type != 'Bank') {
+        throw StateError('نوع حساب خزانه معتبر نیست.');
+      }
+
+      final rows = await txn.query(
+        'cached_accounts',
+        where: 'company_id = ? AND id = ? AND is_active = 1',
+        whereArgs: [DemoMode.companyId, ledgerAccountId],
+        limit: 1,
+      );
+      if (rows.isEmpty || rows.first['type']?.toString() != 'Asset') {
+        throw StateError(
+          'حساب کل/معین متصل به خزانه باید یک حساب دارایی فعال باشد.',
+        );
+      }
+
+      final existing = await txn.query(
+        'cached_store_entities',
+        where:
+            'company_id = ? AND entity_type = ?',
+        whereArgs: [DemoMode.companyId, 'TreasuryAccount'],
+      );
+      for (final raw in existing) {
+        final payload = Map<String, dynamic>.from(
+          jsonDecode(raw['payload_json'] as String) as Map,
+        );
+        if (payload['code']?.toString() == trimmedCode &&
+            payload['id']?.toString() != id) {
+          throw StateError('کد صندوق/بانک تکراری است.');
+        }
+      }
+
+      final accountId = id ?? _newId();
+      final ledger = rows.first;
+      final payload = <String, dynamic>{
+        'id': accountId,
+        'code': trimmedCode,
+        'name': trimmedName,
+        'type': type,
+        'ledgerAccountId': ledgerAccountId,
+        'ledgerAccountCode': ledger['code'],
+        'ledgerAccountName': ledger['name'],
+        'currencyId': null,
+        'currencyCode': 'IRR',
+        'isActive': isActive,
+      };
+
+      await _upsertCachedEntity(
+        txn,
+        'TreasuryAccount',
+        accountId,
+        payload,
+      );
+
+      return payload;
+    });
+  }
+
+  Future<Map<String, dynamic>> postTreasuryTransaction({
+    required String fiscalYearId,
+    required DateTime documentDate,
+    required String type,
+    required num amount,
+    String? description,
+    String? fromTreasuryAccountId,
+    String? toTreasuryAccountId,
+    String? counterAccountId,
+    String? detailAccountId,
+  }) {
+    return localDatabase.runDemoBusinessTransaction((txn) async {
+      await _ensureCapacityForNewDocument(txn);
+
+      if (amount <= 0) {
+        throw StateError('مبلغ عملیات خزانه باید بزرگ‌تر از صفر باشد.');
+      }
+      if (!const ['Receipt', 'Payment', 'Transfer'].contains(type)) {
+        throw StateError('نوع عملیات خزانه معتبر نیست.');
+      }
+
+      final fiscalRows = await txn.query(
+        'cached_fiscal_years',
+        where: 'company_id = ? AND id = ?',
+        whereArgs: [DemoMode.companyId, fiscalYearId],
+        limit: 1,
+      );
+      if (fiscalRows.isEmpty) {
+        throw StateError('سال مالی معتبر پیدا نشد.');
+      }
+
+      final accounts = await _readCachedMap(txn, 'TreasuryAccount');
+      final from = fromTreasuryAccountId == null
+          ? null
+          : accounts[fromTreasuryAccountId];
+      final to = toTreasuryAccountId == null
+          ? null
+          : accounts[toTreasuryAccountId];
+
+      if (type == 'Receipt' && (to == null || counterAccountId == null)) {
+        throw StateError(
+          'برای دریافت، حساب مقصد و حساب مقابل الزامی است.',
+        );
+      }
+      if (type == 'Payment' &&
+          (from == null || counterAccountId == null)) {
+        throw StateError(
+          'برای پرداخت، حساب مبدا و حساب مقابل الزامی است.',
+        );
+      }
+      if (type == 'Transfer' &&
+          (from == null ||
+              to == null ||
+              fromTreasuryAccountId == toTreasuryAccountId)) {
+        throw StateError(
+          'برای انتقال، مبدا و مقصد متفاوت الزامی است.',
+        );
+      }
+
+      if (counterAccountId != null) {
+        final counterRows = await txn.query(
+          'cached_accounts',
+          where: 'company_id = ? AND id = ? AND is_active = 1',
+          whereArgs: [DemoMode.companyId, counterAccountId],
+          limit: 1,
+        );
+        if (counterRows.isEmpty) {
+          throw StateError('حساب مقابل معتبر پیدا نشد.');
+        }
+      }
+
+      final value = _money(amount);
+      final number = await _nextCachedNumber(
+        txn,
+        entityType: 'TreasuryTransaction',
+        prefix: 'DEMO-TR-',
+      );
+      final transactionId = _newId();
+      final text = description?.trim().isNotEmpty == true
+          ? description!.trim()
+          : type == 'Receipt'
+              ? 'دریافت وجه'
+              : type == 'Payment'
+                  ? 'پرداخت وجه'
+                  : 'انتقال وجه';
+
+      final lines = <_DemoJournalLine>[];
+      if (type == 'Receipt') {
+        lines
+          ..add(
+            _DemoJournalLine(
+              accountId: to!['ledgerAccountId'].toString(),
+              description: text,
+              debit: value,
+            ),
+          )
+          ..add(
+            _DemoJournalLine(
+              accountId: counterAccountId!,
+              detailAccountId: detailAccountId,
+              description: text,
+              credit: value,
+            ),
+          );
+      } else if (type == 'Payment') {
+        lines
+          ..add(
+            _DemoJournalLine(
+              accountId: counterAccountId!,
+              detailAccountId: detailAccountId,
+              description: text,
+              debit: value,
+            ),
+          )
+          ..add(
+            _DemoJournalLine(
+              accountId: from!['ledgerAccountId'].toString(),
+              description: text,
+              credit: value,
+            ),
+          );
+      } else {
+        lines
+          ..add(
+            _DemoJournalLine(
+              accountId: to!['ledgerAccountId'].toString(),
+              description: text,
+              debit: value,
+            ),
+          )
+          ..add(
+            _DemoJournalLine(
+              accountId: from!['ledgerAccountId'].toString(),
+              description: text,
+              credit: value,
+            ),
+          );
+      }
+
+      final journalNumber = await _insertPostedJournal(
+        txn,
+        fiscalYearId: fiscalYearId,
+        documentDate: _dateOnly(documentDate),
+        description: text,
+        lines: lines,
+      );
+
+      String? counterCode;
+      String? counterName;
+      if (counterAccountId != null) {
+        final counterRows = await txn.query(
+          'cached_accounts',
+          where: 'company_id = ? AND id = ?',
+          whereArgs: [DemoMode.companyId, counterAccountId],
+          limit: 1,
+        );
+        if (counterRows.isNotEmpty) {
+          counterCode = counterRows.first['code']?.toString();
+          counterName = counterRows.first['name']?.toString();
+        }
+      }
+
+      final detailName =
+          await _detailAccountName(txn, detailAccountId);
+
+      final posted = <String, dynamic>{
+        'id': transactionId,
+        'fiscalYearId': fiscalYearId,
+        'number': number,
+        'documentDate': _dateOnly(documentDate),
+        'type': type,
+        'status': 'Posted',
+        'fromTreasuryAccountId': fromTreasuryAccountId,
+        'fromTreasuryAccountName': from?['name'],
+        'toTreasuryAccountId': toTreasuryAccountId,
+        'toTreasuryAccountName': to?['name'],
+        'counterAccountId': counterAccountId,
+        'counterAccountCode': counterCode,
+        'counterAccountName': counterName,
+        'detailAccountId': detailAccountId,
+        'detailAccountName': detailName,
+        'currencyId': null,
+        'currencyCode': 'IRR',
+        'exchangeRate': 1,
+        'amount': amount,
+        'description': text,
+        'accountingJournalNumber': journalNumber,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      await _upsertCachedEntity(
+        txn,
+        'TreasuryTransaction',
+        transactionId,
+        posted,
+      );
+
+      return posted;
+    });
+  }
+
   Future<void> adjustStock({
     required String warehouseId,
     required String productId,
