@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
 import '../accounting/accounting_home_page.dart';
+import '../auth/login_page.dart';
 import '../reports/reports_center_page.dart';
 import '../sales_inventory/sales_inventory_home_page.dart';
 import '../treasury/treasury_home_page.dart';
@@ -191,6 +193,36 @@ class _Navigation extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
+          const Divider(height: 32),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('خروج از حساب'),
+            onTap: () async {
+              try {
+                if (!isDemoMode) {
+                  await ApiClient().logout(
+                    bearerToken: accessToken,
+                  );
+                }
+              } catch (_) {
+                // Local sign-out still proceeds if the server is unreachable.
+              }
+
+              if (!context.mounted) return;
+
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute<void>(
+                  builder: (_) => LoginPage(
+                    localDatabase: localDatabase,
+                  ),
+                ),
+                (route) => false,
+              );
+            },
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
         ],
       ),
     );
