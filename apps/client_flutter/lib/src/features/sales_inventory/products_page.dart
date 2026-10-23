@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/database/local_database.dart';
+import '../../core/demo/demo_mode.dart';
 import '../accounting/report_support.dart';
 
 class ProductsPage extends StatefulWidget {
@@ -316,7 +317,41 @@ class _ProductsPageState extends State<ProductsPage> {
     setState(() => _busy = true);
 
     try {
-      if (existing == null) {
+      if (DemoMode.isDemoToken(widget.accessToken)) {
+        final products = (await widget.localDatabase.getCachedStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StoreProduct',
+        )).toList();
+        final changed = <String, dynamic>{
+          ...?existing,
+          'id': existing?['id']?.toString() ??
+              'local-product-${DateTime.now().microsecondsSinceEpoch}',
+          'sku': sku.text.trim(),
+          'name': name.text.trim(),
+          'barcode': _nullIfBlank(barcode.text),
+          'unitName': unit.text.trim(),
+          'kind': kind,
+          'trackInventory': trackInventory,
+          'salesPrice': sales,
+          'defaultPurchasePrice': purchase,
+          'isActive': isActive,
+          'trackingMode': trackingMode,
+          'minimumStock': minStock,
+        };
+        final i = products.indexWhere(
+          (product) => product['id']?.toString() == changed['id'],
+        );
+        if (i >= 0) {
+          products[i] = changed;
+        } else {
+          products.add(changed);
+        }
+        await widget.localDatabase.replaceStoreEntities(
+          companyId: widget.companyId,
+          entityType: 'StoreProduct',
+          items: products,
+        );
+      } else if (existing == null) {
         await _apiClient.createStoreProduct(
           bearerToken: widget.accessToken,
           sku: sku.text.trim(),
