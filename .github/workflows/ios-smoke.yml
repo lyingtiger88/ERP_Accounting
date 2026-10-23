@@ -22,6 +22,8 @@ jobs:
       - name: Generate iOS shell
         working-directory: apps/client_flutter
         run: flutter create . --platforms=ios --project-name erp_accounting
+      - name: Apply Zarr iOS display name
+        run: python3 scripts/set_zarr_app_name.py ios
       - name: Install dependencies
         working-directory: apps/client_flutter
         run: flutter pub get
