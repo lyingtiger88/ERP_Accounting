@@ -1,5 +1,5 @@
 name: erp_accounting
-description: Cross-platform ERP and accounting client for Windows and Android.
+description: Zarr (زر) accounting client for Windows, Android and iOS.
 publish_to: "none"
 version: 0.5.0-beta.1+5
 
