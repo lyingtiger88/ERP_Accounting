@@ -1,0 +1,43 @@
+name: iOS unsigned smoke
+
+on:
+  push:
+    branches: [feature/zarr-mobile-dual-mode]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-simulator:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS shell
+        working-directory: apps/client_flutter
+        run: flutter create . --platforms=ios --project-name erp_accounting
+      - name: Install dependencies
+        working-directory: apps/client_flutter
+        run: flutter pub get
+      - name: Analyze
+        working-directory: apps/client_flutter
+        run: flutter analyze --no-fatal-infos
+      - name: Test
+        working-directory: apps/client_flutter
+        run: flutter test
+      - name: Build iOS simulator (not an IPA)
+        working-directory: apps/client_flutter
+        run: flutter build ios --simulator --debug --no-codesign
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zarr-iOS-Simulator-Smoke
+          path: apps/client_flutter/build/ios/iphonesimulator/Runner.app/**
+          if-no-files-found: error
+          retention-days: 7
