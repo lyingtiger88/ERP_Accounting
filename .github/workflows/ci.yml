@@ -90,6 +90,9 @@ jobs:
         working-directory: apps/client_flutter
         run: flutter create . --platforms=android --project-name erp_accounting
 
+      - name: Apply Zarr Android launcher name
+        run: python scripts/set_zarr_app_name.py android
+
       - name: Packages
         working-directory: apps/client_flutter
         run: flutter pub get
