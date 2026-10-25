@@ -599,7 +599,8 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (error) {
       _message('انتخاب فایل پشتیبان ناموفق بود: $error');
       if (temporary != null) {
-        await File(temporary).delete().catchError((_) => File(temporary!));
+        final tempFile = File(temporary);
+        if (await tempFile.exists()) await tempFile.delete();
       }
       if (mounted) setState(() => _busy = false);
       return;
