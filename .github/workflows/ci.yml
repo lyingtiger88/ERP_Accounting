@@ -90,6 +90,13 @@ jobs:
         working-directory: apps/client_flutter
         run: flutter create . --platforms=android --project-name erp_accounting
 
+      - name: Install icon build dependency
+        run: python -m pip install Pillow
+      - name: Apply approved Zarr Android icon
+        run: python scripts/install_zarr_icon.py android
+      - name: Apply Zarr Android launcher name
+        run: python scripts/set_zarr_app_name.py android
+
       - name: Packages
         working-directory: apps/client_flutter
         run: flutter pub get
@@ -142,6 +149,10 @@ jobs:
         working-directory: apps/client_flutter
         run: flutter pub get
 
+      - name: Install icon build dependency
+        run: python -m pip install Pillow
+      - name: Apply approved Zarr Windows icon
+        run: python scripts/install_zarr_icon.py windows
       - name: Validate PowerShell maintenance scripts
         shell: pwsh
         run: |

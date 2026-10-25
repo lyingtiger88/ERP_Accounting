@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../../core/api/api_client.dart';
@@ -542,6 +544,78 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+
+  Future<void> _exportBackup(String path) async {
+    setState(() => _busy = true);
+    try {
+      final file = File(path);
+      if (!await file.exists()) throw StateError('فایل پشتیبان پیدا نشد.');
+      final bytes = await file.readAsBytes();
+      final saved = await FilePicker.platform.saveFile(
+        dialogTitle: 'ذخیره پشتیبان زر',
+        fileName: p.basename(path),
+        type: FileType.custom,
+        allowedExtensions: ['db'],
+        bytes: bytes,
+      );
+      if (saved != null) _message('نسخه پشتیبان صادر شد.');
+    } catch (error) {
+      _message('صدور پشتیبان ناموفق بود: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _importBackup() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    String? temporary;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: 'انتخاب فایل پشتیبان زر',
+        type: FileType.custom,
+        allowedExtensions: ['db'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final selected = result.files.single;
+      if (!selected.name.toLowerCase().endsWith('.db')) {
+        throw StateError('فقط فایل SQLite با پسوند db پذیرفته می‌شود.');
+      }
+      final data = selected.bytes;
+      if (data == null) {
+        if (selected.path == null) throw StateError('خواندن فایل ممکن نیست.');
+        final input = File(selected.path!);
+        if (!await input.exists()) throw StateError('فایل انتخابی پیدا نشد.');
+        final dir = await getTemporaryDirectory();
+        temporary = p.join(dir.path, 'zarr_import_${DateTime.now().microsecondsSinceEpoch}.db');
+        await input.copy(temporary);
+      } else {
+        final dir = await getTemporaryDirectory();
+        temporary = p.join(dir.path, 'zarr_import_${DateTime.now().microsecondsSinceEpoch}.db');
+        await File(temporary).writeAsBytes(data, flush: true);
+      }
+      if (!mounted) return;
+    } catch (error) {
+      _message('انتخاب فایل پشتیبان ناموفق بود: $error');
+      if (temporary != null) {
+        final tempFile = File(temporary);
+        if (await tempFile.exists()) await tempFile.delete();
+      }
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
+    if (mounted) setState(() => _busy = false);
+    try {
+      if (temporary != null) await _restoreBackup(temporary);
+    } finally {
+      if (temporary != null) {
+        final tempFile = File(temporary);
+        if (await tempFile.exists()) await tempFile.delete();
+      }
+    }
+  }
+
   void _message(String value) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -862,6 +936,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: const Text('ساخت پشتیبان'),
                 ),
                 OutlinedButton.icon(
+                  onPressed: _busy ? null : _importBackup,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('بازیابی از فایل خارجی'),
+                ),
+                OutlinedButton.icon(
                   onPressed: _busy ? null : _loadBackups,
                   icon: const Icon(Icons.refresh),
                   label: const Text('بازخوانی فهرست'),
@@ -906,12 +985,20 @@ class _SettingsPageState extends State<SettingsPage> {
                           backup,
                       textDirection: TextDirection.ltr,
                     ),
-                    trailing: OutlinedButton.icon(
-                      onPressed: _busy
-                          ? null
-                          : () => _restoreBackup(backup),
-                      icon: const Icon(Icons.restore),
-                      label: const Text('بازیابی'),
+                    trailing: Wrap(
+                      spacing: 6,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : () => _exportBackup(backup),
+                          icon: const Icon(Icons.ios_share_outlined),
+                          label: const Text('خروجی فایل'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : () => _restoreBackup(backup),
+                          icon: const Icon(Icons.restore),
+                          label: const Text('بازیابی'),
+                        ),
+                      ],
                     ),
                   );
                 },
@@ -923,7 +1010,7 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Padding(
             padding: EdgeInsets.all(18),
             child: Text(
-              'پشتیبان این صفحه مربوط به دیتابیس محلی Windows/Android است. '
+              'پشتیبان این صفحه مربوط به دیتابیس محلی Windows/Android/iOS است. فایل پشتیبان شامل اطلاعات مالی حساس است؛ فقط در محل امن نگهداری شود. '
               'برای استقرار چندکاربره PostgreSQL، پشتیبان سرور باید جداگانه نیز فعال باشد.',
             ),
           ),

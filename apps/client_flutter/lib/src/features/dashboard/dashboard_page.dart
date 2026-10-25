@@ -5,6 +5,7 @@ import '../../core/database/local_database.dart';
 import '../accounting/accounting_home_page.dart';
 import '../auth/login_page.dart';
 import '../reports/reports_center_page.dart';
+import '../management/management_registry_page.dart';
 import '../sales_inventory/sales_inventory_home_page.dart';
 import '../settings/settings_page.dart';
 import '../treasury/treasury_home_page.dart';
@@ -37,6 +38,7 @@ class DashboardPage extends StatelessWidget {
     _NavItem('انبار', Icons.inventory_2_outlined),
     _NavItem('بانک و صندوق', Icons.account_balance_wallet_outlined),
     _NavItem('منابع', Icons.hub_outlined),
+    _NavItem('CRM، دارایی و چک', Icons.folder_copy_outlined),
     _NavItem('گزارش‌ها', Icons.bar_chart_outlined),
     _NavItem('تنظیمات', Icons.settings_outlined),
   ];
@@ -50,7 +52,7 @@ class DashboardPage extends StatelessWidget {
       child: Scaffold(
         appBar: compact
             ? AppBar(
-                title: const Text('ERP Accounting'),
+                title: const Text('زر | Zarr'),
               )
             : null,
         drawer: compact
@@ -137,6 +139,18 @@ class _Navigation extends StatelessWidget {
               title: Text(item.label),
               selected: item == items.first,
               onTap: () {
+                if (item.label == 'CRM، دارایی و چک') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ManagementRegistryPage(
+                        companyId: companyId,
+                        localDatabase: localDatabase,
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
                 if (item.label == 'حسابداری') {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
