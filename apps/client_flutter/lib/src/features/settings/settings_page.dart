@@ -607,12 +607,10 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     if (mounted) setState(() => _busy = false);
     try {
-      if (temporary != null) await _restoreBackup(temporary);
+      await _restoreBackup(temporary);
     } finally {
-      if (temporary != null) {
-        final tempFile = File(temporary);
-        if (await tempFile.exists()) await tempFile.delete();
-      }
+      final tempFile = File(temporary);
+      if (await tempFile.exists()) await tempFile.delete();
     }
   }
 
