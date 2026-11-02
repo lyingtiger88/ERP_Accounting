@@ -178,7 +178,7 @@ class _ManagementRegistryPageState extends State<ManagementRegistryPage> {
                       return ListTile(
                         title: Text(item['title']?.toString() ?? ''),
                         subtitle: Text('${item['detail'] ?? ''}  •  ${item['value'] ?? ''} ریال  •  ${item['date'] ?? ''}'),
-                        trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+                        trailing: Wrap(spacing: 0, children: [
                           IconButton(onPressed: _busy ? null : () => _edit(item), icon: const Icon(Icons.edit_outlined)),
                           IconButton(onPressed: _busy ? null : () => _delete(item), icon: const Icon(Icons.delete_outline)),
                         ]),
