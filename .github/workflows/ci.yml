@@ -163,7 +163,6 @@ jobs:
   windows-build:
     name: Windows executable smoke build
     runs-on: windows-latest
-    needs: flutter
     steps:
       - name: Checkout
         uses: actions/checkout@v7
