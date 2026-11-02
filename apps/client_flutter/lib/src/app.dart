@@ -17,17 +17,17 @@ class ErpAccountingApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2563EB),
+      seedColor: const Color(0xFFBB8735),
       brightness: Brightness.light,
     );
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'ERP Accounting',
+      title: 'زر | Zarr',
       theme: ThemeData(
         colorScheme: scheme,
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF5F7FB),
+        scaffoldBackgroundColor: const Color(0xFFF7F7F5),
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),
         ),

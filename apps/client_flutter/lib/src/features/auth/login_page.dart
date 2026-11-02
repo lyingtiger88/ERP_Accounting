@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
 import '../../core/database/local_database.dart';
+import '../../core/mobile/mobile_mode.dart';
+import '../../core/mobile/mobile_mode_store.dart';
 import '../../core/demo/demo_mode.dart';
 import '../../core/demo/local_demo_business_engine.dart';
 import '../../core/sync/accounting_sync_service.dart';
@@ -31,6 +33,18 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscurePassword = true;
   bool _busy = false;
   String? _error;
+  MobileMode _mobileMode = MobileMode.companion;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid || Platform.isIOS) {
+      MobileModeStore(widget.localDatabase).load().then((value) {
+        if (mounted) setState(() => _mobileMode = value.mode);
+      });
+    }
+  }
+
 
   @override
   void dispose() {
@@ -332,6 +346,30 @@ class _LoginPageState extends State<LoginPage> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
+                                if (Platform.isAndroid || Platform.isIOS) ...[
+                                  SegmentedButton<MobileMode>(
+                                    segments: const [
+                                      ButtonSegment(value: MobileMode.standalone, label: Text('مستقل (آزمایشی)')),
+                                      ButtonSegment(value: MobileMode.companion, label: Text('متصل به سرور')),
+                                    ],
+                                    selected: {_mobileMode},
+                                    onSelectionChanged: (selection) async {
+                                      final next = selection.first;
+                                      await MobileModeStore(widget.localDatabase).save(
+                                        MobileConfiguration(mode: next),
+                                      );
+                                      if (mounted) setState(() => _mobileMode = next);
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _mobileMode == MobileMode.standalone
+                                        ? 'حالت مستقل فعلاً فقط موتور محلی آزمایشی دارد؛ برای اطلاعات واقعی استفاده نشود.'
+                                        : 'ورود با حساب سرور؛ جفت‌سازی خودکار هنوز فعال نیست.',
+                                    textAlign: TextAlign.right,
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
                                 Text(
                                   'ورود به حساب',
                                   textAlign: TextAlign.right,

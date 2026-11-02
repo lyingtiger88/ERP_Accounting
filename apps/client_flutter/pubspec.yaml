@@ -1,5 +1,5 @@
 name: erp_accounting
-description: Cross-platform ERP and accounting client for Windows and Android.
+description: Zarr (زر) accounting client for Windows, Android and iOS.
 publish_to: "none"
 version: 0.5.0-beta.1+5
 
@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   path: ^1.9.1
+  file_picker: ^10.3.3
   flutter_secure_storage: ^9.2.4
   path_provider: ^2.1.6
   sqflite: ^2.4.4
