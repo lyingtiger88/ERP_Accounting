@@ -118,13 +118,13 @@ values_en = android / "src/main/res/values-en"
 values.mkdir(parents=True, exist_ok=True)
 values_en.mkdir(parents=True, exist_ok=True)
 (values / "strings.xml").write_text(
-    '<?xml version="1.0" encoding="utf-8"?>\\n'
-    '<resources>\\n    <string name="app_name">زر</string>\\n</resources>\\n',
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<resources>\n    <string name="app_name">زر</string>\n</resources>\n',
     encoding="utf-8",
 )
 (values_en / "strings.xml").write_text(
-    '<?xml version="1.0" encoding="utf-8"?>\\n'
-    '<resources>\\n    <string name="app_name">Zarr</string>\\n</resources>\\n',
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<resources>\n    <string name="app_name">Zarr</string>\n</resources>\n',
     encoding="utf-8",
 )
 print("Configured localized Android app names: Persian=زر, English=Zarr.")
