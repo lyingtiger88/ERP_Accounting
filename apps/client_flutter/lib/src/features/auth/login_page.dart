@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -471,6 +472,26 @@ class _LoginPageState extends State<LoginPage> {
                                   onPressed: _busy ? null : _openBootstrap,
                                   child:
                                       const Text('راه‌اندازی اولین شرکت'),
+                                ),
+                                const SizedBox(height: 4),
+                                OutlinedButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () async {
+                                          final uri = Uri.parse('https://kaliia.ir');
+                                          await launchUrl(
+                                            uri,
+                                            mode: LaunchMode.externalApplication,
+                                          );
+                                        },
+                                  icon: const Icon(Icons.person_add_alt_1),
+                                  label: const Text('ثبت حساب کاربری در کالیا سافت'),
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'برای ایجاد حساب کاربری و مدیریت محصولات به وب‌سایت کالیا سافت مراجعه کنید.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 12),
                                 ),
                                 const SizedBox(height: 10),
                                 const Text(
