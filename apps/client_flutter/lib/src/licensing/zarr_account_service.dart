@@ -80,6 +80,10 @@ class ZarrAccountService {
     return session['access_token'] as String;
   }
 
+  /// A fresh Supabase access JWT for one-time owner-verification requests.
+  /// Never attach this to the ERP application's ordinary API requests.
+  Future<String> verifiedKaliiaAccessToken() => _validToken();
+
   Future<String?> accountEmail() => _storage.read(key: _emailKey);
 
   Future<KaliiaEntitlement> status() async {
