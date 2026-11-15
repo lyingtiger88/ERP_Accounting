@@ -3202,8 +3202,6 @@ accounting.MapGet("/general-ledger", async (
 
 app.Run();
 
-public sealed record ZarrLicenseLinkRequest(string? KaliiaAccessToken);
-
 static async Task<AppUser?> CurrentUserAsync(
     HttpRequest request,
     AuthService authService,
