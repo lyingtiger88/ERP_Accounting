@@ -22,3 +22,7 @@ Supabase project `yztithydgdvydaktuxlw`; POST `https://yztithydgdvydaktuxlw.supa
 
 ## Acceptance tests
 Trial boundary at 45 days; separate entitlements for `maal` and other products; tenant isolation; paid renewal; revoked and suspended read-only; offline expiry/outbox behavior; server-side write rejection; preserved reports and local data; no privileged Supabase key in Flutter or ASP.NET client configuration.
+
+
+## Important authentication compatibility note
+The existing Maal Flutter app authenticates against its own ASP.NET API and stores that API's custom access token in `SecureSessionStore`. That token is **not** a Supabase Auth JWT and must not be sent to `kaliia-entitlement`. The Flutter entitlement client intentionally requires a token provider but is not wired into the current login flow. Before enabling trial or write enforcement, implement a server-side tenant-to-Kaliia-account identity bridge (with credentials held only by the API/server), define company-level subscription ownership, and have the API enforce entitlements on every mutation. The client module alone does not activate or enforce a Maal subscription.
