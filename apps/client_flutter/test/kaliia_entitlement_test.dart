@@ -1,7 +1,28 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:erp_accounting/src/licensing/kaliia_entitlement.dart';
+import 'package:erp_accounting/src/licensing/zarr_account_service.dart';
 
 void main() {
+  test('Zarr has a distinct product identifier and cannot consume Maal license', () {
+    expect(ZarrAccountService.productId, 'zarr');
+    expect(ZarrAccountService.productId, isNot('maal'));
+    final maal = KaliiaEntitlement.fromJson({
+      'product_id': 'maal',
+      'status': 'active',
+      'can_write': true,
+    });
+    final zarr = KaliiaEntitlement.fromJson({
+      'product_id': ZarrAccountService.productId,
+      'status': 'trial_available',
+      'can_write': false,
+      'trial_available': true,
+    });
+    expect(maal.productId, isNot(zarr.productId));
+    expect(zarr.canWrite, isFalse);
+    expect(zarr.trialAvailable, isTrue);
+  });
+
+
   group('KaliiaEntitlement', () {
     test('parses an active server entitlement', () {
       final value = KaliiaEntitlement.fromJson({
