@@ -19,7 +19,8 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          # Android Lint in the Flutter 3.50 toolchain invokes Java 21 List.removeLast().
+          java-version: '21'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
