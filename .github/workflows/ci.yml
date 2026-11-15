@@ -108,15 +108,15 @@ jobs:
               path.write_text(text, encoding="utf-8")
           PY
 
-      - name: Build beta release APK
+      - name: Build DEBUG smoke APK (not upgradeable)
         working-directory: apps/client_flutter
-        run: flutter build apk --release
+        run: flutter build apk --debug
 
-      - name: Upload Android beta artifact
+      - name: Upload Android DEBUG smoke artifact
         uses: actions/upload-artifact@v6
         with:
-          name: ERP-Accounting-Android-Beta
-          path: apps/client_flutter/build/app/outputs/flutter-apk/app-release.apk
+          name: Zarr-Android-Debug-Not-For-Updates
+          path: apps/client_flutter/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 14
 
