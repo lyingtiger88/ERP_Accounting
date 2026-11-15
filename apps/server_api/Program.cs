@@ -360,7 +360,7 @@ app.MapPost("/api/license/link", async (
     var user = await CurrentUserAsync(request, authService, cancellationToken);
     if (user is null) return Results.Unauthorized();
     if (user.Role != UserRole.Owner)
-        return Results.Forbid();
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
 
     Guid? kaliiaUserId;
     try
