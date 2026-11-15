@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -586,7 +587,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final tabs =
         1 +
         (_canManageUsers ? 2 : 0) +
-        (showDevices ? 1 : 0);
+        (showDevices ? 1 : 0) +
+        1;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -619,6 +621,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icon(Icons.backup_outlined),
                     text: 'پشتیبان محلی',
                   ),
+                  const Tab(
+                    icon: Icon(Icons.info_outline),
+                    text: 'درباره نرم‌افزار',
+                  ),
                 ],
               ),
               Expanded(
@@ -628,10 +634,59 @@ class _SettingsPageState extends State<SettingsPage> {
                     if (showDevices) _devicesTab(),
                     if (_canManageUsers) _auditTab(),
                     _backupTab(),
+                    _aboutTab(),
                   ],
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _aboutTab() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.account_balance_outlined, size: 52),
+                  const SizedBox(height: 12),
+                  Text(
+                    'نرم‌افزار حسابداری کالیا سافت',
+                    style: Theme.of(context).textTheme.titleLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'برای اطلاعات محصولات، ثبت حساب کاربری، پشتیبانی و مدیریت اشتراک به وب‌سایت رسمی کالیا سافت مراجعه کنید.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 18),
+                  SelectableText(
+                    'https://kaliia.ir',
+                    textDirection: TextDirection.ltr,
+                    style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () => launchUrl(
+                      Uri.parse('https://kaliia.ir'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('بازکردن وب‌سایت کالیا سافت'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
