@@ -64,6 +64,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<ZarrLicenseService>();
 builder.Services.AddScoped<AccountingService>();
 builder.Services.AddScoped<CurrencyAccountingService>();
 builder.Services.AddScoped<SalesInventoryService>();
@@ -100,6 +102,44 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    // Commercial enforcement is feature-flagged until existing companies have
+    // completed owner-verified account linking. Enable on the server only,
+    // together with a server-side Kaliia:ServiceRoleKey.
+    var enforce = context.RequestServices.GetRequiredService<IConfiguration>()
+        .GetValue<bool>("Kaliia:EnforceZarrLicense");
+    var path = context.Request.Path;
+    var write = !HttpMethods.IsGet(context.Request.Method) &&
+                !HttpMethods.IsHead(context.Request.Method) &&
+                !HttpMethods.IsOptions(context.Request.Method);
+    var protectedApi = path.StartsWithSegments("/api") &&
+                       !path.StartsWithSegments("/api/auth") &&
+                       !path.StartsWithSegments("/api/license");
+    if (enforce && write && protectedApi)
+    {
+        var auth = context.RequestServices.GetRequiredService<AuthService>();
+        var user = await CurrentUserAsync(context.Request, auth, context.RequestAborted);
+        // Original endpoints remain responsible for rejecting missing/invalid
+        // ERP sessions; never grant a write merely for an anonymous request.
+        if (user != null)
+        {
+            var licenses = context.RequestServices.GetRequiredService<ZarrLicenseService>();
+            if (!await licenses.CanWriteAsync(user.CompanyId, context.RequestAborted))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    error = "zarr_subscription_read_only",
+                    message = "اشتراک زر معتبر نیست؛ اطلاعات فقط قابل مشاهده و گزارش‌گیری هستند."
+                }, cancellationToken: context.RequestAborted);
+                return;
+            }
+        }
+    }
+    await next(context);
+});
+
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
@@ -114,7 +154,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 
 app.MapGet("/", () => Results.Ok(new
 {
-    product = "ERP Accounting",
+    product = "Zarr | زر",
     phase = "Phase 1 Foundation",
     persistence = databaseProvider,
     status = "ok",
@@ -307,6 +347,64 @@ app.MapGet("/api/me", async (
             role = user.Role.ToString(),
             user.MfaEnabled
         });
+});
+
+
+app.MapPost("/api/license/link", async (
+    HttpRequest request,
+    ZarrLicenseLinkRequest payload,
+    AuthService authService,
+    ZarrLicenseService licenses,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    if (user.Role != UserRole.Owner)
+        return Results.Forbid();
+
+    Guid? kaliiaUserId;
+    try
+    {
+        kaliiaUserId = await licenses.VerifyKaliiaUserAsync(
+            payload.KaliiaAccessToken ?? "", cancellationToken);
+    }
+    catch (HttpRequestException) { return Results.StatusCode(503); }
+    catch (TaskCanceledException) { return Results.StatusCode(503); }
+    catch (System.Text.Json.JsonException) { return Results.BadRequest(); }
+
+    if (kaliiaUserId is null) return Results.Unauthorized();
+    await licenses.LinkCompanyAsync(
+        user.CompanyId, user.Id, kaliiaUserId.Value, cancellationToken);
+    return Results.Ok(new
+    {
+        productId = ZarrLicenseService.ProductId,
+        companyId = user.CompanyId,
+        linked = true
+    });
+}).RequireRateLimiting("auth");
+
+app.MapGet("/api/license/status", async (
+    HttpRequest request,
+    AuthService authService,
+    ZarrLicenseService licenses,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    var linked = await licenses.HasCompanyLinkAsync(
+        user.CompanyId, cancellationToken);
+    var canWrite = linked && await licenses.CanWriteAsync(
+        user.CompanyId, cancellationToken);
+    return Results.Ok(new
+    {
+        productId = ZarrLicenseService.ProductId,
+        companyId = user.CompanyId,
+        linked,
+        canWrite,
+        enforcementEnabled = request.HttpContext.RequestServices
+            .GetRequiredService<IConfiguration>()
+            .GetValue<bool>("Kaliia:EnforceZarrLicense")
+    });
 });
 
 var admin = app.MapGroup("/api/admin");
@@ -3103,6 +3201,8 @@ accounting.MapGet("/general-ledger", async (
 });
 
 app.Run();
+
+public sealed record ZarrLicenseLinkRequest(string? KaliiaAccessToken);
 
 static async Task<AppUser?> CurrentUserAsync(
     HttpRequest request,
