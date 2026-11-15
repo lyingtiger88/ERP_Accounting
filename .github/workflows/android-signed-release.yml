@@ -1,0 +1,93 @@
+name: Zarr Android signed upgrade APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-android:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.ZARR_ANDROID_KEYSTORE_B64 }}
+      STORE_PASSWORD: ${{ secrets.ZARR_ANDROID_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ZARR_ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ZARR_ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Verify secrets, restore keystore and validate identity
+        shell: bash
+        env:
+          EXPECTED_SHA256: 35A4AFD0D4CA27B89988B15F93EDCC81CD92AFE33FADF339B16EA2AF01AD6767
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then echo "::error::Missing ${name}. Refusing unsigned release."; exit 1; fi
+          done
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/zarr-release.jks"
+          chmod 600 "$RUNNER_TEMP/zarr-release.jks"
+          actual="$(keytool -list -v -keystore "$RUNNER_TEMP/zarr-release.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | sed -n 's/.*SHA256: //p' | head -n1 | tr -d '[:space:]:')"
+          test "${actual^^}" = "$EXPECTED_SHA256" || { echo "::error::Incorrect Zarr signing certificate."; exit 1; }
+          echo "ZARR_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/zarr-release.jks" >> "$GITHUB_ENV"
+          echo "ZARR_ANDROID_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ZARR_ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ZARR_ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Generate Flutter Android project
+        working-directory: apps/client_flutter
+        run: flutter create . --platforms=android --project-name erp_accounting
+      - name: Configure stable package name and release signing
+        run: python scripts/prepare_zarr_signed_android.py
+      - name: Grant internet permission
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("apps/client_flutter/android/app/src/main/AndroidManifest.xml")
+          c=p.read_text()
+          perm='<uses-permission android:name="android.permission.INTERNET"/>'
+          if perm not in c:
+              marker='<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+              if marker not in c: raise SystemExit("Unknown AndroidManifest.xml template")
+              p.write_text(c.replace(marker,marker+"\n    "+perm))
+          PY
+      - name: Fetch Flutter dependencies
+        working-directory: apps/client_flutter
+        run: flutter pub get
+      - name: Build signed APK with monotonic version code
+        working-directory: apps/client_flutter
+        shell: bash
+        run: flutter build apk --release --build-number "$((10000 + ${{ github.run_number }}))"
+      - name: Verify package and signing certificate
+        shell: bash
+        env:
+          EXPECTED_SHA256: 35A4AFD0D4CA27B89988B15F93EDCC81CD92AFE33FADF339B16EA2AF01AD6767
+        run: |
+          set -euo pipefail
+          apk="apps/client_flutter/build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$apk"
+          apksigner="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n1)/apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+          actual="$("$apksigner" verify --print-certs "$apk" | sed -n 's/Signer #1 certificate SHA-256 digest: //p' | tr -d '[:space:]:')"
+          test "${actual^^}" = "$EXPECTED_SHA256" || { echo "::error::APK signing identity mismatch."; exit 1; }
+          aapt="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n1)/aapt"
+          "$aapt" dump badging "$apk" | head -n1 | grep "name='ir.kaliia.zarr'"
+          sha256sum "$apk"
+      - name: Upload Zarr signed upgradeable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zarr-Android-Signed-Release
+          path: apps/client_flutter/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 60
+      - name: Delete temporary signing keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/zarr-release.jks"
