@@ -1,8 +1,8 @@
-# ERP Accounting
+# زر | Zarr — Accounting
 
 Cross-platform accounting and resource-management platform for Windows and Android.
 
-> **Working title:** `ERP_Accounting` — final product/brand name will be selected later.
+> **Product name:** زر (Zarr). Technical repository and internal package names remain `ERP_Accounting` / `erp_accounting` to avoid unnecessary breaking changes. Zarr is distinct from Maal.
 
 ## Offline Demo Mode
 
