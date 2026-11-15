@@ -39,6 +39,7 @@ if gradle_file == kts:
         """    signingConfigs {
         create("kaliiaRelease") {
             storeFile = file(System.getenv("ZARR_ANDROID_KEYSTORE_PATH"))
+            storeType = "PKCS12"
             storePassword = System.getenv("ZARR_ANDROID_STORE_PASSWORD")
             keyAlias = System.getenv("ZARR_ANDROID_KEY_ALIAS")
             keyPassword = System.getenv("ZARR_ANDROID_KEY_PASSWORD")
@@ -66,6 +67,7 @@ else:
         """    signingConfigs {
         kaliiaRelease {
             storeFile file(System.getenv('ZARR_ANDROID_KEYSTORE_PATH'))
+            storeType 'PKCS12'
             storePassword System.getenv('ZARR_ANDROID_STORE_PASSWORD')
             keyAlias System.getenv('ZARR_ANDROID_KEY_ALIAS')
             keyPassword System.getenv('ZARR_ANDROID_KEY_PASSWORD')
