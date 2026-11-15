@@ -50,7 +50,7 @@ class DashboardPage extends StatelessWidget {
       child: Scaffold(
         appBar: compact
             ? AppBar(
-                title: const Text('ERP Accounting'),
+                title: const Text('زر | Zarr'),
               )
             : null,
         drawer: compact
