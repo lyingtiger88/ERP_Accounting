@@ -11,6 +11,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<TrustedDevice> Devices => Set<TrustedDevice>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<SecurityAuditLog> SecurityAuditLogs => Set<SecurityAuditLog>();
+    public DbSet<ZarrCompanyLicense> ZarrCompanyLicenses => Set<ZarrCompanyLicense>();
     public DbSet<LedgerAccount> Accounts => Set<LedgerAccount>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
@@ -140,6 +141,21 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .WithMany()
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ZarrCompanyLicense>(entity =>
+        {
+            entity.ToTable("zarr_company_licenses");
+            entity.HasKey(x => x.CompanyId);
+            entity.HasIndex(x => x.AuthUserId);
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.LinkedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<LedgerAccount>(entity =>
