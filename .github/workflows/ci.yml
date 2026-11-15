@@ -159,6 +159,23 @@ jobs:
         working-directory: apps/client_flutter
         run: flutter build windows --release
 
+      - name: Install Inno Setup for in-place upgrades
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+      - name: Build Windows installer with a permanent AppId
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMySourceDir="${{ github.workspace }}\apps\client_flutter\build\windows\x64\runner\Release" /DMyOutputDir="${{ github.workspace }}\artifacts" /DMyAppVersion="0.5.${{ github.run_number }}" installer\Zarr.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path artifacts/Zarr-Setup-x64.exe)) { throw "Zarr installer missing" }
+      - name: Upload Windows update installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: Zarr-Windows-Installer
+          path: artifacts/Zarr-Setup-x64.exe
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload Windows beta artifact
         uses: actions/upload-artifact@v6
         with:
