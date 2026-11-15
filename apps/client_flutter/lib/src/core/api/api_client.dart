@@ -171,6 +171,30 @@ class ApiClient {
     return 'http://127.0.0.1:5000';
   }
 
+  Future<Map<String, dynamic>> linkZarrCompany({
+    required String bearerToken,
+    required String kaliiaAccessToken,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/license/link',
+      bearerToken: bearerToken,
+      body: {'kaliiaAccessToken': kaliiaAccessToken},
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<Map<String, dynamic>> zarrCompanyLicenseStatus({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/license/status',
+      bearerToken: bearerToken,
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<void> bootstrap({
     required String companyName,
     required String username,
