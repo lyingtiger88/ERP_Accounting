@@ -73,7 +73,7 @@ class KaliiaEntitlementService {
       final body = await utf8.decoder.bind(response).join();
       final decoded = jsonDecode(body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('Entitlement service rejected request (\${response.statusCode}).');
+        throw HttpException('Entitlement service rejected request (${response.statusCode}).');
       }
       if (decoded is! Map<String, dynamic> ||
           decoded['entitlement'] is! Map<String, dynamic>) {
