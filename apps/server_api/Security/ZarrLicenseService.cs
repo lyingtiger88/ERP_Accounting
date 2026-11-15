@@ -88,6 +88,11 @@ public sealed class ZarrLicenseService(
         await database.SaveChangesAsync(cancellationToken);
     }
 
+    public Task<bool> HasCompanyLinkAsync(
+        Guid companyId, CancellationToken cancellationToken)
+        => database.ZarrCompanyLicenses.AsNoTracking()
+            .AnyAsync(x => x.CompanyId == companyId, cancellationToken);
+
     /// <summary>
     /// Always fail closed for writes when enforcement is enabled but the
     /// company is unlinked, Supabase is unreachable, or the license is expired.
