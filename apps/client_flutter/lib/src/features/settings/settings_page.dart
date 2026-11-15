@@ -680,7 +680,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   FilledButton.tonalIcon(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const ZarrLicensePage(),
+                        builder: (_) => ZarrLicensePage(
+                          erpAccessToken: widget.accessToken,
+                          canLinkCompany: widget.role == 'Owner' && !_isDemo,
+                        ),
                       ),
                     ),
                     icon: const Icon(Icons.verified_user_outlined),
