@@ -84,7 +84,10 @@ jobs:
           actual="$("$apksigner" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n1 | tr -d '[:space:]:')"
           test "${actual^^}" = "$EXPECTED_SHA256" || { echo "::error::APK signing identity mismatch."; exit 1; }
           aapt="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n1)/aapt"
-          "$aapt" dump badging "$apk" | head -n1 | grep "name='ir.kaliia.zarr'"
+          badging="$("$aapt" dump badging "$apk")"
+          grep -q "name='ir.kaliia.zarr'" <<< "$badging"
+          grep -q "application-label:'زر'" <<< "$badging"
+          unzip -l "$apk" | grep -q "mipmap-xxxhdpi-v4/ic_launcher.png"
           sha256sum "$apk"
       - name: Upload Zarr signed upgradeable APK
         uses: actions/upload-artifact@v4
