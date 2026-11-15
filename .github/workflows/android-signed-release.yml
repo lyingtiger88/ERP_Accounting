@@ -45,8 +45,12 @@ jobs:
       - name: Generate Flutter Android project
         working-directory: apps/client_flutter
         run: flutter create . --platforms=android --project-name erp_accounting
-      - name: Configure stable package name and release signing
+      - name: Install Pillow for launcher icon generation
+        run: python -m pip install --disable-pip-version-check Pillow
+      - name: Configure stable package name, localized labels and release signing
         run: python scripts/prepare_zarr_signed_android.py
+      - name: Install approved Zarr launcher icon
+        run: python scripts/install_zarr_icon.py
       - name: Grant internet permission
         shell: bash
         run: |
