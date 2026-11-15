@@ -6,6 +6,7 @@ No secret value is written to source control. The keystore stays in runner temp.
 """
 from pathlib import Path
 import os
+import re
 import sys
 
 APP_ID = "ir.kaliia.zarr"
@@ -83,3 +84,47 @@ else:
     )
 gradle_file.write_text(source, encoding="utf-8")
 print(f"Configured {gradle_file} with stable package {APP_ID} and private signing inputs.")
+
+
+# Apply the approved localized product identity to Android launcher and app label.
+manifest = android / "src/main/AndroidManifest.xml"
+if not manifest.exists():
+    raise SystemExit("Generated AndroidManifest.xml not found")
+manifest_text = manifest.read_text(encoding="utf-8")
+manifest_text, label_count = re.subn(
+    r'android:label="[^"]+"',
+    'android:label="@string/app_name"',
+    manifest_text,
+    count=1,
+)
+if label_count != 1:
+    raise SystemExit("Could not safely set Android application label")
+manifest_text, icon_count = re.subn(
+    r'android:icon="[^"]+"',
+    'android:icon="@mipmap/ic_launcher"',
+    manifest_text,
+    count=1,
+)
+if icon_count == 0:
+    manifest_text = manifest_text.replace(
+        "<application",
+        '<application android:icon="@mipmap/ic_launcher"',
+        1,
+    )
+manifest.write_text(manifest_text, encoding="utf-8")
+
+values = android / "src/main/res/values"
+values_en = android / "src/main/res/values-en"
+values.mkdir(parents=True, exist_ok=True)
+values_en.mkdir(parents=True, exist_ok=True)
+(values / "strings.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\\n'
+    '<resources>\\n    <string name="app_name">زر</string>\\n</resources>\\n',
+    encoding="utf-8",
+)
+(values_en / "strings.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\\n'
+    '<resources>\\n    <string name="app_name">Zarr</string>\\n</resources>\\n',
+    encoding="utf-8",
+)
+print("Configured localized Android app names: Persian=زر, English=Zarr.")
