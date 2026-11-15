@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+import '../../licensing/zarr_license_page.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -674,6 +675,16 @@ class _SettingsPageState extends State<SettingsPage> {
                     'https://kaliia.ir',
                     textDirection: TextDirection.ltr,
                     style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.tonalIcon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ZarrLicensePage(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.verified_user_outlined),
+                    label: const Text('حساب و وضعیت اشتراک زر'),
                   ),
                   const SizedBox(height: 12),
                   FilledButton.icon(
