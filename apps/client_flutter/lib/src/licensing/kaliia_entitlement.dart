@@ -52,7 +52,7 @@ class KaliiaEntitlementService {
   final String publishableKey;
 
   Future<KaliiaEntitlement> _call(String action) async {
-    if (!const {'maal', 'shopmanager', 'zurvan'}.contains(productId)) {
+    if (!const {'zarr', 'maal', 'shopmanager', 'zurvan'}.contains(productId)) {
       throw ArgumentError.value(productId, 'productId');
     }
     final token = await accessToken();
