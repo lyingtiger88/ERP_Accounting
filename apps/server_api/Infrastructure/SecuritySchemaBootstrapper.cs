@@ -90,6 +90,20 @@ public static class SecuritySchemaBootstrapper
         """
         CREATE INDEX IF NOT EXISTS "IX_security_audit_logs_UserId_CreatedAt"
         ON security_audit_logs ("UserId", "CreatedAt");
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS zarr_company_licenses (
+            "CompanyId" TEXT NOT NULL PRIMARY KEY,
+            "AuthUserId" TEXT NOT NULL,
+            "LinkedByUserId" TEXT NOT NULL,
+            "LinkedAt" TEXT NOT NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("LinkedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_zarr_company_licenses_AuthUserId"
+        ON zarr_company_licenses ("AuthUserId");
         """
     ];
 
@@ -151,6 +165,20 @@ public static class SecuritySchemaBootstrapper
         """
         CREATE INDEX IF NOT EXISTS "IX_security_audit_logs_UserId_CreatedAt"
         ON security_audit_logs ("UserId", "CreatedAt");
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS zarr_company_licenses (
+            "CompanyId" uuid NOT NULL PRIMARY KEY,
+            "AuthUserId" uuid NOT NULL,
+            "LinkedByUserId" uuid NOT NULL,
+            "LinkedAt" timestamp with time zone NOT NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("LinkedByUserId") REFERENCES users ("Id") ON DELETE RESTRICT
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_zarr_company_licenses_AuthUserId"
+        ON zarr_company_licenses ("AuthUserId");
         """
     ];
 }
