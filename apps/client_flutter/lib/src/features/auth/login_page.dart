@@ -534,7 +534,7 @@ class _BrandPanel extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'حسابداری و مدیریت منابع،\nروی همه دستگاه‌های شما',
+            'زر | Zarr\nحسابداری و مدیریت منابع روی همه دستگاه‌های شما',
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
                   fontWeight: FontWeight.w800,
                   height: 1.25,
