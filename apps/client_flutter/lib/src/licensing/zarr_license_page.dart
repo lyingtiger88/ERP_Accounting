@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
+import '../core/api/api_client.dart';
 import 'kaliia_entitlement.dart';
 import 'zarr_account_service.dart';
 
 /// Zarr subscription management is independent of the ERP API login.
 /// Full write enforcement must still be implemented on the accounting API.
 class ZarrLicensePage extends StatefulWidget {
-  const ZarrLicensePage({super.key});
+  const ZarrLicensePage({
+    super.key,
+    required this.erpAccessToken,
+    required this.canLinkCompany,
+  });
+  final String erpAccessToken;
+  final bool canLinkCompany;
   @override
   State<ZarrLicensePage> createState() => _ZarrLicensePageState();
 }
@@ -14,6 +21,8 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _service = ZarrAccountService();
+  final _api = ApiClient();
+  bool? _companyLinked;
   KaliiaEntitlement? _license;
   bool _busy = false;
   bool _signedIn = false;
@@ -64,6 +73,31 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
     final entitlement = await _service.startTrial();
     if (mounted) setState(() => _license = entitlement);
   });
+  Future<void> _linkCompany() => _run(() async {
+    final token = await _service.verifiedKaliiaAccessToken();
+    await _api.linkZarrCompany(
+      bearerToken: widget.erpAccessToken,
+      kaliiaAccessToken: token,
+    );
+    if (!mounted) return;
+    setState(() {
+      _companyLinked = true;
+      _message = 'حساب کالیا سافت با شرکت حسابداری زر پیوند داده شد.';
+    });
+  });
+  Future<void> _checkCompany() => _run(() async {
+    final result = await _api.zarrCompanyLicenseStatus(
+      bearerToken: widget.erpAccessToken,
+    );
+    if (!mounted) return;
+    setState(() {
+      _companyLinked = result['linked'] == true;
+      _message = result['canWrite'] == true
+          ? 'مجوز نوشتن شرکت توسط سرور تأیید شد.'
+          : 'مجوز نوشتن شرکت هنوز از سوی سرور تأیید نشده است.';
+    });
+  });
+
   Future<void> _logout() => _run(() async {
     await _service.signOut();
     if (mounted) setState(() { _signedIn = false; _license = null; });
@@ -145,6 +179,25 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
                         ),
                       ],
                       const SizedBox(height: 8),
+                      if (widget.canLinkCompany) ...[
+                        FilledButton.tonalIcon(
+                          onPressed: _busy ? null : _linkCompany,
+                          icon: const Icon(Icons.link),
+                          label: const Text('اتصال حساب کالیا سافت به شرکت زر'),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      OutlinedButton(
+                        onPressed: _busy ? null : _checkCompany,
+                        child: const Text('بررسی مجوز شرکت در سرور حسابداری'),
+                      ),
+                      if (_companyLinked != null)
+                        Text(
+                          _companyLinked! ? 'شرکت متصل به حساب کالیا سافت' :
+                            'شرکت هنوز به حساب کالیا سافت متصل نیست',
+                          textAlign: TextAlign.center,
+                        ),
+                      const SizedBox(height: 6),
                       OutlinedButton(
                         onPressed: _busy ? null : _loadStatus,
                         child: const Text('به‌روزرسانی وضعیت اشتراک'),
