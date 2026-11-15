@@ -660,7 +660,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   const Icon(Icons.account_balance_outlined, size: 52),
                   const SizedBox(height: 12),
                   Text(
-                    'نرم‌افزار حسابداری کالیا سافت',
+                    'زر | Zarr — حسابداری کالیا سافت',
                     style: Theme.of(context).textTheme.titleLarge,
                     textAlign: TextAlign.center,
                   ),
