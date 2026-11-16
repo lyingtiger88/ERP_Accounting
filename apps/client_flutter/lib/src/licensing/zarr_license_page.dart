@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/api/api_client.dart';
 import 'kaliia_entitlement.dart';
 import 'zarr_account_service.dart';
+import 'zarr_offline_entitlement.dart';
 
 /// Zarr subscription management is independent of the ERP API login.
 /// Full write enforcement must still be implemented on the accounting API.
@@ -22,6 +23,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   final _password = TextEditingController();
   final _service = ZarrAccountService();
   final _api = ApiClient();
+  final _offlineStore = ZarrOfflineEntitlementStore();
   bool? _companyLinked;
   KaliiaEntitlement? _license;
   bool _busy = false;
@@ -51,12 +53,32 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
       if (mounted) setState(() => _busy = false);
     }
   }
+  Future<void> _cacheOfflineEntitlement(Map<String, dynamic> status) async {
+    final token = status['offlineEntitlement'];
+    final companyId = status['companyId'];
+    if (token is! String || token.isEmpty || companyId is! String) {
+      await _offlineStore.clear();
+      return;
+    }
+    try {
+      await _offlineStore.saveAndVerify(token, companyId: companyId);
+    } on FormatException {
+      await _offlineStore.clear();
+      if (mounted) {
+        setState(() {
+          _message = 'مجوز آفلاین معتبر دریافت نشد؛ برای عملیات نوشتن به اتصال سرور نیاز است.';
+        });
+      }
+    }
+  }
+
   Future<void> _loadStatus() => _run(() async {
     final account = await _service.accountEmail();
     if (account == null || account.isEmpty) return;
     final status = await _api.zarrCompanyLicenseStatus(
       bearerToken: widget.erpAccessToken,
     );
+    await _cacheOfflineEntitlement(status);
     final raw = status['entitlement'];
     final entitlement = raw is Map
         ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(raw))
@@ -75,6 +97,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
     final status = await _api.zarrCompanyLicenseStatus(
       bearerToken: widget.erpAccessToken,
     );
+    await _cacheOfflineEntitlement(status);
     final raw = status['entitlement'];
     final entitlement = raw is Map
         ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(raw))
@@ -125,6 +148,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
     final result = await _api.zarrCompanyLicenseStatus(
       bearerToken: widget.erpAccessToken,
     );
+    await _cacheOfflineEntitlement(result);
     final raw = result['entitlement'];
     if (!mounted) return;
     setState(() {
@@ -140,6 +164,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
 
   Future<void> _logout() => _run(() async {
     await _service.signOut();
+    await _offlineStore.clear();
     if (mounted) setState(() { _signedIn = false; _license = null; });
   });
   String _statusText() {
