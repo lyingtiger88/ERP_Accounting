@@ -26,13 +26,19 @@ class KaliiaEntitlement {
   factory KaliiaEntitlement.fromJson(Map<String, dynamic> json) {
     DateTime? date(dynamic value) =>
         value is String ? DateTime.tryParse(value)?.toUtc() : null;
+    final expiry = date(json['expires_at']);
+    final computedDays = expiry == null
+        ? 0
+        : (expiry.difference(DateTime.now().toUtc()).inSeconds / 86400)
+            .ceil()
+            .clamp(0, 365000);
     return KaliiaEntitlement(
       productId: json['product_id'] as String? ?? '',
       status: json['status'] as String? ?? 'unknown',
       canWrite: json['can_write'] == true,
       trialAvailable: json['trial_available'] == true,
-      daysRemaining: (json['days_remaining'] as num?)?.toInt() ?? 0,
-      expiresAt: date(json['expires_at']),
+      daysRemaining: (json['days_remaining'] as num?)?.toInt() ?? computedDays,
+      expiresAt: expiry,
       checkedAt: date(json['checked_at']),
     );
   }
