@@ -262,20 +262,29 @@ class ZarrOfflineEntitlementStore {
     }
   }
 
+  /// Build-time emergency policy. Defaults to false so local-first use remains
+  /// functional before an API host exists. Set true only in a release that has
+  /// a provisioned API and an explicitly enabled license rollout.
+  static const requireServerLicense =
+      bool.fromEnvironment('ZARR_REQUIRE_SERVER_LICENSE', defaultValue: false);
+
   Future<void> markUnknown(String companyId) async {
-    await _storage.delete(key: _knownKey(companyId));
+    // Preserve the last known enforcement decision. If enforcement was already
+    // enabled, loss of connectivity must not silently unlock local writes.
+    await _storage.write(key: _knownKey(companyId), value: 'false');
     await _storage.delete(key: _tokenKey(companyId));
-    await _storage.delete(key: _enforcedKey(companyId));
   }
 
   Future<bool> canWrite({
     required String companyId,
     DateTime? now,
   }) async {
+    final enforced = await _storage.read(key: _enforcedKey(companyId));
+    if (enforced == 'false') return true;
+    if (enforced != 'true') return !requireServerLicense;
+
     final known = await _storage.read(key: _knownKey(companyId));
     if (known != 'true') return false;
-    final enforced = await _storage.read(key: _enforcedKey(companyId));
-    if (enforced != 'true') return true;
 
     final current = (now ?? DateTime.now()).toUtc();
     final entitlement = await readVerified(
