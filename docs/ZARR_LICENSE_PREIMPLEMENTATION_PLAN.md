@@ -122,3 +122,52 @@ Important: a pending local operation created during valid offline grace must be 
 - Before enabling for existing companies, provide owner-linking instructions, support/recovery process and a clear grace/migration window.
 - Never delete or lock the customer's accounting data because a subscription expires.
 - No release build is part of this design/audit task.
+
+
+## 12. Live repository and Supabase audit — 2026-11-16
+
+This section records read-only inspection of the current `main` branch and the connected Supabase project. No live database, Edge Function, secret, application code, feature flag or release artifact was changed.
+
+### Flutter client findings
+
+- `KaliiaEntitlement` parses a server response with `can_write`, status and expiry, and exposes `requireKaliiaWrite`. The helper is only a local guard primitive; the inspected licensing page explicitly states full API write enforcement is still under development.
+- The entitlement client calls `kaliia-entitlement` for status and start_trial. It does not currently parse or verify a signed entitlement document, offline-until claim, issuer, audience, key ID or policy version.
+- `ZarrAccountService` stores the Kaliia access and refresh tokens in Flutter Secure Storage and refreshes the Supabase session. That is separate from a persisted signed offline entitlement.
+- `LocalDatabase` has a SQLite `sync_outbox` table containing change ID, company ID, entity type, entity ID, operation, payload, created time, attempts, error and sent time. It does not have an entitlement snapshot, authorization-at-creation evidence or explicit accepted/rejected/needs-review state in the inspected schema.
+- `OutboxSyncService.syncPending` replays pending records to journal, detail-account and sales/inventory endpoints. The inspected implementation does not check the entitlement or offline grace before replay; it relies on the API response.
+- `AccountingSyncService.syncAll` refreshes caches and then pushes pending changes. It has no visible license-state gate in the inspected implementation.
+- Existing local backups are SQLite database backups. The proposed license guard must not block viewing/exporting/backing up local data.
+
+### Live Supabase findings
+
+- The connected project is the same project referenced by the Zarr client configuration. Live project schema and deployed Edge Functions were inspected read-only.
+- `public.zurvan_licenses` is currently keyed by `(account_id, product_id)` with a unique constraint. It is not keyed by the ERP company ID.
+- The license row has `type` values `trial`, `subscription`, `lifetime`; status values `active`, `suspended`, `revoked`; and a check constraint requires expiry for trial/subscription while lifetime must have NULL expiry.
+- `public.zurvan_accounts.id` references `auth.users.id`. Existing license rows are attached to a Kaliia account UUID.
+- The deployed `kaliia-entitlement` Edge Function calls `kaliia_start_trial` with the authenticated Supabase user ID and product ID. Its database RPC creates a 45-day trial per Kaliia account/product, not per ERP company.
+- The same deployed RPC currently allows the product IDs `zurvan`, `maal`, `shopmanager`, and `zarr`; a prior overload visible in the database has an older product allowlist. The active Edge Function uses the newer signature with recovery email.
+- The current `kaliia-entitlement` status action queries a single account/product license. It returns trial_available when no license exists, and marks a dated active license expired based on server-side time.
+- The separate `zurvan-license-status` and `zurvan-license-start-trial` functions are legacy Zurvan-oriented flows; the latter starts a trial for product `zurvan`, so it must not be reused for Zarr.
+- The central product and plan catalogue has Zarr as a product, while commercial prices/sales remain disabled pending approval. No pricing or checkout settings were changed.
+- Relevant license, account, device, activation and payment tables have RLS enabled in the inspected schema. Policies and function grants still require a dedicated security review before any schema or function changes.
+
+### Architecture decision required before implementation
+
+The chosen commercial rule is one subscription per ERP company, shared across its users/devices. The existing central entitlement model is one license per Kaliia Auth account and product. The current company-link table exists only in the Zarr ASP.NET database; the central `zurvan_licenses` table does not contain the ERP company binding.
+
+Therefore, implementation must not simply treat an account-level license as a company-level license. Before coding the enforcement path, design a central, immutable company binding and company-scoped entitlement identity, including ownership transfer, unlink/relink protection, one-trial-per-company/product uniqueness and account recovery. Decide whether one Kaliia account may own multiple ERP companies; the schema must enforce the approved rule. Preserve the current account-level entitlement tables for other products.
+
+### Additional blockers and corrections to prior assumptions
+
+- The 45-day trial is server-created and repeat calls return the existing license, but its current uniqueness scope is account + product, not company + product.
+- The database explicitly models lifetime licenses, so a NULL expiry is valid only when `type='lifetime'`. The ASP.NET `CanWriteAsync` currently treats any active row with NULL expiry as perpetual without checking `type`; fix this before rollout.
+- The central license table's unique account/product constraint means the ASP.NET `limit=1` query should not return duplicates under the current schema. Keep explicit integrity checks, but the main data-model gap is company binding, not arbitrary duplicate selection.
+- The current Flutter offline queue does not implement the proposed seven-day grace or signed authorization. The grace policy is still a design target, not a delivered feature.
+- The current client has no demonstrated cross-platform offline entitlement state machine. Windows and Android parity must be implemented and tested.
+- Existing server tests cover company-link scoping and missing-secret fail-closed behavior. They do not yet exercise full entitlement status, trial expiry, subscription/lifetime semantics, API-wide mutation middleware, offline outbox replay or company-level trial uniqueness.
+- The current CI workflow runs Flutter tests when client files change. A server test workflow and integrated end-to-end licensing workflow still need to be verified/added.
+
+### User testing checkpoints
+
+No interactive test is required from the user during the remaining source audit and architecture work. Request a user-run test only when the implementation reaches a stage requiring a real installed Windows/Android app, real ERP owner credentials, real Kaliia account linking, or an actual offline/online transition. Never ask the user to share passwords, refresh tokens, service-role keys or signing private keys in chat.
+
