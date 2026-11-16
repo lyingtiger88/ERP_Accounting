@@ -4,6 +4,10 @@ Cross-platform accounting and resource-management platform for Windows and Andro
 
 > **Product name:** زر (Zarr). Technical repository and internal package names remain `ERP_Accounting` / `erp_accounting` to avoid unnecessary breaking changes. Zarr is distinct from Maal.
 
+## API container and future hosting
+
+The ASP.NET API has a non-root multi-stage Dockerfile for reproducible local container validation. No production host is currently provisioned and no image is published to a registry. See [the API hosting runbook](docs/API_HOSTING_RUNBOOK.md) for the local smoke test and the deferred production deployment checklist.
+
 ## Offline Demo Mode
 
 The Flutter client includes a serverless local demo mode from the login screen.
