@@ -51,6 +51,16 @@ Do not weaken read/export/backup rights after expiration.
 6. Explicit activation of company mode and subsequently license enforcement after pilot migration.
 7. Signed release packages and on-device smoke tests on Windows/Android, only after user approval to build.
 
+## Live Supabase audit (2026-11-16)
+
+- Current company bindings: 0.
+- Current company entitlements: 0.
+- Current company payment requests: 0.
+- Legacy `zurvan_licenses` rows for product `zarr`: 0.
+- The existing `zurvan_admin_users` and `zurvan_products` columns referenced by the payment approval RPC were verified to exist.
+
+No customer license or trial rows required migration at audit time. This is a count-only audit; it does not prove there are no Zarr installations with locally cached state.
+
 ## Immediate user testing checkpoint
 
 No device test is required until a test build is explicitly approved and produced. At that stage:
