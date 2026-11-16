@@ -24,26 +24,19 @@ Do not weaken read/export/backup rights after expiration.
 
 - The API can issue an RS256-signed compact token bound to product `zarr`, one ERP company, entitlement generation and the entitlement expiry.
 - Offline token lifetime is capped at 7 days and is also capped by the actual license expiry.
-- Flutter verifies RS256 using the pinned RSA-3072 public key and persists only verified tokens using platform secure storage.
-- Automated tests include a known-good signed fixture, company mismatch, tampered signature and expired grace; ASP.NET tests verify server signing.
+- Flutter verifies RS256 using a pinned RSA-3072 public key and persists only verified tokens using platform secure storage.
+- Automated tests include a signed fixture, company mismatch, tampered signature and expired grace; ASP.NET tests verify server signing.
 
-### API hosting — planned for a later phase (no server currently provisioned)
+### Key provisioning and production gate
 
-**Current decision:** there is no hosted ASP.NET API for the accounting application yet. Keep API deployment, production key installation, live license enforcement and commercial activation explicitly pending. Do not attempt to publish the API to an assumed host or switch company-enforcement flags on.
-
-**Deployment plan, when hosting is approved:**
-1. Select and provision a supported Linux VPS/container host; confirm region, budget, domain and operator access before choosing a provider.
-2. Deploy the ASP.NET API as a managed service/container behind HTTPS with a domain, automatic restart, health checks and restricted inbound ports.
-3. Configure Supabase URL and service-role credentials only as host-side secrets; never commit them to the repository or expose them to Flutter.
-4. Generate the production RSA signing key on the host or in a controlled secret manager. Store the private PEM as `Kaliia__EntitlementPrivateKeyPem` and set `Kaliia__EntitlementKeyId=zarr-rs256-2026-01`. Do not reuse a test key.
-5. Add logs, uptime/alerting, database/API backup and restore procedures, rate limiting, patching and a documented key-rotation/revocation process.
-6. Validate the deployed API using a non-production ERP company, verify signed token issuance and offline validation, then obtain explicit approval before enabling company enforcement or distributing a beta.
-
-**Until that work is approved and completed:** keep `Kaliia:UseCompanyEntitlements=false` and `Kaliia:EnforceZarrLicense=false` in any future production configuration. Local development and automated tests may continue without a hosted API.
+- The public modulus currently embedded in Flutter is a **test-fixture verification key**, not a production key. The corresponding private key is not committed to the repository.
+- The ASP.NET API now requires both `Kaliia:EntitlementPrivateKeyPem` and an explicit `Kaliia:EntitlementKeyId`; it does not silently fall back to a default key id.
+- The status endpoint returns no offline token unless both settings are present.
+- Since no accounting API host exists yet, do not generate or configure a production signing key now. When hosting is approved, generate a fresh RSA-3072 key pair in the host/secret manager, assign a new production key ID, add only the public modulus and key ID to the client in a reviewed release, and store the private PEM only in the host secret store.
+- Never commit production private keys, include them in Flutter assets, or paste them into chat/CI logs. Key rotation requires a client release containing the next public key before the server begins signing with its key ID.
 
 - The client records the server enforcement decision per ERP company in secure storage before entering the dashboard. Unknown status is fail-closed for local business writes.
 - The local database guards the main user-originated draft, journal, detail-account and store-draft mutation paths. Backup, restore, export and server cache refresh paths remain available.
-
 - The client stores the greatest observed device UTC time in platform secure storage and denies offline writes if the clock moves backwards by more than five minutes. This is a practical rollback-detection layer, not a hardware-backed monotonic clock guarantee.
 - Independent review of every local mutation path remains a release blocker. The guard must be extended if new local write paths are added.
 
