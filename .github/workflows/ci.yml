@@ -178,6 +178,8 @@ jobs:
           Export-Certificate -Cert $cert -FilePath artifacts/signing/BDFR-Test-Publisher.cer | Out-Null
           Import-Certificate -FilePath artifacts/signing/BDFR-Test-Publisher.cer -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
           Import-Certificate -FilePath artifacts/signing/BDFR-Test-Publisher.cer -CertStoreLocation "Cert:\CurrentUser\TrustedPublisher" | Out-Null
+          Import-Certificate -FilePath artifacts/signing/BDFR-Test-Publisher.cer -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
+          Import-Certificate -FilePath artifacts/signing/BDFR-Test-Publisher.cer -CertStoreLocation "Cert:\CurrentUser\TrustedPublisher" | Out-Null
           "BDFR_TEST_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
       - name: Sign and verify Zarr Windows binaries (self-signed test identity)
         shell: pwsh
