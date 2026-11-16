@@ -422,9 +422,9 @@ app.MapGet("/api/license/status", async (
         {
             var entitlement = await licenses.GetCompanyStatusAsync(
                 user.CompanyId, cancellationToken);
-            var canWrite = entitlement.TryGetProperty("can_write", out var flag) &&
+            var companyCanWrite = entitlement.TryGetProperty("can_write", out var flag) &&
                 flag.ValueKind == System.Text.Json.JsonValueKind.True;
-            var offlineToken = canWrite &&
+            var offlineToken = companyCanWrite &&
                 !string.IsNullOrWhiteSpace(config["Kaliia:EntitlementPrivateKeyPem"])
                     ? licenses.CreateSignedOfflineEntitlement(entitlement, user.CompanyId)
                     : null;
@@ -433,7 +433,7 @@ app.MapGet("/api/license/status", async (
                 productId = ZarrLicenseService.ProductId,
                 companyId = user.CompanyId,
                 linked = true,
-                canWrite,
+                canWrite = companyCanWrite,
                 companyEntitlementsEnabled = true,
                 entitlement,
                 offlineEntitlement = offlineToken,
