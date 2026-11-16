@@ -373,8 +373,20 @@ app.MapPost("/api/license/link", async (
     catch (System.Text.Json.JsonException) { return Results.BadRequest(); }
 
     if (kaliiaUserId is null) return Results.Unauthorized();
-    await licenses.LinkCompanyAsync(
-        user.CompanyId, user.Id, kaliiaUserId.Value, cancellationToken);
+    try
+    {
+        await licenses.LinkCompanyAsync(
+            user.CompanyId, user.Id, kaliiaUserId.Value, cancellationToken);
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.Conflict(new
+        {
+            error = "zarr_company_transfer_required",
+            message = "این شرکت قبلاً به یک حساب کالیا متصل شده است؛ انتقال مالکیت باید از مسیر پشتیبانی و با تأیید انجام شود."
+        });
+    }
+
     return Results.Ok(new
     {
         productId = ZarrLicenseService.ProductId,
