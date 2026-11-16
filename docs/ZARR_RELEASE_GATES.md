@@ -35,7 +35,10 @@ Do not weaken read/export/backup rights after expiration.
 - Never place the private key in Flutter assets, appsettings committed to source control, GitHub Actions logs, or chat messages.
 - Key rotation requires shipping the next public key in a client update before changing the server key ID.
 
-This token work does not yet enable offline writes throughout every local repository. The global local mutation guard and device clock rollback defense remain release blockers.
+- The client records the server enforcement decision per ERP company in secure storage before entering the dashboard. Unknown status is fail-closed for local business writes.
+- The local database guards the main user-originated draft, journal, detail-account and store-draft mutation paths. Backup, restore, export and server cache refresh paths remain available.
+
+The offline token verifier uses device wall-clock time. Hardware-backed clock rollback defense and independent review of every local mutation path remain release blockers. The guard must be extended if new local write paths are added.
 
 ## Still blocking commercial release
 
