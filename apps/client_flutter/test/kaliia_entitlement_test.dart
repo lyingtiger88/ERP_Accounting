@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:erp_accounting/src/licensing/kaliia_entitlement.dart';
-import 'package:erp_accounting/src/licensing/zarr_account_service.dart';
+import 'package:zarr/src/licensing/kaliia_entitlement.dart';
+import 'package:zarr/src/licensing/zarr_account_service.dart';
 
 void main() {
   test('Zarr has a distinct product identifier and cannot consume Maal license', () {
