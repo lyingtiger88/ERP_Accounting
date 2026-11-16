@@ -79,12 +79,19 @@ public sealed class ZarrLicenseService(
                 LinkedAt = DateTimeOffset.UtcNow,
             });
         }
+        else if (link.AuthUserId != kaliiaUserId)
+        {
+            // A different Kaliia account cannot silently take over a company's
+            // billing identity. Ownership transfer needs its own audited flow.
+            throw new InvalidOperationException(
+                "A Zarr company binding already exists; an audited transfer is required.");
+        }
         else
         {
-            link.AuthUserId = kaliiaUserId;
-            link.LinkedByUserId = ownerId;
-            link.LinkedAt = DateTimeOffset.UtcNow;
+            // Same-owner retries are idempotent and must not rewrite history.
+            return;
         }
+
         await database.SaveChangesAsync(cancellationToken);
     }
 
