@@ -240,6 +240,79 @@ public sealed class ZarrLicenseService(
     }
 
     /// <summary>
+    /// Issues a short-lived RS256 token for offline read/write grace. The token
+    /// never outlives the underlying entitlement and is bound to one company
+    /// and product. The private key must be supplied only via server secret config.
+    /// </summary>
+    public string CreateSignedOfflineEntitlement(
+        JsonElement entitlement, Guid companyId)
+    {
+        var pem = configuration["Kaliia:EntitlementPrivateKeyPem"];
+        if (string.IsNullOrWhiteSpace(pem))
+            throw new InvalidOperationException("Offline entitlement signing key is not configured.");
+
+        if (!entitlement.TryGetProperty("can_write", out var canWrite) ||
+            canWrite.ValueKind != JsonValueKind.True ||
+            !entitlement.TryGetProperty("status", out var status) ||
+            status.GetString() != "active" ||
+            !entitlement.TryGetProperty("generation", out var generation) ||
+            !generation.TryGetInt64(out var generationValue) ||
+            generationValue < 1)
+            throw new InvalidOperationException("Only an active company entitlement can be signed.");
+
+        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset? licenseExpiry = null;
+        if (entitlement.TryGetProperty("expires_at", out var expiry) &&
+            expiry.ValueKind == JsonValueKind.String)
+        {
+            if (!DateTimeOffset.TryParse(expiry.GetString(), out var parsedExpiry))
+                throw new JsonException("Invalid entitlement expiry.");
+            licenseExpiry = parsedExpiry.ToUniversalTime();
+            if (licenseExpiry <= now)
+                throw new InvalidOperationException("Entitlement is expired.");
+        }
+
+        var offlineExpiry = now.AddDays(7);
+        if (licenseExpiry is not null && licenseExpiry.Value < offlineExpiry)
+            offlineExpiry = licenseExpiry.Value;
+
+        var header = new
+        {
+            alg = "RS256",
+            typ = "JWT",
+            kid = configuration["Kaliia:EntitlementKeyId"] ?? "zarr-rs256-2026-01"
+        };
+        var payload = new
+        {
+            iss = "https://kaliia.soft",
+            aud = ProductId,
+            sub = companyId.ToString(),
+            company_id = companyId.ToString(),
+            product_id = ProductId,
+            status = "active",
+            can_write = true,
+            generation = generationValue,
+            iat = now.ToUnixTimeSeconds(),
+            exp = offlineExpiry.ToUnixTimeSeconds(),
+            license_expires_at = licenseExpiry?.ToUnixTimeSeconds()
+        };
+
+        static string Encode(object value) =>
+            Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(value))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        var signingInput = Encode(header) + "." + Encode(payload);
+        using var rsa = RSA.Create();
+        rsa.ImportFromPem(pem);
+        var signature = rsa.SignData(
+            System.Text.Encoding.ASCII.GetBytes(signingInput),
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        return signingInput + "." + Convert.ToBase64String(signature)
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    /// <summary>
     /// This call is not made implicitly on login or on license status refresh.
     /// Trial activation requires an explicit ERP Owner action.
     /// </summary>
