@@ -171,3 +171,13 @@ Therefore, implementation must not simply treat an account-level license as a co
 
 No interactive test is required from the user during the remaining source audit and architecture work. Request a user-run test only when the implementation reaches a stage requiring a real installed Windows/Android app, real ERP owner credentials, real Kaliia account linking, or an actual offline/online transition. Never ask the user to share passwords, refresh tokens, service-role keys or signing private keys in chat.
 
+
+
+### Further live database security and commercial-catalogue checks
+
+- The two `kaliia_start_trial` overloads are `SECURITY DEFINER`, but direct EXECUTE is granted only to `postgres` and `service_role`; `anon` and `authenticated` cannot call them directly. The Edge Function is the authenticated entry point and verifies the caller with `auth.getUser` before invoking the RPC. Preserve this boundary.
+- The separate legacy `zurvan_start_trial` RPC is SECURITY INVOKER and also only executable by `postgres` / `service_role`; it is explicitly Zurvan-only.
+- The inspected license/account/device/product/plan tables have RLS enabled and no direct table policies. This is consistent with keeping these tables behind trusted Edge Functions/service-role code, but the grants and all Edge Function paths must be audited together before exposing any direct client access.
+- Supabase security advisors also report project-wide RLS-without-policy findings and one unrelated SECURITY DEFINER warning for `zurvan_is_creator()`, plus leaked-password protection disabled. These are wider project security findings, not changes made as part of Zarr licensing; they should be triaged separately.
+- The live Zarr product is enabled but sales are disabled. Its 1-, 3-, 6- and 12-month plan slots are all unpriced and disabled. Do not enable checkout or invent prices as part of licensing implementation.
+- The company-scoped entitlement model must coexist with the current account-scoped licence model used by other Kaliia products. A dedicated company/product entitlement record (or an equivalent immutable binding layer) is required; do not repurpose or weaken the existing unique account/product constraint.
