@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.Security;
@@ -89,8 +91,118 @@ public sealed class ZarrCompanyLicenseTests
             (await db.ZarrCompanyLicenses.SingleAsync(x => x.CompanyId == second.Id)).AuthUserId);
     }
 
+    [Fact]
+    public async Task CanWriteAsync_DoesNotTreatSubscriptionWithoutExpiryAsPerpetual()
+    {
+        var fixture = await CreateLinkedService(
+            """[{"status":"active","type":"subscription","expires_at":null}]""");
+        await using var connection = fixture.Connection;
+        await using var db = fixture.Database;
+
+        Assert.False(await fixture.Service.CanWriteAsync(fixture.Company.Id, default));
+    }
+
+    [Fact]
+    public async Task CanWriteAsync_AllowsOnlyExplicitLifetimeWithoutExpiry()
+    {
+        var fixture = await CreateLinkedService(
+            """[{"status":"active","type":"lifetime","expires_at":null}]""");
+        await using var connection = fixture.Connection;
+        await using var db = fixture.Database;
+
+        Assert.True(await fixture.Service.CanWriteAsync(fixture.Company.Id, default));
+    }
+
+    [Fact]
+    public async Task CanWriteAsync_RejectsExpiredTrial()
+    {
+        var fixture = await CreateLinkedService(
+            """[{"status":"active","type":"trial","expires_at":"2000-01-01T00:00:00Z"}]""");
+        await using var connection = fixture.Connection;
+        await using var db = fixture.Database;
+
+        Assert.False(await fixture.Service.CanWriteAsync(fixture.Company.Id, default));
+    }
+
+    [Fact]
+    public async Task CanWriteAsync_RejectsUnknownLicenseType()
+    {
+        var fixture = await CreateLinkedService(
+            """[{"status":"active","type":"unknown","expires_at":null}]""");
+        await using var connection = fixture.Connection;
+        await using var db = fixture.Database;
+
+        Assert.False(await fixture.Service.CanWriteAsync(fixture.Company.Id, default));
+    }
+
+    private static async Task<(
+        SqliteConnection Connection,
+        AppDbContext Database,
+        Company Company,
+        ZarrLicenseService Service)> CreateLinkedService(string licenseJson)
+    {
+        var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var company = new Company { Name = "Zarr License Test" };
+        db.Companies.Add(company);
+        var owner = new AppUser
+        {
+            CompanyId = company.Id,
+            Username = "license-owner-" + Guid.NewGuid().ToString("N"),
+            DisplayName = "Owner",
+            PasswordHash = "test",
+            Role = UserRole.Owner
+        };
+        db.Users.Add(owner);
+        await db.SaveChangesAsync();
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Kaliia:SupabaseUrl"] = "https://supabase.test",
+                ["Kaliia:ServiceRoleKey"] = "service-role-test"
+            })
+            .Build();
+
+        var factory = new StubHttpClientFactory(request =>
+        {
+            var body = request.RequestUri!.AbsolutePath.EndsWith(
+                "/zurvan_accounts", StringComparison.Ordinal)
+                ? """[{"status":"active"}]"""
+                : licenseJson;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        });
+
+        var service = new ZarrLicenseService(db, factory, configuration);
+        await service.LinkCompanyAsync(company.Id, owner.Id, Guid.NewGuid(), default);
+        return (connection, db, company, service);
+    }
+
     private sealed class TestHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new HttpClient();
+    }
+
+    private sealed class StubHttpClientFactory(
+        Func<HttpRequestMessage, HttpResponseMessage> responder) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new StubHttpMessageHandler(responder));
+    }
+
+    private sealed class StubHttpMessageHandler(
+        Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(responder(request));
     }
 }
