@@ -189,15 +189,13 @@ jobs:
             $certutil = Join-Path $env:WINDIR "System32/certutil.exe"
             & $certutil -f -user -p $env:PFX_PASSWORD -importPFX My $pfxPath NoRoot
             if ($LASTEXITCODE -ne 0) { throw "certutil could not import the PFX into CurrentUser/My." }
-            $cert = Get-Item "Cert:\\CurrentUser\\My\\$env:EXPECTED_THUMBPRINT" -ErrorAction Stop
+            $cert = Get-Item "Cert:\CurrentUser\My\$env:EXPECTED_THUMBPRINT" -ErrorAction Stop
             if (-not $cert.HasPrivateKey) { throw "Imported certificate has no private key." }
             if ($cert.Thumbprint -ne $env:EXPECTED_THUMBPRINT) { throw "Imported certificate thumbprint mismatch." }
             New-Item -ItemType Directory -Force artifacts/signing | Out-Null
             Export-Certificate -Cert $cert -FilePath artifacts/signing/BDFR-CodeSigning.cer | Out-Null
-            & $certutil -f -user -addstore Root artifacts/signing/BDFR-CodeSigning.cer
-            if ($LASTEXITCODE -ne 0) { throw "Could not trust BDFR test certificate in CurrentUser/Root." }
-            & $certutil -f -user -addstore TrustedPublisher artifacts/signing/BDFR-CodeSigning.cer
-            if ($LASTEXITCODE -ne 0) { throw "Could not add BDFR test certificate to TrustedPublisher." }
+            Import-Certificate -FilePath artifacts/signing/BDFR-CodeSigning.cer -CertStoreLocation "Cert:\CurrentUser\Root" -ErrorAction Stop | Out-Null
+            Import-Certificate -FilePath artifacts/signing/BDFR-CodeSigning.cer -CertStoreLocation "Cert:\CurrentUser\TrustedPublisher" -ErrorAction Stop | Out-Null
             "BDFR_CODESIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
             Write-Host "Persistent BDFR certificate imported and verified: $($cert.Thumbprint)"
           }
