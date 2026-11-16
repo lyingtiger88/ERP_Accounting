@@ -29,6 +29,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   bool _busy = false;
   bool _signedIn = false;
   String? _message;
+  String? _activeCompanyId;
 
   @override
   void initState() {
@@ -56,20 +57,13 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   Future<void> _cacheOfflineEntitlement(Map<String, dynamic> status) async {
     final token = status['offlineEntitlement'];
     final companyId = status['companyId'];
-    if (token is! String || token.isEmpty || companyId is! String) {
-      await _offlineStore.clear();
-      return;
-    }
-    try {
-      await _offlineStore.saveAndVerify(token, companyId: companyId);
-    } on FormatException {
-      await _offlineStore.clear();
-      if (mounted) {
-        setState(() {
-          _message = 'مجوز آفلاین معتبر دریافت نشد؛ برای عملیات نوشتن به اتصال سرور نیاز است.';
-        });
-      }
-    }
+    if (companyId is! String || companyId.isEmpty) return;
+    _activeCompanyId = companyId;
+    await _offlineStore.updateFromServer(
+      companyId: companyId,
+      enforcementEnabled: status['enforcementEnabled'] == true,
+      token: token is String ? token : null,
+    );
   }
 
   Future<void> _loadStatus() => _run(() async {
@@ -164,7 +158,9 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
 
   Future<void> _logout() => _run(() async {
     await _service.signOut();
-    await _offlineStore.clear();
+    final companyId = _activeCompanyId;
+    if (companyId != null) await _offlineStore.clear(companyId: companyId);
+    _activeCompanyId = null;
     if (mounted) setState(() { _signedIn = false; _license = null; });
   });
   String _statusText() {
