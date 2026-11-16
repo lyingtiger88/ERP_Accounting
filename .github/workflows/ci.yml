@@ -220,10 +220,16 @@ jobs:
             if (-not $signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $env:BDFR_CODESIGN_THUMBPRINT) {
               throw "Signature does not contain the expected BDFR signer: $($file.Name)"
             }
-            if ($signature.Status -notin @("Valid", "NotTrusted")) {
-              throw "Authenticode signature integrity check failed for $($file.Name): $($signature.Status) $($signature.StatusMessage)"
+            $expectedUntrustedRoot = $signature.Status -eq "UnknownError" -and
+              $signature.StatusMessage -match "root certificate which is not trusted"
+            if ($signature.Status -ne "Valid" -and -not $expectedUntrustedRoot) {
+              throw "Authenticode signature validation failed for $($file.Name): $($signature.Status) $($signature.StatusMessage)"
             }
-            Write-Host "Signature integrity verified for $($file.Name); trust status: $($signature.Status)"
+            if ($expectedUntrustedRoot) {
+              Write-Warning "Signature is present and signer identity matches BDFR; Windows reports the expected untrusted self-signed root. This is a trust-chain warning, not a signing failure."
+            } else {
+              Write-Host "Authenticode signature and trust chain are valid for $($file.Name)."
+            }
           }
           $files | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 } |
             ForEach-Object { "$($_.Hash) *$($_.Path)" } |
