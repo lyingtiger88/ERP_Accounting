@@ -175,9 +175,9 @@ jobs:
         shell: pwsh
         timeout-minutes: 1
         env:
-          PFX_BASE64: ${{ secrets.BDFR_CODESIGN_PFX_BASE64 }}
-          PFX_PASSWORD: ${{ secrets.BDFR_CODESIGN_PFX_PASSWORD }}
-          EXPECTED_THUMBPRINT: ${{ secrets.BDFR_CODESIGN_THUMBPRINT }}
+          PFX_BASE64: ${{ secrets.BDFR_WINDOWS_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.BDFR_WINDOWS_PFX_PASSWORD }}
+          EXPECTED_THUMBPRINT: ${{ secrets.BDFR_WINDOWS_THUMBPRINT }}
         run: |
           $ErrorActionPreference = "Stop"
           foreach ($name in @("PFX_BASE64", "PFX_PASSWORD", "EXPECTED_THUMBPRINT")) {
@@ -200,7 +200,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 5
         env:
-          PFX_PASSWORD: ${{ secrets.BDFR_CODESIGN_PFX_PASSWORD }}
+          PFX_PASSWORD: ${{ secrets.BDFR_WINDOWS_PFX_PASSWORD }}
         run: |
           $ErrorActionPreference = "Stop"
           if (-not (Test-Path $env:BDFR_PFX_PATH)) { throw "Prepared PFX file is missing." }
