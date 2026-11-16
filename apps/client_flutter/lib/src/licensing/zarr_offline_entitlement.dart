@@ -27,7 +27,7 @@ class ZarrOfflineEntitlement {
 }
 
 class ZarrOfflineEntitlementVerifier {
-  static const keyId = 'zarr-test-fixture-2026-11';
+  static const keyId = 'zarr-rs256-2026-01';
   static const _exponent = 65537;
 
   // RSA-3072 public modulus. Public verification material only.
