@@ -29,7 +29,6 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   bool _busy = false;
   bool _signedIn = false;
   String? _message;
-  String? _activeCompanyId;
 
   @override
   void initState() {
@@ -58,7 +57,6 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
     final token = status['offlineEntitlement'];
     final companyId = status['companyId'];
     if (companyId is! String || companyId.isEmpty) return;
-    _activeCompanyId = companyId;
     await _offlineStore.updateFromServer(
       companyId: companyId,
       enforcementEnabled: status['enforcementEnabled'] == true,
