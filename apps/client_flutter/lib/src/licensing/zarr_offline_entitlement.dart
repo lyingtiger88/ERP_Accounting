@@ -256,6 +256,12 @@ class ZarrOfflineEntitlementStore {
     }
   }
 
+  Future<void> markUnknown(String companyId) async {
+    await _storage.delete(key: _knownKey(companyId));
+    await _storage.delete(key: _tokenKey(companyId));
+    await _storage.delete(key: _enforcedKey(companyId));
+  }
+
   Future<bool> canWrite({
     required String companyId,
     DateTime? now,
