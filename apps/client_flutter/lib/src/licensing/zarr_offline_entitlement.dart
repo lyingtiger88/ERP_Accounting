@@ -190,8 +190,14 @@ class ZarrOfflineEntitlementStore {
     FlutterSecureStorage? storage,
   }) : _storage = storage ?? const FlutterSecureStorage();
 
-  static const _tokenKey = 'zarr_signed_offline_entitlement';
+  static const _tokenPrefix = 'zarr_signed_offline_entitlement_';
+  static const _knownPrefix = 'zarr_license_status_known_';
+  static const _enforcedPrefix = 'zarr_license_enforced_';
   final FlutterSecureStorage _storage;
+
+  String _tokenKey(String companyId) => _tokenPrefix + companyId;
+  String _knownKey(String companyId) => _knownPrefix + companyId;
+  String _enforcedKey(String companyId) => _enforcedPrefix + companyId;
 
   Future<ZarrOfflineEntitlement> saveAndVerify(
     String token, {
@@ -203,15 +209,40 @@ class ZarrOfflineEntitlementStore {
       expectedCompanyId: companyId,
       now: now,
     );
-    await _storage.write(key: _tokenKey, value: token);
+    await _storage.write(key: _tokenKey(companyId), value: token);
     return entitlement;
+  }
+
+  /// Records a fresh server decision for this company. Unknown status is never
+  /// treated as an entitlement; once enforcement is enabled, no token means
+  /// local writes are denied while reads, export and backup remain available.
+  Future<void> updateFromServer({
+    required String companyId,
+    required bool enforcementEnabled,
+    String? token,
+    DateTime? now,
+  }) async {
+    await _storage.write(key: _knownKey(companyId), value: 'true');
+    await _storage.write(
+      key: _enforcedKey(companyId),
+      value: enforcementEnabled ? 'true' : 'false',
+    );
+    if (token == null || token.isEmpty) {
+      await _storage.delete(key: _tokenKey(companyId));
+      return;
+    }
+    try {
+      await saveAndVerify(token, companyId: companyId, now: now);
+    } on FormatException {
+      await _storage.delete(key: _tokenKey(companyId));
+    }
   }
 
   Future<ZarrOfflineEntitlement?> readVerified({
     required String companyId,
     DateTime? now,
   }) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = await _storage.read(key: _tokenKey(companyId));
     if (token == null || token.isEmpty) return null;
     try {
       return ZarrOfflineEntitlementVerifier.verify(
@@ -220,10 +251,29 @@ class ZarrOfflineEntitlementStore {
         now: now,
       );
     } on FormatException {
-      await clear();
+      await _storage.delete(key: _tokenKey(companyId));
       return null;
     }
   }
 
-  Future<void> clear() => _storage.delete(key: _tokenKey);
+  Future<bool> canWrite({
+    required String companyId,
+    DateTime? now,
+  }) async {
+    final known = await _storage.read(key: _knownKey(companyId));
+    if (known != 'true') return false;
+    final enforced = await _storage.read(key: _enforcedKey(companyId));
+    if (enforced != 'true') return true;
+    return await readVerified(companyId: companyId, now: now) != null;
+  }
+
+  Future<void> clear({String? companyId}) async {
+    if (companyId != null) {
+      await _storage.delete(key: _tokenKey(companyId));
+      await _storage.delete(key: _knownKey(companyId));
+      await _storage.delete(key: _enforcedKey(companyId));
+      return;
+    }
+    await _storage.deleteAll();
+  }
 }
