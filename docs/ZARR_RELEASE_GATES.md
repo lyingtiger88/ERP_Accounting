@@ -40,6 +40,14 @@ Do not weaken read/export/backup rights after expiration.
 - The client stores the greatest observed device UTC time in platform secure storage and denies offline writes if the clock moves backwards by more than five minutes. This is a practical rollback-detection layer, not a hardware-backed monotonic clock guarantee.
 - Independent review of every local mutation path remains a release blocker. The guard must be extended if new local write paths are added.
 
+## Local-first development policy while API hosting is deferred
+
+- The client build-time flag `ZARR_REQUIRE_SERVER_LICENSE` defaults to `false` so a missing/unreachable future API does not block local-first accounting work before licensing rollout.
+- If a company has previously received an enforcement-enabled server decision, the client preserves that decision across connectivity failures and fails closed until a fresh valid status/token is obtained.
+- A server response explicitly reporting enforcement disabled allows local writes; a response enabling enforcement requires a verified, unexpired company-bound token.
+- For the future commercial build, set `ZARR_REQUIRE_SERVER_LICENSE=true` only after API hosting, production key provisioning and rollout are complete.
+- This client-side gate is a usability/safety layer, not a substitute for server authorization when online. Do not distribute an enforcement-enabled build before server deployment.
+
 ## Still blocking commercial release
 
 1. Signed offline entitlement, 7-day limit, clock rollback / reboot protection, public-key rotation and secure storage.
