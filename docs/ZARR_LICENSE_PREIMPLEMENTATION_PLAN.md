@@ -200,3 +200,27 @@ No interactive test is required from the user during the remaining source audit 
 4. Harden API middleware and all /api/license mutation endpoints.
 5. Implement signed entitlement documents and the offline queue state machine.
 6. Only then wire local mutation guards and sync replay to the new entitlement contract.
+
+
+## 13. Follow-up implementation foundation — 2026-11-16
+
+A separate implementation branch, `feat/zarr-license-enforcement-foundation`, has been created. The following isolated changes are committed there; they are not merged into `main` and do not enable commercial enforcement:
+
+- `ZarrLicenseService.CanWriteAsync` now recognizes an unexpired trial/subscription only when an explicit supported type and parseable future expiry are present. A NULL expiry is accepted only for `type=lifetime`; unknown types and missing expiry fail closed.
+- `LinkCompanyAsync` now treats same-owner relinking as idempotent and rejects a different Kaliia account with a transfer-required error rather than silently overwriting the company's local binding.
+- `/api/license/link` maps that transfer-required condition to HTTP 409 with a stable error code.
+- The optional API enforcement middleware now returns HTTP 401 for anonymous mutations under protected `/api` routes when enforcement is enabled, rather than allowing them to continue to endpoint handlers.
+- Additional API tests cover explicit lifetime semantics, expired trial, unknown license type, subscription with NULL expiry, and prevention of unapproved account rebinding.
+- A dedicated workflow `.github/workflows/zarr-license-tests.yml` runs ASP.NET API tests and Flutter tests only. It does not create Android/Windows release packages.
+
+A GitHub Actions run was observed for the latest implementation commit (run ID 43814010455); at the time of this update the run was queued / the ASP.NET test job was starting. Results must be checked before treating these changes as validated.
+
+### Remaining architectural blockers
+
+- The current runtime `CanWriteAsync` still reads the legacy account-scoped `zurvan_licenses` row. It is not yet company-scoped and must not be treated as the final approved Zarr commercial model.
+- The new company-level central binding/entitlement tables and trusted service-to-service contract have not been applied to Supabase. No live database schema or Edge Function was changed.
+- The local owner-transfer protection is a temporary safety guard; the audited central transfer workflow and recovery process remain to be implemented.
+- Signed entitlement issuance, offline grace validation, outbox authorization metadata/state transitions and cross-platform local mutation guards remain unimplemented.
+- Do not enable `Kaliia:EnforceZarrLicense`, activate Zarr sales/plans, merge the implementation branch or issue a release until company-scoped entitlement migration, compatibility tests and security review pass.
+
+No user-run app test is required yet. Request a real-device test only after the signed entitlement and offline transition flows are implemented and testable in an installed client.
