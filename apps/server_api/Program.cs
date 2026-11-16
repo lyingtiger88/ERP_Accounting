@@ -385,6 +385,8 @@ app.MapPost("/api/license/link", async (
         await licenses.LinkCompanyAsync(
             user.CompanyId, user.Id, kaliiaUserId.Value, cancellationToken);
     }
+    catch (HttpRequestException) { return Results.StatusCode(503); }
+    catch (TaskCanceledException) { return Results.StatusCode(503); }
     catch (InvalidOperationException)
     {
         return Results.Conflict(new
@@ -425,6 +427,34 @@ app.MapGet("/api/license/status", async (
             .GetValue<bool>("Kaliia:EnforceZarrLicense")
     });
 });
+
+// Explicit trial activation: ERP Owner session is required; the company and
+// Kaliia account binding are resolved server-side, never supplied by the client.
+app.MapPost("/api/license/trial/start", async (
+    HttpRequest request,
+    AuthService authService,
+    ZarrLicenseService licenses,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    if (user.Role != UserRole.Owner)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    try
+    {
+        var entitlement = await licenses.StartCompanyTrialAsync(
+            user.CompanyId, cancellationToken);
+        return Results.Json(entitlement);
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.Conflict(new { error = "zarr_company_trial_not_ready" });
+    }
+    catch (HttpRequestException) { return Results.StatusCode(503); }
+    catch (TaskCanceledException) { return Results.StatusCode(503); }
+    catch (System.Text.Json.JsonException) { return Results.StatusCode(503); }
+}).RequireRateLimiting("auth");
 
 var admin = app.MapGroup("/api/admin");
 
