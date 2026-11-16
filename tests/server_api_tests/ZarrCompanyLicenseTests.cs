@@ -52,7 +52,7 @@ public sealed class ZarrCompanyLicenseTests
     }
 
     [Fact]
-    public async Task LinkUpdate_ChangesOnlySpecifiedCompany()
+    public async Task LinkCompanyAsync_RejectsUnapprovedRebinding_AndSameOwnerRetryIsIdempotent()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -82,10 +82,15 @@ public sealed class ZarrCompanyLicenseTests
         var account2 = Guid.NewGuid();
         await service.LinkCompanyAsync(first.Id, owner1.Id, account1, default);
         await service.LinkCompanyAsync(second.Id, owner2.Id, account2, default);
-        var rotatedAccount = Guid.NewGuid();
-        await service.LinkCompanyAsync(first.Id, owner1.Id, rotatedAccount, default);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.LinkCompanyAsync(first.Id, owner1.Id, Guid.NewGuid(), default));
+
+        // Retrying the already-linked account is safe and leaves the audit identity intact.
+        await service.LinkCompanyAsync(first.Id, owner1.Id, account1, default);
+
         Assert.Equal(2, await db.ZarrCompanyLicenses.CountAsync());
-        Assert.Equal(rotatedAccount,
+        Assert.Equal(account1,
             (await db.ZarrCompanyLicenses.SingleAsync(x => x.CompanyId == first.Id)).AuthUserId);
         Assert.Equal(account2,
             (await db.ZarrCompanyLicenses.SingleAsync(x => x.CompanyId == second.Id)).AuthUserId);
