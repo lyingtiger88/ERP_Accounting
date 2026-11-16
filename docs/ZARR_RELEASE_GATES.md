@@ -20,6 +20,23 @@ Do not weaken read/export/backup rights after expiration.
 - Offline outbox server-status preflight when replaying queued writes; denied payloads are preserved.
 - Test-only GitHub workflow for ASP.NET and Flutter. The repository's broad CI workflow is now gated on the implementation branch to avoid packaging on PRs.
 
+## RS256 offline entitlement work (implementation in progress)
+
+- The API can issue an RS256-signed compact token bound to product `zarr`, one ERP company, entitlement generation and the entitlement expiry.
+- Offline token lifetime is capped at 7 days and is also capped by the actual license expiry.
+- Flutter verifies RS256 using the pinned RSA-3072 public key and persists only verified tokens using platform secure storage.
+- Automated tests include a known-good signed fixture, company mismatch, tampered signature and expired grace; ASP.NET tests verify server signing.
+
+### Private signing key deployment
+
+- Private key is not committed to Git and is not embedded in any client.
+- A generated private key is stored separately for deployment configuration. Add its complete PEM content to the server host's secret environment variable `Kaliia__EntitlementPrivateKeyPem`.
+- Set `Kaliia__EntitlementKeyId=zarr-rs256-2026-01` on the server.
+- Never place the private key in Flutter assets, appsettings committed to source control, GitHub Actions logs, or chat messages.
+- Key rotation requires shipping the next public key in a client update before changing the server key ID.
+
+This token work does not yet enable offline writes throughout every local repository. The global local mutation guard and device clock rollback defense remain release blockers.
+
 ## Still blocking commercial release
 
 1. Signed offline entitlement, 7-day limit, clock rollback / reboot protection, public-key rotation and secure storage.
