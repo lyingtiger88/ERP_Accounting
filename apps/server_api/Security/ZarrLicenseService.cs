@@ -277,11 +277,15 @@ public sealed class ZarrLicenseService(
         if (licenseExpiry is not null && licenseExpiry.Value < offlineExpiry)
             offlineExpiry = licenseExpiry.Value;
 
+        var keyId = configuration["Kaliia:EntitlementKeyId"];
+        if (string.IsNullOrWhiteSpace(keyId) || keyId.Length > 80)
+            throw new InvalidOperationException("Offline entitlement key id is not configured.");
+
         var header = new
         {
             alg = "RS256",
             typ = "JWT",
-            kid = configuration["Kaliia:EntitlementKeyId"] ?? "zarr-rs256-2026-01"
+            kid = keyId
         };
         var payload = new
         {
