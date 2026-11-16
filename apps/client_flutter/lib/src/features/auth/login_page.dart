@@ -527,10 +527,14 @@ class _BrandPanel extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.account_balance_rounded,
-            size: 58,
-            color: Theme.of(context).colorScheme.primary,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Image.asset(
+              'assets/branding/zarr.webp',
+              width: 104,
+              height: 104,
+              fit: BoxFit.cover,
+            ),
           ),
           const SizedBox(height: 24),
           Text(

@@ -9,7 +9,7 @@
 #endif
 
 #define MyAppName "Zarr | زر"
-#define MyAppExeName "erp_accounting.exe"
+#define MyAppExeName "zarr.exe"
 
 ; NEVER rotate AppId. Inno Setup uses it to identify upgrades and reuse
 ; the existing install directory instead of demanding an uninstall.

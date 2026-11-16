@@ -6,8 +6,8 @@ import 'core/database/local_database.dart';
 import 'features/auth/login_page.dart';
 import 'features/dashboard/dashboard_page.dart';
 
-class ErpAccountingApp extends StatelessWidget {
-  const ErpAccountingApp({
+class ZarrApp extends StatelessWidget {
+  const ZarrApp({
     super.key,
     required this.localDatabase,
   });
@@ -23,7 +23,7 @@ class ErpAccountingApp extends StatelessWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'ERP Accounting',
+      title: 'زر | Zarr',
       theme: ThemeData(
         colorScheme: scheme,
         useMaterial3: true,

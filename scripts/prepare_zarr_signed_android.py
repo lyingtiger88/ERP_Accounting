@@ -29,10 +29,10 @@ for name in (
 if gradle_file == kts:
     if 'signingConfig = signingConfigs.getByName("debug")' not in source:
         raise SystemExit("Unknown Flutter Kotlin Gradle release signing template")
-    if 'applicationId = "com.example.erp_accounting"' not in source:
-        raise SystemExit("Unexpected Android app ID; refuse silent identity rotation")
+    if 'applicationId = "com.example.zarr"' not in source:
+        raise SystemExit("Unexpected generated Zarr Android app ID; refuse silent identity rotation")
     source = source.replace(
-        'applicationId = "com.example.erp_accounting"',
+        'applicationId = "com.example.zarr"',
         f'applicationId = "{APP_ID}"',
     )
     source = source.replace(
@@ -57,10 +57,10 @@ if gradle_file == kts:
 else:
     if 'signingConfig signingConfigs.debug' not in source:
         raise SystemExit("Unknown Flutter Groovy Gradle release signing template")
-    if 'applicationId "com.example.erp_accounting"' not in source:
+    if 'applicationId "com.example.zarr"' not in source:
         raise SystemExit("Unexpected Android app ID; refuse silent identity rotation")
     source = source.replace(
-        'applicationId "com.example.erp_accounting"',
+        'applicationId "com.example.zarr"',
         f'applicationId "{APP_ID}"',
     )
     source = source.replace(

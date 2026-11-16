@@ -1,5 +1,5 @@
-name: erp_accounting
-description: Cross-platform ERP and accounting client for Windows and Android.
+name: zarr
+description: Zarr (زر) accounting and resource-management application for Windows and Android.
 publish_to: "none"
 version: 0.5.0-beta.1+5
 
@@ -24,3 +24,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/zarr.webp

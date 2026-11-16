@@ -2,7 +2,7 @@
 
 Cross-platform accounting and resource-management platform for Windows and Android.
 
-> **Product name:** زر (Zarr). Technical repository and internal package names remain `ERP_Accounting` / `erp_accounting` to avoid unnecessary breaking changes. Zarr is distinct from Maal.
+> **Product name:** زر (Zarr). The Flutter package and generated platform project use the product identity `zarr`; the backend keeps its internal `ERPAccounting.Api` namespace. Zarr is a standalone product, separate from Maal.
 
 ## Offline Demo Mode
 
@@ -221,6 +221,9 @@ Key beta hardening now implemented:
 - CI smoke builds for Windows and Android artifacts
 
 ### Phase 6 — Production, Distribution & Hardening
+
+- [x] Official Zarr artwork integrated into Android and Windows launcher icons
+- [x] Localized application names: Persian «زر» and English «Zarr»
 
 - [x] Initial automated sync/revision tests
 - [ ] Broader unit-test coverage

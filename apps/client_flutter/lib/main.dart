@@ -15,6 +15,6 @@ Future<void> main() async {
   ApiClient.configureBaseUrl(configuredApi);
 
   runApp(
-    ErpAccountingApp(localDatabase: localDatabase),
+    ZarrApp(localDatabase: localDatabase),
   );
 }
