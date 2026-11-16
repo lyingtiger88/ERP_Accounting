@@ -113,6 +113,10 @@ public sealed class ZarrLicenseService(
         if (link is null || string.IsNullOrWhiteSpace(ServiceRoleKey))
             return false;
 
+        if (configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+            return await CanWriteCompanyEntitlementAsync(
+                companyId, link.AuthUserId, cancellationToken);
+
         try
         {
             using var http = httpClients.CreateClient();
@@ -163,6 +167,78 @@ public sealed class ZarrLicenseService(
         catch (TaskCanceledException) { return false; }
         catch (JsonException) { return false; }
         catch (InvalidOperationException) { return false; }
+    }
+
+    /// <summary>
+    /// Company-scoped entitlement path. Enabled only after migration of existing
+    /// company bindings and completion of server/client integration tests.
+    /// No account-scoped license may authorize writes in this mode.
+    /// </summary>
+    private async Task<bool> CanWriteCompanyEntitlementAsync(
+        Guid companyId, Guid authUserId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var status = await CallCompanyRpcAsync(
+                "zarr_company_license_status",
+                new { p_company_id = companyId, p_auth_user_id = authUserId },
+                cancellationToken);
+            return status.ValueKind == JsonValueKind.Object &&
+                   status.TryGetProperty("product_id", out var product) &&
+                   product.GetString() == ProductId &&
+                   status.TryGetProperty("company_id", out var company) &&
+                   company.GetString() == companyId.ToString() &&
+                   status.TryGetProperty("can_write", out var canWrite) &&
+                   canWrite.ValueKind == JsonValueKind.True;
+        }
+        catch (HttpRequestException) { return false; }
+        catch (TaskCanceledException) { return false; }
+        catch (JsonException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    /// <summary>
+    /// This call is not made implicitly on login or on license status refresh.
+    /// Trial activation requires an explicit ERP Owner action.
+    /// </summary>
+    public async Task<JsonElement> StartCompanyTrialAsync(
+        Guid companyId, CancellationToken cancellationToken)
+    {
+        if (!configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+            throw new InvalidOperationException("Company entitlements are not enabled.");
+
+        var binding = await database.ZarrCompanyLicenses.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.CompanyId == companyId, cancellationToken);
+        if (binding is null)
+            throw new InvalidOperationException("Company must be linked before trial activation.");
+
+        return await CallCompanyRpcAsync(
+            "zarr_start_company_trial",
+            new { p_company_id = companyId, p_auth_user_id = binding.AuthUserId },
+            cancellationToken);
+    }
+
+    private async Task<JsonElement> CallCompanyRpcAsync(
+        string rpcName, object body, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ServiceRoleKey))
+            throw new InvalidOperationException("Missing server-only service role key.");
+
+        using var http = httpClients.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(12);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, BaseUrl + "/rest/v1/rpc/" + rpcName);
+        request.Headers.TryAddWithoutValidation("apikey", ServiceRoleKey);
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", ServiceRoleKey);
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+
+        using var response = await http.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken));
+        return doc.RootElement.Clone();
     }
 
     private async Task<JsonElement> GetAdminJsonAsync(
