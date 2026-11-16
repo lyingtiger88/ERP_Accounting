@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text.Json;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
