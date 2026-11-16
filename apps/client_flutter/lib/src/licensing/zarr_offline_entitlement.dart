@@ -193,11 +193,13 @@ class ZarrOfflineEntitlementStore {
   static const _tokenPrefix = 'zarr_signed_offline_entitlement_';
   static const _knownPrefix = 'zarr_license_status_known_';
   static const _enforcedPrefix = 'zarr_license_enforced_';
+  static const _lastSeenPrefix = 'zarr_license_last_seen_';
   final FlutterSecureStorage _storage;
 
   String _tokenKey(String companyId) => _tokenPrefix + companyId;
   String _knownKey(String companyId) => _knownPrefix + companyId;
   String _enforcedKey(String companyId) => _enforcedPrefix + companyId;
+  String _lastSeenKey(String companyId) => _lastSeenPrefix + companyId;
 
   Future<ZarrOfflineEntitlement> saveAndVerify(
     String token, {
@@ -226,6 +228,10 @@ class ZarrOfflineEntitlementStore {
     await _storage.write(
       key: _enforcedKey(companyId),
       value: enforcementEnabled ? 'true' : 'false',
+    );
+    await _storage.write(
+      key: _lastSeenKey(companyId),
+      value: (now ?? DateTime.now()).toUtc().toIso8601String(),
     );
     if (token == null || token.isEmpty) {
       await _storage.delete(key: _tokenKey(companyId));
@@ -270,7 +276,31 @@ class ZarrOfflineEntitlementStore {
     if (known != 'true') return false;
     final enforced = await _storage.read(key: _enforcedKey(companyId));
     if (enforced != 'true') return true;
-    return await readVerified(companyId: companyId, now: now) != null;
+
+    final current = (now ?? DateTime.now()).toUtc();
+    final entitlement = await readVerified(
+      companyId: companyId,
+      now: current,
+    );
+    if (entitlement == null) return false;
+
+    // Persist the greatest observed wall-clock value in secure storage. A
+    // rollback beyond five minutes fails closed, including across restarts.
+    final lastSeenRaw = await _storage.read(key: _lastSeenKey(companyId));
+    final lastSeen = lastSeenRaw == null
+        ? null
+        : DateTime.tryParse(lastSeenRaw)?.toUtc();
+    if (lastSeen != null &&
+        current.isBefore(lastSeen.subtract(const Duration(minutes: 5)))) {
+      return false;
+    }
+    if (lastSeen == null || current.isAfter(lastSeen)) {
+      await _storage.write(
+        key: _lastSeenKey(companyId),
+        value: current.toIso8601String(),
+      );
+    }
+    return true;
   }
 
   Future<void> clear({String? companyId}) async {
@@ -278,13 +308,15 @@ class ZarrOfflineEntitlementStore {
       await _storage.delete(key: _tokenKey(companyId));
       await _storage.delete(key: _knownKey(companyId));
       await _storage.delete(key: _enforcedKey(companyId));
+      await _storage.delete(key: _lastSeenKey(companyId));
       return;
     }
     final keys = await _storage.readAll();
     for (final key in keys.keys) {
       if (key.startsWith(_tokenPrefix) ||
           key.startsWith(_knownPrefix) ||
-          key.startsWith(_enforcedPrefix)) {
+          key.startsWith(_enforcedPrefix) ||
+          key.startsWith(_lastSeenPrefix)) {
         await _storage.delete(key: key);
       }
     }
