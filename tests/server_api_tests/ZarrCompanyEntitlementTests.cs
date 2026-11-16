@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text;
+using System.Security.Cryptography;
+using System.Text.Json;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
 using ERPAccounting.Api.Security;
@@ -92,6 +94,57 @@ public sealed class ZarrCompanyEntitlementTests
             db, new StubHttpClientFactory(_ => JsonResponse("{}")), Config());
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.StartCompanyTrialAsync(Guid.NewGuid(), default));
+    }
+
+    [Fact]
+    public void OfflineEntitlement_IsSignedAndBoundToCompanyForAtMostSevenDays()
+    {
+        using var rsa = RSA.Create(3072);
+        var privatePem = rsa.ExportPkcs8PrivateKeyPem();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Kaliia:SupabaseUrl"] = "https://supabase.test",
+                ["Kaliia:ServiceRoleKey"] = "test-server-only-key",
+                ["Kaliia:UseCompanyEntitlements"] = "true",
+                ["Kaliia:EntitlementPrivateKeyPem"] = privatePem,
+                ["Kaliia:EntitlementKeyId"] = "zarr-rs256-2026-01"
+            }).Build();
+
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection).Options);
+        var service = new ZarrLicenseService(
+            db, new StubHttpClientFactory(_ => JsonResponse("{}")), config);
+        var companyId = Guid.NewGuid();
+        using var entitlement = JsonDocument.Parse(
+            """{"status":"active","can_write":true,"generation":4,"expires_at":"2026-12-30T00:00:00Z"}""");
+
+        var token = service.CreateSignedOfflineEntitlement(
+            entitlement.RootElement, companyId);
+        var parts = token.Split('.');
+        Assert.Equal(3, parts.Length);
+        var signingInput = Encoding.ASCII.GetBytes(parts[0] + "." + parts[1]);
+        var signature = DecodeBase64Url(parts[2]);
+        Assert.True(rsa.VerifyData(
+            signingInput, signature, HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1));
+
+        using var payload = JsonDocument.Parse(DecodeBase64Url(parts[1]));
+        var claims = payload.RootElement;
+        Assert.Equal(companyId.ToString(), claims.GetProperty("company_id").GetString());
+        Assert.Equal("zarr", claims.GetProperty("product_id").GetString());
+        Assert.Equal(4, claims.GetProperty("generation").GetInt32());
+        Assert.True(claims.GetProperty("exp").GetInt64() <=
+            claims.GetProperty("iat").GetInt64() + TimeSpan.FromDays(7).TotalSeconds);
+    }
+
+    private static byte[] DecodeBase64Url(string value)
+    {
+        var normalized = value.Replace('-', '+').Replace('_', '/');
+        normalized = normalized.PadRight((normalized.Length + 3) / 4 * 4, '=');
+        return Convert.FromBase64String(normalized);
     }
 
     private static IConfiguration Config() => new ConfigurationBuilder()
