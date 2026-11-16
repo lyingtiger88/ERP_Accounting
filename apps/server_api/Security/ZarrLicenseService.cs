@@ -213,6 +213,32 @@ public sealed class ZarrLicenseService(
         catch (InvalidOperationException) { return false; }
     }
 
+    public async Task<JsonElement> GetCompanyStatusAsync(
+        Guid companyId, CancellationToken cancellationToken)
+    {
+        if (!configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+            throw new InvalidOperationException("Company entitlements are not enabled.");
+
+        var binding = await database.ZarrCompanyLicenses.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.CompanyId == companyId, cancellationToken);
+        if (binding is null)
+            throw new InvalidOperationException("Company has no verified Kaliia link.");
+
+        var status = await CallCompanyRpcAsync(
+            "zarr_company_license_status",
+            new { p_company_id = companyId, p_auth_user_id = binding.AuthUserId },
+            cancellationToken);
+
+        if (status.ValueKind != JsonValueKind.Object ||
+            !status.TryGetProperty("company_id", out var remoteCompany) ||
+            remoteCompany.GetString() != companyId.ToString() ||
+            !status.TryGetProperty("product_id", out var remoteProduct) ||
+            remoteProduct.GetString() != ProductId)
+            throw new JsonException("Company entitlement response mismatch.");
+
+        return status;
+    }
+
     /// <summary>
     /// This call is not made implicitly on login or on license status refresh.
     /// Trial activation requires an explicit ERP Owner action.
