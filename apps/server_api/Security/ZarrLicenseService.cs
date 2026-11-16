@@ -129,14 +129,28 @@ public sealed class ZarrLicenseService(
                 return false;
             var license = licenseJson[0];
             if (!license.TryGetProperty("status", out var status) ||
+                status.ValueKind != JsonValueKind.String ||
                 status.GetString() != "active")
                 return false;
-            if (!license.TryGetProperty("expires_at", out var expiry) ||
-                expiry.ValueKind == JsonValueKind.Null)
-                return true;
-            return expiry.ValueKind == JsonValueKind.String &&
-                DateTimeOffset.TryParse(expiry.GetString(), out var end) &&
-                end > DateTimeOffset.UtcNow;
+
+            if (!license.TryGetProperty("type", out var licenseType) ||
+                licenseType.ValueKind != JsonValueKind.String)
+                return false;
+
+            if (!license.TryGetProperty("expires_at", out var expiry))
+                return false;
+
+            // Only an explicit lifetime entitlement may omit expiry.
+            // Trial and subscription records must always have a future expiry.
+            if (licenseType.GetString() == "lifetime")
+                return expiry.ValueKind == JsonValueKind.Null;
+
+            if (licenseType.GetString() is not ("trial" or "subscription") ||
+                expiry.ValueKind != JsonValueKind.String ||
+                !DateTimeOffset.TryParse(expiry.GetString(), out var end))
+                return false;
+
+            return end > DateTimeOffset.UtcNow;
         }
         catch (HttpRequestException) { return false; }
         catch (TaskCanceledException) { return false; }
