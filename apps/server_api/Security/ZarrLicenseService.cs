@@ -88,8 +88,24 @@ public sealed class ZarrLicenseService(
         }
         else
         {
-            // Same-owner retries are idempotent and must not rewrite history.
-            return;
+            // Same-owner retries still verify the central mapping in company mode.
+            if (!configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+                return;
+        }
+
+        if (configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+        {
+            // Central bind happens first and is idempotent. Never grant local
+            // access if the central authority rejects the owner/company pair.
+            await CallCompanyRpcAsync(
+                "zarr_bind_company",
+                new
+                {
+                    p_company_id = companyId,
+                    p_auth_user_id = kaliiaUserId,
+                    p_erp_owner_id = ownerId
+                },
+                cancellationToken);
         }
 
         await database.SaveChangesAsync(cancellationToken);
