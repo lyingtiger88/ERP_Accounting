@@ -35,9 +35,11 @@ jobs:
         run: dotnet test tests/server_api_tests/ERPAccounting.Api.Tests.csproj --configuration Release --no-restore
 
       - name: Publish beta server
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: dotnet publish apps/server_api/ERPAccounting.Api.csproj --configuration Release --no-restore --output artifacts/server
 
       - name: Upload server beta artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v6
         with:
           name: ERP-Accounting-Server-Beta
@@ -68,6 +70,7 @@ jobs:
 
   android-build:
     name: Android APK smoke build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: flutter
     steps:
@@ -122,6 +125,7 @@ jobs:
 
   windows-build:
     name: Windows executable smoke build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-latest
     needs: flutter
     steps:
