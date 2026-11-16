@@ -183,18 +183,30 @@ jobs:
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Required signing secret $name is missing." }
           }
           $pfxPath = Join-Path $env:RUNNER_TEMP "BDFR-CodeSigning.pfx"
-          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:PFX_BASE64))
-          $password = ConvertTo-SecureString $env:PFX_PASSWORD -AsPlainText -Force
-          $imported = Import-PfxCertificate -FilePath $pfxPath -Password $password -CertStoreLocation "Cert:\CurrentUser\My" -Exportable
-          $cert = $imported | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
-          if (-not $cert) { throw "PFX import did not provide a certificate with a private key." }
-          if ($cert.Thumbprint -ne $env:EXPECTED_THUMBPRINT) { throw "Imported certificate thumbprint does not match the configured thumbprint." }
-          New-Item -ItemType Directory -Force artifacts/signing | Out-Null
-          Export-Certificate -Cert $cert -FilePath artifacts/signing/BDFR-CodeSigning.cer | Out-Null
-          Import-Certificate -FilePath artifacts/signing/BDFR-CodeSigning.cer -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
-          Import-Certificate -FilePath artifacts/signing/BDFR-CodeSigning.cer -CertStoreLocation "Cert:\CurrentUser\TrustedPublisher" | Out-Null
-          "BDFR_CODESIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Remove-Item $pfxPath -Force
+          try {
+            $pfxBytes = [Convert]::FromBase64String($env:PFX_BASE64)
+            [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+            $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+            $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([IO.File]::ReadAllBytes($pfxPath), $env:PFX_PASSWORD, $flags)
+            if (-not $cert.HasPrivateKey) { throw "Imported PFX has no private key." }
+            if ($cert.Thumbprint -ne $env:EXPECTED_THUMBPRINT) { throw "Imported certificate thumbprint does not match configured thumbprint." }
+            $myStore = [System.Security.Cryptography.X509Certificates.X509Store]::new("My", "CurrentUser")
+            $myStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            try { $myStore.Add($cert) } finally { $myStore.Close() }
+            $publicCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cert.RawData)
+            foreach ($storeName in @("Root", "TrustedPublisher")) {
+              $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($storeName, "CurrentUser")
+              $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+              try { $store.Add($publicCert) } finally { $store.Close() }
+            }
+            New-Item -ItemType Directory -Force artifacts/signing | Out-Null
+            [IO.File]::WriteAllBytes("artifacts/signing/BDFR-CodeSigning.cer", $publicCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+            "BDFR_CODESIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "Persistent BDFR certificate imported. Thumbprint: $($cert.Thumbprint)"
+          }
+          finally {
+            if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
+          }
       - name: Sign and verify Zarr Windows binaries with persistent BDFR identity
         if: github.event_name != 'pull_request'
         shell: pwsh
