@@ -146,3 +146,14 @@ Clock rollback is a hard platform limitation on ordinary PCs/phones. Persist las
 - Signed entitlement fails on tampering, wrong company, wrong product, unknown kid/policy, expiry, offline-until, generation rollback and untrusted clock.
 - API writes are blocked on every mutation route; read/export/backup remains available.
 - Offline outbox items remain pending and recoverable after expiry and are never silently accepted after expiry.
+
+
+## 9. Kaliia account may register multiple software products
+
+This is an explicit platform requirement, not an exception: one Kaliia Auth account may register and use multiple Kaliia software products (for example Zurvan, Zarr, Maal and ShopManager), subject to each product's own entitlement. There must be no global one-account/one-software restriction.
+
+- Entitlements are isolated by product. A trial, suspension, expiry, renewal or payment for one product must not change another product's entitlement.
+- The existing account-scoped `(account_id, product_id)` model remains valid for products that are licensed per Kaliia account.
+- Zarr is a special company-scoped product: the same Kaliia account may be linked to multiple ERP companies, and each company has an independent Zarr entitlement. This does not consume or block that account's registrations for other Kaliia products.
+- A product registration is not exclusive ownership of the Kaliia account. Product linking and company ownership transfer are separate concepts.
+- Tests must verify that one account can hold independent Zurvan/Maal/ShopManager account entitlements while also being the verified billing owner for one or more Zarr companies; changing one product must not mutate the others.
