@@ -120,21 +120,28 @@ app.Use(async (context, next) =>
     {
         var auth = context.RequestServices.GetRequiredService<AuthService>();
         var user = await CurrentUserAsync(context.Request, auth, context.RequestAborted);
-        // Original endpoints remain responsible for rejecting missing/invalid
-        // ERP sessions; never grant a write merely for an anonymous request.
-        if (user != null)
+        // Enforcement must fail closed for every protected mutation. Do not
+        // rely on each endpoint remembering to reject a missing ERP session.
+        if (user is null)
         {
-            var licenses = context.RequestServices.GetRequiredService<ZarrLicenseService>();
-            if (!await licenses.CanWriteAsync(user.CompanyId, context.RequestAborted))
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    error = "zarr_subscription_read_only",
-                    message = "اشتراک زر معتبر نیست؛ اطلاعات فقط قابل مشاهده و گزارش‌گیری هستند."
-                }, cancellationToken: context.RequestAborted);
-                return;
-            }
+                error = "erp_authentication_required"
+            }, cancellationToken: context.RequestAborted);
+            return;
+        }
+
+        var licenses = context.RequestServices.GetRequiredService<ZarrLicenseService>();
+        if (!await licenses.CanWriteAsync(user.CompanyId, context.RequestAborted))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "zarr_subscription_read_only",
+                message = "اشتراک زر معتبر نیست؛ اطلاعات فقط قابل مشاهده و گزارش‌گیری هستند."
+            }, cancellationToken: context.RequestAborted);
+            return;
         }
     }
     await next(context);
