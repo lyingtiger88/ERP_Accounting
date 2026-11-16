@@ -67,21 +67,20 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   }
 
   Future<void> _loadStatus() => _run(() async {
-    final account = await _service.accountEmail();
-    if (account == null || account.isEmpty) return;
     final status = await _api.zarrCompanyLicenseStatus(
       bearerToken: widget.erpAccessToken,
     );
     await _cacheOfflineEntitlement(status);
+    final account = await _service.accountEmail();
     final raw = status['entitlement'];
     final entitlement = raw is Map
         ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(raw))
         : null;
     if (!mounted) return;
     setState(() {
-      _signedIn = true;
+      _signedIn = account != null && account.isNotEmpty;
       _companyLinked = status['linked'] == true;
-      _email.text = account;
+      if (account != null && account.isNotEmpty) _email.text = account;
       _license = entitlement;
     });
   });
@@ -110,6 +109,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
     final status = await _api.zarrCompanyLicenseStatus(
       bearerToken: widget.erpAccessToken,
     );
+    await _cacheOfflineEntitlement(status);
     final current = status['entitlement'];
     if (mounted) {
       setState(() {
@@ -128,6 +128,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
     final status = await _api.zarrCompanyLicenseStatus(
       bearerToken: widget.erpAccessToken,
     );
+    await _cacheOfflineEntitlement(status);
     final raw = status['entitlement'];
     if (!mounted) return;
     setState(() {
@@ -158,9 +159,8 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
 
   Future<void> _logout() => _run(() async {
     await _service.signOut();
-    final companyId = _activeCompanyId;
-    if (companyId != null) await _offlineStore.clear(companyId: companyId);
-    _activeCompanyId = null;
+    // The entitlement belongs to the ERP company, not the current Kaliia UI
+    // login; signing out of billing must not revoke a valid company token.
     if (mounted) setState(() { _signedIn = false; _license = null; });
   });
   String _statusText() {
