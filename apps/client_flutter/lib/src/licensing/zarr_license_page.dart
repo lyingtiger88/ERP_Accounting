@@ -54,10 +54,17 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   Future<void> _loadStatus() => _run(() async {
     final account = await _service.accountEmail();
     if (account == null || account.isEmpty) return;
-    final entitlement = await _service.status();
+    final status = await _api.zarrCompanyLicenseStatus(
+      bearerToken: widget.erpAccessToken,
+    );
+    final raw = status['entitlement'];
+    final entitlement = raw is Map
+        ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(raw))
+        : null;
     if (!mounted) return;
     setState(() {
       _signedIn = true;
+      _companyLinked = status['linked'] == true;
       _email.text = account;
       _license = entitlement;
     });
@@ -65,13 +72,35 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   Future<void> _login() => _run(() async {
     await _service.signIn(_email.text, _password.text);
     _password.clear();
-    final entitlement = await _service.status();
+    final status = await _api.zarrCompanyLicenseStatus(
+      bearerToken: widget.erpAccessToken,
+    );
+    final raw = status['entitlement'];
+    final entitlement = raw is Map
+        ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(raw))
+        : null;
     if (!mounted) return;
-    setState(() { _signedIn = true; _license = entitlement; });
+    setState(() {
+      _signedIn = true;
+      _companyLinked = status['linked'] == true;
+      _license = entitlement;
+    });
   });
   Future<void> _startTrial() => _run(() async {
-    final entitlement = await _service.startTrial();
-    if (mounted) setState(() => _license = entitlement);
+    final raw = await _api.startZarrCompanyTrial(
+      bearerToken: widget.erpAccessToken,
+    );
+    final status = await _api.zarrCompanyLicenseStatus(
+      bearerToken: widget.erpAccessToken,
+    );
+    final current = status['entitlement'];
+    if (mounted) {
+      setState(() {
+        _license = current is Map
+            ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(current))
+            : KaliiaEntitlement.fromJson(raw);
+      });
+    }
   });
   Future<void> _linkCompany() => _run(() async {
     final token = await _service.verifiedKaliiaAccessToken();
@@ -79,9 +108,16 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
       bearerToken: widget.erpAccessToken,
       kaliiaAccessToken: token,
     );
+    final status = await _api.zarrCompanyLicenseStatus(
+      bearerToken: widget.erpAccessToken,
+    );
+    final raw = status['entitlement'];
     if (!mounted) return;
     setState(() {
-      _companyLinked = true;
+      _companyLinked = status['linked'] == true;
+      _license = raw is Map
+          ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(raw))
+          : null;
       _message = 'حساب کالیا سافت با شرکت حسابداری زر پیوند داده شد.';
     });
   });
@@ -89,9 +125,13 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
     final result = await _api.zarrCompanyLicenseStatus(
       bearerToken: widget.erpAccessToken,
     );
+    final raw = result['entitlement'];
     if (!mounted) return;
     setState(() {
       _companyLinked = result['linked'] == true;
+      _license = raw is Map
+          ? KaliiaEntitlement.fromJson(Map<String, dynamic>.from(raw))
+          : null;
       _message = result['canWrite'] == true
           ? 'مجوز نوشتن شرکت توسط سرور تأیید شد.'
           : 'مجوز نوشتن شرکت هنوز از سوی سرور تأیید نشده است.';
@@ -104,7 +144,7 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
   });
   String _statusText() {
     final license = _license;
-    if (license == null) return 'وضعیت مجوز دریافت نشده است.';
+    if (license == null) return 'برای مشاهده مجوز شرکت، ابتدا حساب کالیا را به شرکت متصل کنید.';
     switch (license.status) {
       case 'active': return 'مجوز فعال — ' + license.daysRemaining.toString() + ' روز باقی‌مانده';
       case 'expired': return 'اشتراک پایان یافته است؛ حالت فقط‌خواندنی موردنیاز است.';
@@ -171,7 +211,9 @@ class _ZarrLicensePageState extends State<ZarrLicensePage> {
                       if (_license?.expiresAt != null)
                         Text('تاریخ پایان: ' + _license!.expiresAt!.toLocal().toString(),
                           textAlign: TextAlign.center),
-                      if (_license?.trialAvailable == true) ...[
+                      if (_companyLinked == true &&
+                          widget.canLinkCompany &&
+                          _license?.trialAvailable == true) ...[
                         const SizedBox(height: 12),
                         FilledButton(
                           onPressed: _busy ? null : _startTrial,
