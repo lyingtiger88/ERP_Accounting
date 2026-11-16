@@ -274,6 +274,13 @@ class ZarrOfflineEntitlementStore {
       await _storage.delete(key: _enforcedKey(companyId));
       return;
     }
-    await _storage.deleteAll();
+    final keys = await _storage.readAll();
+    for (final key in keys.keys) {
+      if (key.startsWith(_tokenPrefix) ||
+          key.startsWith(_knownPrefix) ||
+          key.startsWith(_enforcedPrefix)) {
+        await _storage.delete(key: key);
+      }
+    }
   }
 }
