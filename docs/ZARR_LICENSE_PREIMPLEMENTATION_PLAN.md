@@ -181,3 +181,22 @@ No interactive test is required from the user during the remaining source audit 
 - Supabase security advisors also report project-wide RLS-without-policy findings and one unrelated SECURITY DEFINER warning for `zurvan_is_creator()`, plus leaked-password protection disabled. These are wider project security findings, not changes made as part of Zarr licensing; they should be triaged separately.
 - The live Zarr product is enabled but sales are disabled. Its 1-, 3-, 6- and 12-month plan slots are all unpriced and disabled. Do not enable checkout or invent prices as part of licensing implementation.
 - The company-scoped entitlement model must coexist with the current account-scoped licence model used by other Kaliia products. A dedicated company/product entitlement record (or an equivalent immutable binding layer) is required; do not repurpose or weaken the existing unique account/product constraint.
+
+
+### Company-link and manual-payment flow audit
+
+- The current POST /api/license/link endpoint permits an ERP Owner to overwrite the existing company-to-Kaliia-user mapping after presenting another verified Kaliia access token. It does not currently require a transfer challenge, second-party confirmation, cooling-off period or explicit unlink/recovery protocol. Treat this as a rebind/ownership-transfer security gap; do not expose unrestricted re-linking in the commercial UI.
+- The mapping is stored in the ERP API database, while the actual entitlement and payment state are in Supabase. There is no central company binding in the inspected live schema, so the two systems can disagree if local linking succeeds but a central operation fails or if the local database is restored.
+- The live manual-payment Edge Function currently records payment requests by auth_user_id, product_id and plan duration. Its approval RPC extends or converts the account-level zurvan_licenses row for that Auth user/product. It does not accept or bind an ERP company ID. Zarr's company-scoped billing must therefore add a verified company reference to the order/payment path and ensure the approval RPC updates the company entitlement, without changing other products' account-level billing.
+- The current payment flow has server-side checks for confirmed email, product sales-enabled state, enabled plan, receipt type/size, pending duplicate requests and superadmin review. Zarr's plans are presently disabled/unpriced, so payment submission should remain unavailable until the commercial owner configures them.
+- The ASP.NET middleware covers mutating methods under /api except /api/auth and /api/license. The license-link endpoint is consequently outside commercial enforcement by design, but it needs its own strict owner-transfer controls. Any future mutating endpoint added under /api/license must be reviewed explicitly rather than assumed protected.
+- Route review confirms many inventory, treasury, accounting, journal, fiscal-year and admin mutations are under /api and thus within the central middleware's path/method envelope. Before enabling it, verify every route's authentication behavior and add integration tests for the complete route map; do not rely only on prefix matching.
+
+### Updated implementation dependency order
+
+1. Specify the central company-binding and company-entitlement data model, including payment/order references and transfer lifecycle.
+2. Define one server-to-server protocol for owner-verified link/relink, trial start, status, renewal and payment approval. The ERP API must be the authority for ERP company ownership; Kaliia must be the authority for account identity and commercial entitlement.
+3. Extend the Zarr-specific payment path to carry a verified company ID and apply approved payments to the company entitlement. Leave other Kaliia products on their existing account-level model.
+4. Harden API middleware and all /api/license mutation endpoints.
+5. Implement signed entitlement documents and the offline queue state machine.
+6. Only then wire local mutation guards and sync replay to the new entitlement contract.
