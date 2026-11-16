@@ -195,6 +195,17 @@ class ApiClient {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<Map<String, dynamic>> startZarrCompanyTrial({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/api/license/trial/start',
+      bearerToken: bearerToken,
+    );
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<void> bootstrap({
     required String companyName,
     required String username,
