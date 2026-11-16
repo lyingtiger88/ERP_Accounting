@@ -425,7 +425,8 @@ app.MapGet("/api/license/status", async (
             var companyCanWrite = entitlement.TryGetProperty("can_write", out var flag) &&
                 flag.ValueKind == System.Text.Json.JsonValueKind.True;
             var offlineToken = companyCanWrite &&
-                !string.IsNullOrWhiteSpace(config["Kaliia:EntitlementPrivateKeyPem"])
+                !string.IsNullOrWhiteSpace(config["Kaliia:EntitlementPrivateKeyPem"]) &&
+                !string.IsNullOrWhiteSpace(config["Kaliia:EntitlementKeyId"])
                     ? licenses.CreateSignedOfflineEntitlement(entitlement, user.CompanyId)
                     : null;
             return Results.Ok(new
