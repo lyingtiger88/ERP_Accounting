@@ -412,9 +412,34 @@ app.MapGet("/api/license/status", async (
 {
     var user = await CurrentUserAsync(request, authService, cancellationToken);
     if (user is null) return Results.Unauthorized();
+    var config = request.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+    var companyMode = config.GetValue<bool>("Kaliia:UseCompanyEntitlements");
     var linked = await licenses.HasCompanyLinkAsync(
         user.CompanyId, cancellationToken);
-    var canWrite = linked && await licenses.CanWriteAsync(
+    if (companyMode && linked)
+    {
+        try
+        {
+            var entitlement = await licenses.GetCompanyStatusAsync(
+                user.CompanyId, cancellationToken);
+            return Results.Ok(new
+            {
+                productId = ZarrLicenseService.ProductId,
+                companyId = user.CompanyId,
+                linked = true,
+                canWrite = entitlement.TryGetProperty("can_write", out var flag) &&
+                    flag.ValueKind == System.Text.Json.JsonValueKind.True,
+                companyEntitlementsEnabled = true,
+                entitlement,
+                enforcementEnabled = config.GetValue<bool>("Kaliia:EnforceZarrLicense")
+            });
+        }
+        catch (HttpRequestException) { return Results.StatusCode(503); }
+        catch (TaskCanceledException) { return Results.StatusCode(503); }
+        catch (System.Text.Json.JsonException) { return Results.StatusCode(503); }
+        catch (InvalidOperationException) { return Results.StatusCode(503); }
+    }
+    var canWrite = !companyMode && linked && await licenses.CanWriteAsync(
         user.CompanyId, cancellationToken);
     return Results.Ok(new
     {
@@ -422,9 +447,8 @@ app.MapGet("/api/license/status", async (
         companyId = user.CompanyId,
         linked,
         canWrite,
-        enforcementEnabled = request.HttpContext.RequestServices
-            .GetRequiredService<IConfiguration>()
-            .GetValue<bool>("Kaliia:EnforceZarrLicense")
+        companyEntitlementsEnabled = companyMode,
+        enforcementEnabled = config.GetValue<bool>("Kaliia:EnforceZarrLicense")
     });
 });
 
