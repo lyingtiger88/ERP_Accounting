@@ -20,7 +20,7 @@
 - [x] TOTP MFA (server enrollment, login verification, Windows/Android settings UI; automated validation pending)
 - [x] One-time recovery codes (hashed storage and single-use validation)
 - [x] Trusted-device management UI/API and session revocation
-- [ ] Optional QR pairing (one-time pairing-code backend and manual-code UI implemented; QR display/scanning pending)
+- [ ] Optional QR pairing (pairing-code backend, QR display and Android scanning implemented; Windows manual entry and end-to-end device validation pending)
 - [x] Chart of accounts
 - [x] Iranian Persian base chart + hierarchy metadata
 - [x] Account nature and control/postable rules
