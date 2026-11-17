@@ -43,3 +43,7 @@ Thumbs.db
 secrets/
 backups/
 *.pre_restore*
+
+# ASP.NET Core Data Protection key ring (must be persisted and backed up)
+data-protection-keys/
+**/data-protection-keys/
