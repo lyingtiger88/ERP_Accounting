@@ -23,6 +23,8 @@ MFA can be optional for normal users and mandatory for privileged roles such as 
 - Reuse of the same TOTP time-step is rejected.
 - Disabling MFA requires the current password and a valid second factor.
 - Never log the setup secret, TOTP values or recovery codes.
+- MFA verification locks for 10 minutes after five consecutive invalid codes; lock state is persisted in the database.
+- MFA setup, enable and disable endpoints are rate-limited to five requests per five minutes per source IP as an additional abuse-control layer.
 
 ## QR pairing
 QR pairing is optional and is not a replacement for MFA.
