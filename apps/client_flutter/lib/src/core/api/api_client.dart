@@ -245,7 +245,23 @@ class ApiClient {
     return LoginResult.fromJson(payload as Map<String, dynamic>);
   }
 
-  Future<LoginResult?> refreshSession({
+  static Future<LoginResult?>? _refreshInFlight;
+
+  Future<LoginResult?> refreshSession({String? refreshToken}) async {
+    final pending = _refreshInFlight;
+    if (pending != null) return pending;
+    final operation = _refreshSessionOnce(refreshToken: refreshToken);
+    _refreshInFlight = operation;
+    try {
+      return await operation;
+    } finally {
+      if (identical(_refreshInFlight, operation)) {
+        _refreshInFlight = null;
+      }
+    }
+  }
+
+  Future<LoginResult?> _refreshSessionOnce({
     String? refreshToken,
   }) async {
     final token = refreshToken ??
@@ -2144,6 +2160,19 @@ class ApiClient {
       if (response.statusCode == 401 &&
           allowRefresh &&
           bearerToken != null) {
+        // A parallel request may already have rotated our access token.
+        final latest = await SecureSessionStore.instance.currentAccessToken();
+        if (latest != null &&
+            latest.isNotEmpty &&
+            latest != effectiveBearerToken) {
+          return _request(
+            method,
+            path,
+            body: body,
+            bearerToken: latest,
+            allowRefresh: false,
+          );
+        }
         final refreshed = await refreshSession();
         if (refreshed != null) {
           return await _request(
