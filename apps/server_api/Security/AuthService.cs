@@ -127,16 +127,18 @@ public sealed class AuthService(
         if (!string.IsNullOrWhiteSpace(request.PairingCode))
         {
             var codeHash = HashToken(request.PairingCode.Trim().ToUpperInvariant());
+            // SQLite does not translate DateTimeOffset ordering reliably.
+            // The code hash is unique, so fetch at most one candidate and
+            // validate its expiry in memory before the atomic one-time consume.
             pairingChallenge = await db.DevicePairingChallenges
                 .FirstOrDefaultAsync(x =>
                     x.CompanyId == user.CompanyId &&
                     x.UserId == user.Id &&
                     x.CodeHash == codeHash &&
-                    x.UsedAt == null &&
-                    x.ExpiresAt > now,
+                    x.UsedAt == null,
                     cancellationToken);
 
-            if (pairingChallenge is null)
+            if (pairingChallenge is null || pairingChallenge.ExpiresAt <= now)
             {
                 AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR", "DENIED",
                     user.Username, "Invalid, expired or already-used pairing code.");
@@ -147,7 +149,7 @@ public sealed class AuthService(
             var consumed = await db.DevicePairingChallenges
                 .Where(x => x.Id == pairingChallenge.Id &&
                             x.UsedAt == null &&
-                            x.ExpiresAt > now)
+                            x.ExpiresAt == pairingChallenge.ExpiresAt)
                 .ExecuteUpdateAsync(
                     setters => setters.SetProperty(x => x.UsedAt, now),
                     cancellationToken);
