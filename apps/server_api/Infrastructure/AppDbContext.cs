@@ -10,6 +10,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<TrustedDevice> Devices => Set<TrustedDevice>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
+    public DbSet<UserMfaCredential> MfaCredentials => Set<UserMfaCredential>();
     public DbSet<SecurityAuditLog> SecurityAuditLogs => Set<SecurityAuditLog>();
     public DbSet<ZarrCompanyLicense> ZarrCompanyLicenses => Set<ZarrCompanyLicense>();
     public DbSet<LedgerAccount> Accounts => Set<LedgerAccount>();
@@ -76,6 +77,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<Company>()
                 .WithMany()
                 .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserMfaCredential>(entity =>
+        {
+            entity.ToTable("user_mfa_credentials");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ProtectedSecret).HasMaxLength(2048);
+            entity.Property(x => x.PendingProtectedSecret).HasMaxLength(2048);
+            entity.Property(x => x.RecoveryCodeHashesJson).IsRequired();
+            entity.HasIndex(x => x.UserId).IsUnique();
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
