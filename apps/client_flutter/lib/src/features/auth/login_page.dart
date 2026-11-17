@@ -17,9 +17,11 @@ class LoginPage extends StatefulWidget {
   const LoginPage({
     super.key,
     required this.localDatabase,
+    this.initialMessage,
   });
 
   final LocalDatabase localDatabase;
+  final String? initialMessage;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -35,6 +37,20 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscurePassword = true;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final message = widget.initialMessage;
+    if (message != null && message.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {
