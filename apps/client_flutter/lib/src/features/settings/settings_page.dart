@@ -45,6 +45,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _loadingUsers = false;
   bool _loadingDevices = false;
   bool _loadingAudit = false;
+  bool _loadingMfa = false;
+  bool _mfaEnabled = false;
   bool _busy = false;
   List<Map<String, dynamic>> _users = const [];
   List<Map<String, dynamic>> _devices = const [];
@@ -67,9 +69,196 @@ class _SettingsPageState extends State<SettingsPage> {
     await Future.wait([
       _loadUsers(),
       _loadDevices(),
+      _loadMfa(),
       _loadAudit(),
       _loadBackups(),
     ]);
+  }
+
+  Future<void> _loadMfa() async {
+    if (_isDemo) return;
+    if (mounted) setState(() => _loadingMfa = true);
+    try {
+      final status = await _api.getMfaStatus(bearerToken: widget.accessToken);
+      if (!mounted) return;
+      setState(() => _mfaEnabled = status['mfaEnabled'] as bool? ?? false);
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _loadingMfa = false);
+    }
+  }
+
+  Future<void> _setupMfa() async {
+    setState(() => _busy = true);
+    try {
+      final setup = await _api.beginMfaSetup(bearerToken: widget.accessToken);
+      final code = TextEditingController();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('راه‌اندازی احراز هویت دومرحله‌ای'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('در برنامه Authenticator گزینه افزودن حساب را انتخاب کنید و کلید زیر را به‌صورت دستی وارد کنید:'),
+                  const SizedBox(height: 12),
+                  SelectableText(setup['secret'].toString(), textDirection: TextDirection.ltr),
+                  const SizedBox(height: 12),
+                  const Text('نشانی استاندارد ورود دستی:'),
+                  SelectableText(setup['otpauthUri'].toString(), textDirection: TextDirection.ltr),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: code,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    textDirection: TextDirection.ltr,
+                    decoration: const InputDecoration(labelText: 'کد شش‌رقمی برنامه Authenticator'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('تأیید و فعال‌سازی')),
+          ],
+        ),
+      );
+      if (confirmed != true) {
+        code.dispose();
+        return;
+      }
+      final result = await _api.enableMfa(
+        bearerToken: widget.accessToken,
+        code: code.text.trim(),
+      );
+      code.dispose();
+      if (!mounted) return;
+      setState(() => _mfaEnabled = true);
+      final recovery = (result['recoveryCodes'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .toList(growable: false);
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('کدهای بازیابی — فقط همین یک‌بار'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('این کدها را در مکانی امن و خارج از دستگاه ذخیره کنید. هر کد فقط یک‌بار قابل استفاده است.'),
+                  const SizedBox(height: 12),
+                  for (final value in recovery)
+                    SelectableText(value, textDirection: TextDirection.ltr),
+                ],
+              ),
+            ),
+          ),
+          actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('ذخیره کردم'))],
+        ),
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _disableMfa() async {
+    final password = TextEditingController();
+    final code = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('غیرفعال‌سازی احراز هویت دومرحله‌ای'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'رمز عبور فعلی')),
+            const SizedBox(height: 12),
+            TextField(controller: code, keyboardType: TextInputType.number, textDirection: TextDirection.ltr, decoration: const InputDecoration(labelText: 'کد Authenticator یا کد بازیابی')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('غیرفعال‌سازی')),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      password.dispose();
+      code.dispose();
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await _api.disableMfa(
+        bearerToken: widget.accessToken,
+        password: password.text,
+        code: code.text.trim(),
+      );
+      if (mounted) {
+        setState(() => _mfaEnabled = false);
+        _message('احراز هویت دومرحله‌ای غیرفعال شد.');
+      }
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      password.dispose();
+      code.dispose();
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _mfaTab() {
+    if (_loadingMfa) return const Center(child: CircularProgressIndicator());
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(_mfaEnabled ? Icons.verified_user : Icons.security_outlined),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('احراز هویت دومرحله‌ای (TOTP)', style: Theme.of(context).textTheme.titleMedium)),
+                    Chip(label: Text(_mfaEnabled ? 'فعال' : 'غیرفعال')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text('سازگار با Google Authenticator و Microsoft Authenticator. هنگام ورود، علاوه بر رمز عبور کد شش‌رقمی یا یک کد بازیابی لازم است.'),
+                const SizedBox(height: 16),
+                if (!_mfaEnabled)
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _setupMfa,
+                    icon: const Icon(Icons.phonelink_lock_outlined),
+                    label: const Text('راه‌اندازی و فعال‌سازی'),
+                  )
+                else
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _disableMfa,
+                    icon: const Icon(Icons.lock_open_outlined),
+                    label: const Text('غیرفعال‌سازی با تأیید مجدد'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _loadDevices() async {
@@ -586,7 +775,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final showDevices = !_isDemo;
     final tabs =
-        1 +
+        2 +
         (_canManageUsers ? 2 : 0) +
         (showDevices ? 1 : 0) +
         1;
@@ -608,6 +797,10 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icon(Icons.manage_accounts_outlined),
                       text: 'کاربران و نقش‌ها',
                     ),
+                  const Tab(
+                    icon: Icon(Icons.security_outlined),
+                    text: 'احراز هویت دومرحله‌ای',
+                  ),
                   if (showDevices)
                     const Tab(
                       icon: Icon(Icons.devices_outlined),
@@ -632,6 +825,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: TabBarView(
                   children: [
                     if (_canManageUsers) _usersTab(),
+                    _mfaTab(),
                     if (showDevices) _devicesTab(),
                     if (_canManageUsers) _auditTab(),
                     _backupTab(),
