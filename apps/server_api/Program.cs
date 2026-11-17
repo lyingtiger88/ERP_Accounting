@@ -403,7 +403,7 @@ auth.MapPost("/devices/{deviceId:guid}/revoke", async (
     return revoked
         ? Results.Ok(new { revoked = true })
         : Results.NotFound(new { error = "Device was not found." });
-});
+}).RequireRateLimiting("auth");
 
 app.MapGet("/api/me", async (
     HttpRequest request,
