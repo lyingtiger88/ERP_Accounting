@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'core/api/api_client.dart';
@@ -54,11 +56,35 @@ class _SessionGate extends StatefulWidget {
 
 class _SessionGateState extends State<_SessionGate> {
   late Future<_RestoredSession?> _future;
+  StreamSubscription<String>? _sessionExpiredSubscription;
 
   @override
   void initState() {
     super.initState();
     _future = _restore();
+    _sessionExpiredSubscription =
+        ApiClient.sessionExpired.listen(_handleSessionExpired);
+  }
+
+  Future<void> _handleSessionExpired(String message) async {
+    if (!mounted) return;
+    await SecureSessionStore.instance.clear();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => LoginPage(
+          localDatabase: widget.localDatabase,
+          initialMessage: message,
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
+  @override
+  void dispose() {
+    _sessionExpiredSubscription?.cancel();
+    super.dispose();
   }
 
   Future<_RestoredSession?> _restore() async {
