@@ -16,11 +16,11 @@
 - [x] Company / organization bootstrap
 - [x] Users and role model
 - [x] Password authentication
-- [ ] Persistent authorization / refresh-token model
-- [ ] TOTP MFA
-- [ ] Backup codes
-- [ ] Trusted-device management UI/API
-- [ ] Optional QR pairing
+- [x] Persistent authorization / rotating refresh-token model
+- [x] TOTP MFA (server enrollment, login verification, Windows/Android settings UI; automated validation pending)
+- [x] One-time recovery codes (hashed storage and single-use validation)
+- [x] Trusted-device management UI/API and session revocation
+- [ ] Optional QR pairing (next implementation item)
 - [x] Chart of accounts
 - [x] Iranian Persian base chart + hierarchy metadata
 - [x] Account nature and control/postable rules
