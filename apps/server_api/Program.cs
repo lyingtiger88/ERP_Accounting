@@ -358,7 +358,7 @@ auth.MapPost("/devices/pairing-code", async (
     }
     catch (InvalidOperationException ex)
     {
-        return Results.Unauthorized(new { error = ex.Message });
+        return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status401Unauthorized);
     }
 }).RequireRateLimiting("mfa");
 
