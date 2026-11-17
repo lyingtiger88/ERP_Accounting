@@ -113,7 +113,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - The Data Protection key ring is persisted under `data-protection-keys/`; production deployments must persist and back up this directory securely across restarts and instances.
 - Login requires a valid TOTP or unused recovery code when MFA is enabled; no session is issued before verification.
 - TOTP accepts the current 30-second counter with a ±1 step clock-skew window and tracks the last accepted counter to reject replay.
-- Ten random recovery codes are generated once during enrollment; only SHA-256 hashes are stored and each code is consumed on use.
+- Ten random 96-bit recovery codes are generated once during enrollment; only SHA-256 hashes are stored and each code is consumed on use.
 - MFA enrollment, confirmation, disablement and recovery are audited.
 - The authenticator setup key is shown only during enrollment. The user must store the recovery codes safely when shown.
 
