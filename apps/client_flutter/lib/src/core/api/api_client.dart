@@ -217,6 +217,7 @@ class ApiClient {
     required String username,
     required String password,
     required String deviceName,
+    String? totpCode,
   }) async {
     final payload = await _request(
       'POST',
@@ -226,6 +227,8 @@ class ApiClient {
         'password': password,
         'deviceName': deviceName,
         'platform': Platform.operatingSystem,
+        if (totpCode != null && totpCode.trim().isNotEmpty)
+          'totpCode': totpCode.trim(),
       },
     );
 
