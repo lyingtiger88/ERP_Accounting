@@ -24,6 +24,8 @@ public sealed class UserMfaCredential
     public string? PendingProtectedSecret { get; set; }
     public string RecoveryCodeHashesJson { get; set; } = "[]";
     public long? LastAcceptedTimeStep { get; set; }
+    public int FailedAttempts { get; set; }
+    public DateTimeOffset? LockedUntil { get; set; }
     public DateTimeOffset? EnabledAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
