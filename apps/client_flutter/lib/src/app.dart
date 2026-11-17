@@ -8,13 +8,53 @@ import 'core/database/local_database.dart';
 import 'features/auth/login_page.dart';
 import 'features/dashboard/dashboard_page.dart';
 
-class ZarrApp extends StatelessWidget {
+class ZarrApp extends StatefulWidget {
   const ZarrApp({
     super.key,
     required this.localDatabase,
   });
 
   final LocalDatabase localDatabase;
+
+  @override
+  State<ZarrApp> createState() => _ZarrAppState();
+}
+
+class _ZarrAppState extends State<ZarrApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<String>? _subscription;
+  bool _redirecting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = ApiClient.sessionExpired.listen(_handleSessionExpired);
+  }
+
+  void _handleSessionExpired(String message) {
+    if (!mounted || _redirecting) return;
+    _redirecting = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _redirecting = false;
+      if (!mounted) return;
+      _navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (_) => LoginPage(
+            localDatabase: widget.localDatabase,
+            initialMessage: message,
+          ),
+        ),
+        (route) => false,
+      );
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +64,7 @@ class ZarrApp extends StatelessWidget {
     );
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'زر | Zarr',
       theme: ThemeData(
@@ -38,7 +79,7 @@ class ZarrApp extends StatelessWidget {
           margin: EdgeInsets.zero,
         ),
       ),
-      home: _SessionGate(localDatabase: localDatabase),
+      home: _SessionGate(localDatabase: widget.localDatabase),
     );
   }
 }
@@ -56,35 +97,10 @@ class _SessionGate extends StatefulWidget {
 
 class _SessionGateState extends State<_SessionGate> {
   late Future<_RestoredSession?> _future;
-  StreamSubscription<String>? _sessionExpiredSubscription;
-
   @override
   void initState() {
     super.initState();
     _future = _restore();
-    _sessionExpiredSubscription =
-        ApiClient.sessionExpired.listen(_handleSessionExpired);
-  }
-
-  Future<void> _handleSessionExpired(String message) async {
-    if (!mounted) return;
-    await SecureSessionStore.instance.clear();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(
-        builder: (_) => LoginPage(
-          localDatabase: widget.localDatabase,
-          initialMessage: message,
-        ),
-      ),
-      (route) => false,
-    );
-  }
-
-  @override
-  void dispose() {
-    _sessionExpiredSubscription?.cancel();
-    super.dispose();
   }
 
   Future<_RestoredSession?> _restore() async {
