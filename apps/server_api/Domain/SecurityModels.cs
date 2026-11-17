@@ -23,6 +23,7 @@ public sealed class UserMfaCredential
     public string? ProtectedSecret { get; set; }
     public string? PendingProtectedSecret { get; set; }
     public string RecoveryCodeHashesJson { get; set; } = "[]";
+    public long? LastAcceptedTimeStep { get; set; }
     public DateTimeOffset? EnabledAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
