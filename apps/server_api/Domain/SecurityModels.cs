@@ -15,3 +15,14 @@ public sealed class AuthSession
     public DateTimeOffset? RevokedAt { get; set; }
     public string? RevokeReason { get; set; }
 }
+
+public sealed class UserMfaCredential
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required Guid UserId { get; set; }
+    public string? ProtectedSecret { get; set; }
+    public string? PendingProtectedSecret { get; set; }
+    public string RecoveryCodeHashesJson { get; set; } = "[]";
+    public DateTimeOffset? EnabledAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
