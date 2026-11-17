@@ -2165,7 +2165,7 @@ class ApiClient {
         if (latest != null &&
             latest.isNotEmpty &&
             latest != effectiveBearerToken) {
-          return _request(
+          return await _request(
             method,
             path,
             body: body,
