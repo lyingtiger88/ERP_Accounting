@@ -234,4 +234,35 @@ public sealed class DevicePairingTests
         Assert.Null(result);
         Assert.Empty(await db.Devices.ToListAsync());
     }
+    [Fact]
+    public async Task RevokingPairedDevice_RejectsAccessAndRefresh_WithoutRevokingOtherDevice()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Revocation Test", "revoke-owner", "Owner", password));
+        var desktop = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Desktop", "windows"));
+        Assert.NotNull(desktop);
+        var code = await service.CreateDevicePairingCodeAsync(owner.Id);
+        var mobile = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", PairingCode: code.Code));
+        Assert.NotNull(mobile);
+        var phone = await db.Devices.SingleAsync(x => x.Platform == "android");
+
+        Assert.NotNull(await service.ResolveAsync(mobile.AccessToken));
+        Assert.True(await service.RevokeDeviceAsync(owner.Id, phone.Id));
+
+        Assert.Null(await service.ResolveAsync(mobile.AccessToken));
+        Assert.Null(await service.RefreshAsync(new RefreshSessionRequest(mobile.RefreshToken)));
+        Assert.NotNull(await service.ResolveAsync(desktop.AccessToken));
+        Assert.NotNull(await service.RefreshAsync(new RefreshSessionRequest(desktop.RefreshToken)));
+        Assert.Equal(DeviceTrustState.Revoked, phone.TrustState);
+    }
 }
