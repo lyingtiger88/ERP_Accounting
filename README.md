@@ -116,6 +116,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - Ten random 96-bit recovery codes are generated once during enrollment; only SHA-256 hashes are stored and each code is consumed on use.
 - MFA enrollment, confirmation, disablement and recovery are audited.
 - MFA verification locks for 10 minutes after five consecutive invalid codes; setup/enable/disable endpoints are rate-limited to five requests per five minutes per source IP.
+- New devices remain Pending unless the user supplies a valid, single-use pairing code issued from an authenticated session. Pairing codes expire after five minutes, are stored only as SHA-256 hashes, are bound to the issuing user/company, and are invalidated when a replacement code is issued.
 - The authenticator setup key is shown only during enrollment. The user must store the recovery codes safely when shown.
 
 ### Phase 2 — Synchronization Engine
