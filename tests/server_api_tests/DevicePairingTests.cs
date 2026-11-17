@@ -290,4 +290,30 @@ public sealed class DevicePairingTests
         Assert.NotNull(await service.ResolveAsync(second.AccessToken));
         Assert.NotNull(await service.RefreshAsync(new RefreshSessionRequest(second.RefreshToken)));
     }
+    [Fact]
+    public async Task RevokedDevice_IsRejectedEvenWhenSessionRowIsStillActive()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Device Guard Test", "guard-owner", "Owner", password));
+        var login = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Desktop", "windows"));
+        Assert.NotNull(login);
+        Assert.NotNull(await service.ResolveAsync(login.AccessToken));
+
+        var device = await db.Devices.SingleAsync();
+        device.TrustState = DeviceTrustState.Revoked;
+        device.RevokedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        Assert.Null(await service.ResolveAsync(login.AccessToken));
+        Assert.Null(await service.RefreshAsync(new RefreshSessionRequest(login.RefreshToken)));
+    }
 }
