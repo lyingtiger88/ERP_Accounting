@@ -9,12 +9,20 @@ Authentication methods are modular and can be enabled per organization.
 - Passkey support planned
 
 ### MFA / 2FA
-- TOTP authenticator is the baseline second factor
-- Backup recovery codes
+- TOTP authenticator is implemented as the baseline second factor (30-second RFC 6238 / SHA-1 / 6 digits; ±1 step clock tolerance)
+- Ten one-time backup recovery codes are generated at enrollment; only SHA-256 hashes are stored and each code is consumed once
 - Biometrics / Windows Hello as device-local convenience factors
 - Mobile approval / push confirmation planned
 
 MFA can be optional for normal users and mandatory for privileged roles such as administrators or financial managers.
+
+## Implemented MFA behavior
+- Enrollment requires an authenticated session and confirmation of a live authenticator code.
+- Login checks the second factor before creating an authenticated session.
+- A recovery code may replace the TOTP code once; successful use removes its hash from the stored set.
+- Reuse of the same TOTP time-step is rejected.
+- Disabling MFA requires the current password and a valid second factor.
+- Never log the setup secret, TOTP values or recovery codes.
 
 ## QR pairing
 QR pairing is optional and is not a replacement for MFA.
@@ -77,7 +85,8 @@ Require re-authentication or MFA for sensitive operations, including:
 
 ## Secret storage
 - Passwords: modern password hashing with unique salts
-- TOTP seeds: encrypted at rest
+- TOTP seeds: encrypted at rest with ASP.NET Core Data Protection
+- Data Protection key ring: persist `data-protection-keys/` on durable protected storage and back it up; all server instances must share the same key ring
 - Device private keys: OS secure storage where available
 - Server secrets: environment/secret manager, never repository
 - Backup codes: store only secure hashes
