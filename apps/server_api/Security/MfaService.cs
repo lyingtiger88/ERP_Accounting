@@ -44,7 +44,8 @@ public sealed class MfaService(
         if (string.IsNullOrWhiteSpace(row.PendingProtectedSecret))
             throw new InvalidOperationException("No pending MFA setup exists.");
         var secret = protector.Unprotect(row.PendingProtectedSecret);
-        if (!VerifyTotp(secret, code, DateTimeOffset.UtcNow))
+        var acceptedStep = MatchTotpStep(secret, code, DateTimeOffset.UtcNow);
+        if (acceptedStep is null)
             throw new ArgumentException("Authenticator code is invalid.");
         var recovery = Enumerable.Range(0, 10)
             .Select(_ => Convert.ToHexString(RandomNumberGenerator.GetBytes(8)))
@@ -52,6 +53,7 @@ public sealed class MfaService(
         row.ProtectedSecret = row.PendingProtectedSecret;
         row.PendingProtectedSecret = null;
         row.RecoveryCodeHashesJson = JsonSerializer.Serialize(recovery.Select(HashCode));
+        row.LastAcceptedTimeStep = acceptedStep;
         row.EnabledAt = DateTimeOffset.UtcNow;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         var user = await db.Users.SingleAsync(x => x.Id == userId, ct);
@@ -71,7 +73,16 @@ public sealed class MfaService(
         if (row is null || row.EnabledAt is null || string.IsNullOrWhiteSpace(row.ProtectedSecret))
             return false;
         var secret = protector.Unprotect(row.ProtectedSecret);
-        if (VerifyTotp(secret, code, DateTimeOffset.UtcNow)) return true;
+        var acceptedStep = MatchTotpStep(secret, code, DateTimeOffset.UtcNow);
+        if (acceptedStep is not null)
+        {
+            if (row.LastAcceptedTimeStep is long previous && acceptedStep <= previous)
+                return false;
+            row.LastAcceptedTimeStep = acceptedStep;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
         var hashes = JsonSerializer.Deserialize<List<string>>(row.RecoveryCodeHashesJson) ?? [];
         var hash = HashCode(NormalizeRecoveryCode(code));
         var index = hashes.FindIndex(x => CryptographicOperations.FixedTimeEquals(
@@ -101,9 +112,9 @@ public sealed class MfaService(
         await db.SaveChangesAsync(ct);
     }
 
-    private static bool VerifyTotp(string base32Secret, string code, DateTimeOffset now)
+    private static long? MatchTotpStep(string base32Secret, string code, DateTimeOffset now)
     {
-        if (code.Length != 6 || code.Any(c => c < '0' || c > '9')) return false;
+        if (string.IsNullOrWhiteSpace(code) || code.Length != 6 || code.Any(c => c < '0' || c > '9')) return null;
         var secret = Base32Decode(base32Secret);
         var step = now.ToUnixTimeSeconds() / 30;
         for (var offset = -1; offset <= 1; offset++)
@@ -118,9 +129,9 @@ public sealed class MfaService(
                          (hash[index + 3] & 0xff);
             var expected = (binary % 1_000_000).ToString("D6");
             if (CryptographicOperations.FixedTimeEquals(
-                Encoding.ASCII.GetBytes(expected), Encoding.ASCII.GetBytes(code))) return true;
+                Encoding.ASCII.GetBytes(expected), Encoding.ASCII.GetBytes(code))) return step + offset;
         }
-        return false;
+        return null;
     }
 
     private static string Base32Encode(byte[] data)
