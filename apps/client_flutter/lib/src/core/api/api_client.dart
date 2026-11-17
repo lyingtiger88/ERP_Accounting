@@ -235,6 +235,7 @@ class ApiClient {
         'password': password,
         'deviceName': deviceName,
         'platform': Platform.operatingSystem,
+        'installationId': await SecureSessionStore.instance.installationId(),
         if (totpCode != null && totpCode.trim().isNotEmpty)
           'totpCode': totpCode.trim(),
         if (pairingCode != null && pairingCode.trim().isNotEmpty)
