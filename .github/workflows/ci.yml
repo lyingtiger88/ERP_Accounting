@@ -135,6 +135,15 @@ jobs:
         working-directory: apps/client_flutter
         run: flutter build apk --release
 
+      - name: Upload unsigned Android validation APK (test devices only)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v6
+        with:
+          name: Zarr-Android-Validation-Unsigned
+          path: apps/client_flutter/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Build release APK with monotonic version code
         if: github.event_name != 'pull_request'
         working-directory: apps/client_flutter
