@@ -343,6 +343,25 @@ auth.MapPost("/logout", async (
     return Results.Ok(new { revoked });
 });
 
+auth.MapPost("/devices/pairing-code", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+
+    try
+    {
+        return Results.Ok(await authService.CreateDevicePairingCodeAsync(
+            user.Id, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Unauthorized(new { error = ex.Message });
+    }
+}).RequireRateLimiting("mfa");
+
 auth.MapGet("/devices", async (
     HttpRequest request,
     AuthService authService,
