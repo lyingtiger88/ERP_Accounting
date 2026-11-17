@@ -417,6 +417,19 @@ public sealed class AuthService(
             return null;
         }
 
+        // Defense in depth: a device marked revoked never authorizes a request,
+        // even if an older session row has not yet been marked revoked.
+        if (session.DeviceId is Guid deviceId &&
+            !await db.Devices.AsNoTracking().AnyAsync(
+                x => x.Id == deviceId &&
+                     x.UserId == session.UserId &&
+                     x.CompanyId == session.CompanyId &&
+                     x.TrustState != DeviceTrustState.Revoked,
+                cancellationToken))
+        {
+            return null;
+        }
+
         return await db.Users
             .AsNoTracking()
             .FirstOrDefaultAsync(
