@@ -377,7 +377,7 @@ auth.MapGet("/devices", async (
         : Results.Ok(await authService.GetDevicesAsync(
             user.Id,
             cancellationToken));
-});
+}).RequireRateLimiting("auth");
 
 auth.MapPost("/devices/{deviceId:guid}/revoke", async (
     HttpRequest request,
