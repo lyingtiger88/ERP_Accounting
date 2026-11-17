@@ -287,12 +287,6 @@ public sealed class AuthService(
 
         var pair = CreateTokenPair(now);
 
-        session.AccessTokenHash = HashToken(pair.AccessToken);
-        session.RefreshTokenHash = HashToken(pair.RefreshToken);
-        session.AccessExpiresAt = pair.AccessExpiresAt;
-        session.RefreshExpiresAt = pair.RefreshExpiresAt;
-        session.LastRefreshedAt = now;
-
         if (session.DeviceId is Guid deviceId)
         {
             var device = await db.Devices.FirstOrDefaultAsync(
@@ -311,6 +305,22 @@ public sealed class AuthService(
 
                 device.LastSeenAt = now;
             }
+        }
+
+        // Compare-and-swap prevents concurrent requests from rotating the same token.
+        var rotated = await db.AuthSessions
+            .Where(x => x.Id == session.Id &&
+                        x.RefreshTokenHash == refreshHash &&
+                        x.RevokedAt == null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.AccessTokenHash, HashToken(pair.AccessToken))
+                .SetProperty(x => x.RefreshTokenHash, HashToken(pair.RefreshToken))
+                .SetProperty(x => x.AccessExpiresAt, pair.AccessExpiresAt)
+                .SetProperty(x => x.RefreshExpiresAt, pair.RefreshExpiresAt)
+                .SetProperty(x => x.LastRefreshedAt, now), cancellationToken);
+        if (rotated != 1)
+        {
+            return null;
         }
 
         AddSecurityAudit(
