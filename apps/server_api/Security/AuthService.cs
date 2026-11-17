@@ -72,6 +72,18 @@ public sealed class AuthService(
         LoginRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(request.Username) ||
+            string.IsNullOrWhiteSpace(request.DeviceName) ||
+            string.IsNullOrWhiteSpace(request.Platform) ||
+            request.DeviceName.Trim().Length > 200 ||
+            request.Platform.Trim().Length > 80 ||
+            (request.InstallationId is not null &&
+             (request.InstallationId.Length != 64 ||
+              !request.InstallationId.All(Uri.IsHexDigit))))
+        {
+            return null;
+        }
+
         var normalizedUsername =
             request.Username.Trim().ToLowerInvariant();
 
@@ -169,16 +181,23 @@ public sealed class AuthService(
 
         var deviceName = request.DeviceName.Trim();
         var platform = request.Platform.Trim();
-        var normalizedDeviceName = deviceName.ToLowerInvariant();
-        var normalizedPlatform = platform.ToLowerInvariant();
+        var installationHash = string.IsNullOrWhiteSpace(request.InstallationId)
+            ? null : HashToken(request.InstallationId.Trim().ToLowerInvariant());
 
-        var device = await db.Devices.FirstOrDefaultAsync(
-            x =>
-                x.UserId == user.Id &&
-                x.TrustState != DeviceTrustState.Revoked &&
-                x.DeviceName.ToLower() == normalizedDeviceName &&
-                x.Platform.ToLower() == normalizedPlatform,
-            cancellationToken);
+        // Never inherit trust from a display name. Legacy clients without an
+        // installation identifier always receive a separate device record.
+        var device = installationHash is null ? null :
+            await db.Devices.FirstOrDefaultAsync(x =>
+                x.UserId == user.Id && x.InstallationIdHash == installationHash,
+                cancellationToken);
+
+        if (device?.TrustState == DeviceTrustState.Revoked && pairingChallenge is null)
+        {
+            AddSecurityAudit(user.CompanyId, user.Id, "LOGIN", "DENIED",
+                user.Username, "Revoked installation requires a new pairing code.");
+            await db.SaveChangesAsync(cancellationToken);
+            return null;
+        }
 
         if (device is null)
         {
@@ -188,16 +207,17 @@ public sealed class AuthService(
                 UserId = user.Id,
                 DeviceName = deviceName,
                 Platform = platform,
+                InstallationIdHash = installationHash,
                 TrustState = pairingChallenge is null
-                    ? DeviceTrustState.Pending
-                    : DeviceTrustState.Trusted,
+                    ? DeviceTrustState.Pending : DeviceTrustState.Trusted,
                 LastSeenAt = now
             };
-
             db.Devices.Add(device);
         }
         else
         {
+            device.DeviceName = deviceName;
+            device.Platform = platform;
             device.LastSeenAt = now;
             if (pairingChallenge is not null)
             {
