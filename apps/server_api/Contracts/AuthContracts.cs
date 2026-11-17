@@ -11,7 +11,8 @@ public sealed record LoginRequest(
     string Password,
     string DeviceName,
     string Platform,
-    string? TotpCode = null);
+    string? TotpCode = null,
+    string? PairingCode = null);
 
 public sealed record LoginResponse(
     string AccessToken,
@@ -29,6 +30,8 @@ public sealed record RefreshSessionRequest(
 
 public sealed record LogoutRequest(
     string? RefreshToken = null);
+
+public sealed record DevicePairingCodeResponse(string Code, DateTimeOffset ExpiresAt);
 
 public sealed record DeviceResponse(
     Guid Id,
