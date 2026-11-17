@@ -1012,7 +1012,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 18),
                 Center(
                   child: QrImageView(
-                    data: code,
+                    data: Uri(
+                      scheme: 'zarr',
+                      host: 'pair',
+                      queryParameters: {
+                        'server': ApiClient.configuredBaseUrl,
+                        'code': code,
+                      },
+                    ).toString(),
                     version: QrVersions.auto,
                     size: 220,
                     backgroundColor: Colors.white,
