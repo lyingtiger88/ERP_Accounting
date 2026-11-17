@@ -7,6 +7,7 @@ using ERPAccounting.Api.Reporting;
 using ERPAccounting.Api.SalesInventory;
 using ERPAccounting.Api.Treasury;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -62,7 +63,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         $"Unsupported Database:Provider '{databaseProvider}'. Use Sqlite or Postgres.");
 });
 
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(
+        builder.Environment.ContentRootPath, "data-protection-keys")))
+    .SetApplicationName("Zarr");
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
+builder.Services.AddScoped<MfaService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<ZarrLicenseService>();
@@ -247,6 +253,42 @@ auth.MapPost("/login", async (
 
     return Results.Ok(result);
 }).RequireRateLimiting("auth");
+
+auth.MapPost("/mfa/setup", async (
+    HttpRequest request, AuthService authService, MfaService mfaService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    if (user.MfaEnabled) return Results.Conflict(new { error = "MFA is already enabled." });
+    return Results.Ok(await mfaService.BeginSetupAsync(user.Id, user.Username, cancellationToken));
+});
+
+auth.MapPost("/mfa/enable", async (
+    HttpRequest request, MfaCodeRequest payload, AuthService authService,
+    MfaService mfaService, CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    try { return Results.Ok(await mfaService.ConfirmSetupAsync(user.Id, payload.Code, cancellationToken)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+
+auth.MapPost("/mfa/disable", async (
+    HttpRequest request, MfaDisableRequest payload, AuthService authService,
+    MfaService mfaService, CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    try
+    {
+        await mfaService.DisableAsync(user, payload.Password, payload.Code, cancellationToken);
+        return Results.Ok(new { enabled = false });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
 
 auth.MapPost("/refresh", async (
     RefreshSessionRequest request,
