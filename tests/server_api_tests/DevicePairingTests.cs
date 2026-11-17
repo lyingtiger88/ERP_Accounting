@@ -80,6 +80,9 @@ public sealed class DevicePairingTests
         var issued = await service.CreateDevicePairingCodeAsync(user.Id);
         Assert.Equal(16, issued.Code.Length);
         Assert.True(issued.ExpiresAt > DateTimeOffset.UtcNow);
+        var storedChallenge = await db.DevicePairingChallenges.SingleAsync();
+        Assert.Equal(64, storedChallenge.CodeHash.Length);
+        Assert.NotEqual(issued.Code, storedChallenge.CodeHash);
 
         var login = await service.LoginAsync(new LoginRequest(
             user.Username,
