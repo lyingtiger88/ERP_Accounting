@@ -125,6 +125,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _scanPairingCode() async {
     if (!Platform.isAndroid || _busy) return;
 
+    var scanCompleted = false;
     final scanned = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -136,7 +137,7 @@ class _LoginPageState extends State<LoginPage> {
             borderRadius: BorderRadius.circular(12),
             child: MobileScanner(
               onDetect: (capture) {
-                if (capture.barcodes.isEmpty) return;
+                if (scanCompleted || capture.barcodes.isEmpty) return;
                 final value = capture.barcodes.first.rawValue?.trim() ?? '';
                 final normalized = value.toUpperCase();
                 final isPairingCode = normalized.length == 16 &&
@@ -144,6 +145,7 @@ class _LoginPageState extends State<LoginPage> {
                       (character) => '0123456789ABCDEF'.contains(character),
                     );
                 if (isPairingCode) {
+                  scanCompleted = true;
                   Navigator.of(dialogContext).pop(normalized);
                 }
               },
