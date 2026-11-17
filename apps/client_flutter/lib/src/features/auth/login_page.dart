@@ -28,6 +28,7 @@ class _LoginPageState extends State<LoginPage> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _totpCode = TextEditingController();
+  final _pairingCode = TextEditingController();
   ApiClient _apiClient = ApiClient();
 
   bool _obscurePassword = true;
@@ -39,6 +40,7 @@ class _LoginPageState extends State<LoginPage> {
     _username.dispose();
     _password.dispose();
     _totpCode.dispose();
+    _pairingCode.dispose();
     super.dispose();
   }
 
@@ -131,6 +133,7 @@ class _LoginPageState extends State<LoginPage> {
         password: _password.text,
         deviceName: Platform.isAndroid ? 'Android Device' : 'Windows PC',
         totpCode: _totpCode.text.trim().isEmpty ? null : _totpCode.text.trim(),
+        pairingCode: _pairingCode.text.trim().isEmpty ? null : _pairingCode.text.trim(),
       );
 
       if (!mounted) return;
@@ -417,6 +420,21 @@ class _LoginPageState extends State<LoginPage> {
                                     counterText: '',
                                   ),
                                 ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: _pairingCode,
+                                  enabled: !_busy,
+                                  keyboardType: TextInputType.visiblePassword,
+                                  textCapitalization: TextCapitalization.characters,
+                                  maxLength: 16,
+                                  textDirection: TextDirection.ltr,
+                                  decoration: const InputDecoration(
+                                    labelText: 'کد اتصال دستگاه جدید (اختیاری)',
+                                    helperText: 'این کد را از بخش دستگاه‌ها در دستگاه قبلی دریافت کنید.',
+                                    prefixIcon: Icon(Icons.devices_other_outlined),
+                                    counterText: '',
+                                  ),
+                                ),
                                 if (_error != null) ...[
                                   const SizedBox(height: 14),
                                   Text(
@@ -466,22 +484,6 @@ class _LoginPageState extends State<LoginPage> {
                                   style: TextStyle(fontSize: 12),
                                 ),
                                 const SizedBox(height: 12),
-                                OutlinedButton.icon(
-                                  onPressed: _busy
-                                      ? null
-                                      : () {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'QR Pairing در مرحله امنیت فعال خواهد شد.',
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                  icon: const Icon(Icons.qr_code_scanner),
-                                  label: const Text('اتصال اختیاری با QR'),
-                                ),
                                 const SizedBox(height: 10),
                                 TextButton(
                                   onPressed: _busy ? null : _openBootstrap,
