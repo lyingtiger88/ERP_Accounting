@@ -535,7 +535,8 @@ public sealed class AuthService(
                 x.Platform,
                 x.TrustState.ToString(),
                 x.FirstSeenAt,
-                x.LastSeenAt))
+                x.LastSeenAt,
+                x.InstallationIdHash is null))
             .ToArray();
     }
 
