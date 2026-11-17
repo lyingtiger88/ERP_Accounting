@@ -63,6 +63,42 @@ public sealed class DevicePairingTests
     }
 
     [Fact]
+    public async Task LoginWithoutPairingCode_KeepsNewDevicePending()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var company = new Company { Name = "Unpaired Login Test" };
+        var hasher = new PasswordHasher<AppUser>();
+        var user = new AppUser
+        {
+            CompanyId = company.Id,
+            Username = "unpaired-owner",
+            DisplayName = "Unpaired Owner",
+            PasswordHash = string.Empty,
+            Role = UserRole.Owner
+        };
+        user.PasswordHash = hasher.HashPassword(user, "Strong-Test-Password-2026");
+        db.Companies.Add(company);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = new AuthService(db, hasher);
+        var login = await service.LoginAsync(new LoginRequest(
+            user.Username,
+            "Strong-Test-Password-2026",
+            "New Windows Device",
+            "windows"));
+
+        Assert.NotNull(login);
+        var device = await db.Devices.SingleAsync(x => x.UserId == user.Id);
+        Assert.Equal(DeviceTrustState.Pending, device.TrustState);
+    }
+
+    [Fact]
     public async Task PairingCode_IsBoundToIssuingUser()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
