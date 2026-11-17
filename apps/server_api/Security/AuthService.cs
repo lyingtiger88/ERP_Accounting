@@ -712,7 +712,7 @@ public sealed class AuthService(
             user.CompanyId,
             user.DisplayName,
             user.Role.ToString(),
-            user.MfaEnabled,
+            false,
             pair.RefreshToken,
             pair.RefreshExpiresAt);
     }
