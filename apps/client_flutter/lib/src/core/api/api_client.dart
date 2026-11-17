@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -137,6 +138,12 @@ class DetailAccountSyncResult {
 }
 
 class ApiClient {
+  static final StreamController<String> _sessionExpiredController =
+      StreamController<String>.broadcast();
+
+  static Stream<String> get sessionExpired =>
+      _sessionExpiredController.stream;
+
   ApiClient({String? baseUrl})
       : baseUrl = baseUrl ?? _runtimeBaseUrl ?? _defaultBaseUrl();
 
@@ -264,6 +271,9 @@ class ApiClient {
     } on ApiException catch (error) {
       if (error.statusCode == 401) {
         await SecureSessionStore.instance.clear();
+        _sessionExpiredController.add(
+          'دسترسی این دستگاه لغو شده یا نشست شما منقضی شده است؛ لطفاً دوباره وارد شوید.',
+        );
         return null;
       }
       rethrow;
