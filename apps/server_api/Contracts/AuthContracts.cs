@@ -40,7 +40,8 @@ public sealed record DeviceResponse(
     string Platform,
     string TrustState,
     DateTimeOffset FirstSeenAt,
-    DateTimeOffset? LastSeenAt);
+    DateTimeOffset? LastSeenAt,
+    bool RequiresRePairing = false);
 
 public sealed record MfaCodeRequest(string Code);
 public sealed record MfaDisableRequest(string Password, string Code);
