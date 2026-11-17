@@ -498,4 +498,32 @@ public sealed class DevicePairingTests
         Assert.True(await service.RevokeDeviceAsync(owner.Id, device.Id));
         Assert.Equal(DeviceTrustState.Revoked, device.TrustState);
     }
+    [Fact]
+    public async Task DeviceList_FlagsLegacyRecordsThatNeedRePairing()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Legacy Device Listing", "legacy-list-owner", "Owner", password));
+
+        var legacy = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Windows PC", "windows"));
+        Assert.NotNull(legacy);
+
+        var modern = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Android Device", "android",
+            PairingCode: (await service.CreateDevicePairingCodeAsync(owner.Id)).Code,
+            InstallationId: new string('9', 64)));
+        Assert.NotNull(modern);
+
+        var devices = await service.GetDevicesAsync(owner.Id);
+        Assert.Equal(2, devices.Count);
+        Assert.Single(devices.Where(x => x.RequiresRePairing));
+        Assert.Single(devices.Where(x => !x.RequiresRePairing));
+    }
 }
