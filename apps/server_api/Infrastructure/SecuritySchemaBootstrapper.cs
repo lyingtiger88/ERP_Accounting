@@ -196,7 +196,7 @@ public static class SecuritySchemaBootstrapper
         """
         CREATE INDEX IF NOT EXISTS "IX_zarr_company_licenses_AuthUserId"
         ON zarr_company_licenses ("AuthUserId");
-        """
+        """,
         """
         CREATE TABLE IF NOT EXISTS user_mfa_credentials (
             "Id" uuid NOT NULL CONSTRAINT "PK_user_mfa_credentials" PRIMARY KEY,
