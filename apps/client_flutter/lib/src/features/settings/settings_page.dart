@@ -996,6 +996,11 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       final code = result['code']?.toString() ?? '';
       final expiresAt = result['expiresAt']?.toString() ?? '';
+      final configuredServer = ApiClient.configuredBaseUrl;
+      final serverUri = Uri.tryParse(configuredServer);
+      final serverIsLoopback = serverUri == null ||
+          const {'localhost', '127.0.0.1', '::1', '10.0.2.2'}
+              .contains(serverUri.host.toLowerCase());
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
@@ -1016,7 +1021,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       scheme: 'zarr',
                       host: 'pair',
                       queryParameters: {
-                        'server': ApiClient.configuredBaseUrl,
+                        if (!serverIsLoopback) 'server': configuredServer,
                         'code': code,
                       },
                     ).toString(),
@@ -1042,6 +1047,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (serverIsLoopback) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'آدرس سرور این دستگاه محلی است. در دستگاه جدید، آدرس شبکه یا HTTPS سرور را جداگانه تنظیم کنید؛ QR فقط کد اتصال را منتقل می‌کند.',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 const Text(
                   'با ساخت کد جدید، کد قبلی فوراً باطل می‌شود. این کد فقط یک‌بار قابل استفاده است.',
