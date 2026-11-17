@@ -986,61 +986,140 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _devicesTab() {
-    if (_loadingDevices) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_devices.isEmpty) {
-      return const Center(
-        child: Text('دستگاه ثبت‌شده‌ای وجود ندارد.'),
+  Future<void> _createDevicePairingCode() async {
+    setState(() => _busy = true);
+    try {
+      final result = await _api.createDevicePairingCode(
+        bearerToken: widget.accessToken,
       );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(20),
-      itemCount: _devices.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final device = _devices[index];
-        final state = device['trustState']?.toString() ?? 'Pending';
-        final revoked = state == 'Revoked';
-
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              child: Icon(
-                device['platform']?.toString().toLowerCase() == 'android'
-                    ? Icons.phone_android_outlined
-                    : Icons.computer_outlined,
-              ),
-            ),
-            title: Text(device['deviceName'].toString()),
-            subtitle: Text(
-              device['platform'].toString() +
-                  ' • ' +
-                  (revoked
-                      ? 'لغو شده'
-                      : state == 'Trusted'
-                          ? 'قابل اعتماد'
-                          : 'در انتظار اعتماد') +
-                  (device['lastSeenAt'] == null
-                      ? ''
-                      : ' • آخرین فعالیت: ' +
-                          device['lastSeenAt'].toString()),
-            ),
-            trailing: revoked
-                ? const Chip(label: Text('Revoked'))
-                : OutlinedButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => _revokeDevice(device),
-                    icon: const Icon(Icons.phonelink_erase_outlined),
-                    label: const Text('لغو دسترسی'),
+      if (!mounted) return;
+      final code = result['code']?.toString() ?? '';
+      final expiresAt = result['expiresAt']?.toString() ?? '';
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('کد یک‌بارمصرف اتصال دستگاه'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'در دستگاه جدید، همین کد را در صفحه ورود وارد کنید. ورود همچنان به نام کاربری، رمز عبور و در صورت فعال بودن MFA به کد دومرحله‌ای نیاز دارد.',
+                ),
+                const SizedBox(height: 18),
+                SelectableText(
+                  code,
+                  textAlign: TextAlign.center,
+                  textDirection: TextDirection.ltr,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 3,
                   ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'اعتبار تا: ' + expiresAt,
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'با ساخت کد جدید، کد قبلی فوراً باطل می‌شود. این کد فقط یک‌بار قابل استفاده است.',
+                  textAlign: TextAlign.right,
+                ),
+              ],
+            ),
           ),
-        );
-      },
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('متوجه شدم'),
+            ),
+          ],
+        ),
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _devicesTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _createDevicePairingCode,
+              icon: const Icon(Icons.add_link),
+              label: const Text('ایجاد کد اتصال دستگاه جدید'),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _loadingDevices
+              ? const Center(child: CircularProgressIndicator())
+              : _devices.isEmpty
+                  ? const Center(
+                      child: Text('دستگاه ثبت‌شده‌ای وجود ندارد.'),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                      itemCount: _devices.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final device = _devices[index];
+                        final state =
+                            device['trustState']?.toString() ?? 'Pending';
+                        final revoked = state == 'Revoked';
+
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              child: Icon(
+                                device['platform']?.toString().toLowerCase() ==
+                                        'android'
+                                    ? Icons.phone_android_outlined
+                                    : Icons.computer_outlined,
+                              ),
+                            ),
+                            title: Text(device['deviceName'].toString()),
+                            subtitle: Text(
+                              device['platform'].toString() +
+                                  ' • ' +
+                                  (revoked
+                                      ? 'لغو شده'
+                                      : state == 'Trusted'
+                                          ? 'قابل اعتماد'
+                                          : 'در انتظار اعتماد') +
+                                  (device['lastSeenAt'] == null
+                                      ? ''
+                                      : ' • آخرین فعالیت: ' +
+                                          device['lastSeenAt'].toString()),
+                            ),
+                            trailing: revoked
+                                ? const Chip(label: Text('لغو شده'))
+                                : OutlinedButton.icon(
+                                    onPressed: _busy
+                                        ? null
+                                        : () => _revokeDevice(device),
+                                    icon: const Icon(
+                                      Icons.phonelink_erase_outlined,
+                                    ),
+                                    label: const Text('لغو دسترسی'),
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
     );
   }
 
