@@ -47,7 +47,7 @@ public sealed class AccountingSyncValidationTests
             new string('x', 129), "local-1", null,
             new DateOnly(2026, 1, 1), null, []);
         var controlCharacter = new SyncJournalRequest(
-            "change-1", "local-1\\nforged", null,
+            "change-1", "local-1\nforged", null,
             new DateOnly(2026, 1, 1), null, []);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
