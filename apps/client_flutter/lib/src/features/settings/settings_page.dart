@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../../licensing/zarr_license_page.dart';
 
 import '../../core/api/api_client.dart';
@@ -1009,6 +1010,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   'در دستگاه جدید، همین کد را در صفحه ورود وارد کنید. ورود همچنان به نام کاربری، رمز عبور و در صورت فعال بودن MFA به کد دومرحله‌ای نیاز دارد.',
                 ),
                 const SizedBox(height: 18),
+                Center(
+                  child: QrImageView(
+                    data: code,
+                    version: QrVersions.auto,
+                    size: 220,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 14),
                 SelectableText(
                   code,
                   textAlign: TextAlign.center,
