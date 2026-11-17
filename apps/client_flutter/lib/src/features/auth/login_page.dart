@@ -126,7 +126,7 @@ class _LoginPageState extends State<LoginPage> {
     if (!Platform.isAndroid || _busy) return;
 
     var scanCompleted = false;
-    final scanned = await showDialog<String>(
+    final scanned = await showDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('اسکن کد اتصال زر'),
@@ -138,15 +138,34 @@ class _LoginPageState extends State<LoginPage> {
             child: MobileScanner(
               onDetect: (capture) {
                 if (scanCompleted || capture.barcodes.isEmpty) return;
-                final value = capture.barcodes.first.rawValue?.trim() ?? '';
-                final normalized = value.toUpperCase();
-                final isPairingCode = normalized.length == 16 &&
-                    normalized.split('').every(
+                final rawValue = capture.barcodes.first.rawValue?.trim() ?? '';
+                final parsed = Uri.tryParse(rawValue);
+                var code = rawValue.toUpperCase();
+                String? server;
+                if (parsed != null &&
+                    parsed.scheme == 'zarr' &&
+                    parsed.host == 'pair') {
+                  code = parsed.queryParameters['code']?.toUpperCase() ?? '';
+                  server = parsed.queryParameters['server'];
+                }
+
+                final isPairingCode = code.length == 16 &&
+                    code.split('').every(
                       (character) => '0123456789ABCDEF'.contains(character),
                     );
-                if (isPairingCode) {
+                final serverUri = server == null ? null : Uri.tryParse(server);
+                final validServer = server == null ||
+                    (serverUri != null &&
+                        serverUri.host.isNotEmpty &&
+                        (serverUri.scheme == 'http' ||
+                            serverUri.scheme == 'https'));
+
+                if (isPairingCode && validServer) {
                   scanCompleted = true;
-                  Navigator.of(dialogContext).pop(normalized);
+                  Navigator.of(dialogContext).pop({
+                    'code': code,
+                    if (server != null) 'server': server,
+                  });
                 }
               },
             ),
@@ -162,8 +181,23 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     if (!mounted || scanned == null) return;
+
+    final server = scanned['server'];
+    if (server != null) {
+      var normalizedServer = server.trim();
+      while (normalizedServer.endsWith('/')) {
+        normalizedServer = normalizedServer.substring(
+          0,
+          normalizedServer.length - 1,
+        );
+      }
+      await widget.localDatabase.setMeta('api_base_url', normalizedServer);
+      ApiClient.configureBaseUrl(normalizedServer);
+    }
+
     setState(() {
-      _pairingCode.text = scanned;
+      if (server != null) _apiClient = ApiClient();
+      _pairingCode.text = scanned['code'] ?? '';
       _error = null;
     });
   }
