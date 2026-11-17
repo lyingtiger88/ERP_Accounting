@@ -11,6 +11,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<TrustedDevice> Devices => Set<TrustedDevice>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<UserMfaCredential> MfaCredentials => Set<UserMfaCredential>();
+    public DbSet<DevicePairingChallenge> DevicePairingChallenges => Set<DevicePairingChallenge>();
     public DbSet<SecurityAuditLog> SecurityAuditLogs => Set<SecurityAuditLog>();
     public DbSet<ZarrCompanyLicense> ZarrCompanyLicenses => Set<ZarrCompanyLicense>();
     public DbSet<LedgerAccount> Accounts => Set<LedgerAccount>();
@@ -134,6 +135,19 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .WithMany()
                 .HasForeignKey(x => x.DeviceId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<DevicePairingChallenge>(entity =>
+        {
+            entity.ToTable("device_pairing_challenges");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.CodeHash).HasMaxLength(64).IsRequired();
+            entity.HasIndex(x => x.CodeHash).IsUnique();
+            entity.HasIndex(x => new { x.UserId, x.ExpiresAt, x.UsedAt });
+            entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<SecurityAuditLog>(entity =>
