@@ -218,6 +218,7 @@ class ApiClient {
     required String password,
     required String deviceName,
     String? totpCode,
+    String? pairingCode,
   }) async {
     final payload = await _request(
       'POST',
@@ -229,6 +230,8 @@ class ApiClient {
         'platform': Platform.operatingSystem,
         if (totpCode != null && totpCode.trim().isNotEmpty)
           'totpCode': totpCode.trim(),
+        if (pairingCode != null && pairingCode.trim().isNotEmpty)
+          'pairingCode': pairingCode.trim().toUpperCase(),
       },
     );
 
@@ -332,6 +335,18 @@ class ApiClient {
       bearerToken: bearerToken,
       body: {'password': password, 'code': code},
     );
+  }
+
+  Future<Map<String, dynamic>> createDevicePairingCode({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/auth/devices/pairing-code',
+      bearerToken: bearerToken,
+      body: const <String, dynamic>{},
+    );
+    return Map<String, dynamic>.from(payload as Map);
   }
 
   Future<List<Map<String, dynamic>>> getTrustedDevices({
