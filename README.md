@@ -62,8 +62,9 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] User/role administration screens
 - [x] TOTP 2FA enrollment and login verification (API + Windows/Android settings UI; automated security validation pending)
 - [x] One-time backup recovery codes (hashed at rest and consumed once)
-- [x] Trusted-device management UI/API + session revocation
-- [ ] Optional QR device pairing (pairing-code backend, QR display and Android scanning implemented; Windows manual entry and end-to-end device validation pending)
+- [x] Trusted-device management UI/API + session revocation (Android sync rejected after revocation in physical test)
+- [ ] Automatic sign-out after remote revocation (implemented; physical retest pending)
+- [x] Optional QR device pairing (Windows manual entry and Android scanning physically validated; one-time-code reuse rejected)
 - [ ] Step-up authentication for sensitive operations
 - [x] Accounting audit log
 - [x] Security audit log
@@ -246,9 +247,9 @@ Key beta hardening now implemented:
 - [ ] Security review
 - [ ] Performance profiling
 - [ ] Database encryption strategy
-- [ ] Windows installer
+- [x] Windows installer build (CI smoke verified; production signing and upgrade validation pending)
 - [ ] Windows auto-update
-- [ ] Android release build
+- [ ] Android signed Release build (CI configured; existing signing identity and first signed build verification pending)
 - [ ] Android update strategy
 - [ ] Store-ready screenshots and metadata
 - [ ] Final product branding
