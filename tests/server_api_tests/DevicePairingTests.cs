@@ -316,4 +316,63 @@ public sealed class DevicePairingTests
         Assert.Null(await service.ResolveAsync(login.AccessToken));
         Assert.Null(await service.RefreshAsync(new RefreshSessionRequest(login.RefreshToken)));
     }
+    [Fact]
+    public async Task InstallationIdentity_IsStableAndDoesNotInheritTrustFromName()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Install Test", "install-owner", "Owner", password));
+        var firstId = new string('a', 64);
+        var secondId = new string('b', 64);
+        var code = await service.CreateDevicePairingCodeAsync(owner.Id);
+        Assert.NotNull(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", PairingCode: code.Code, InstallationId: firstId)));
+        Assert.NotNull(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", InstallationId: secondId)));
+        Assert.NotNull(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Renamed Phone", "android", InstallationId: firstId)));
+        var devices = await db.Devices.ToListAsync();
+        Assert.Equal(2, devices.Count);
+        var trusted = Assert.Single(devices.Where(x => x.TrustState == DeviceTrustState.Trusted));
+        Assert.Equal("Renamed Phone", trusted.DeviceName);
+        Assert.NotEqual(firstId, trusted.InstallationIdHash);
+        Assert.Equal(64, trusted.InstallationIdHash!.Length);
+        Assert.Single(devices.Where(x => x.TrustState == DeviceTrustState.Pending));
+        Assert.True(await service.RevokeDeviceAsync(owner.Id, trusted.Id));
+        Assert.Null(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", InstallationId: firstId)));
+        var repair = await service.CreateDevicePairingCodeAsync(owner.Id);
+        Assert.NotNull(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", PairingCode: repair.Code, InstallationId: firstId)));
+        Assert.Equal(2, await db.Devices.CountAsync());
+    }
+
+    [Fact]
+    public async Task LegacyLogin_DoesNotInheritTrustAndInvalidIdentityIsRejected()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Legacy Test", "legacy-owner", "Owner", password));
+        var code = await service.CreateDevicePairingCodeAsync(owner.Id);
+        Assert.NotNull(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", PairingCode: code.Code)));
+        Assert.NotNull(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android")));
+        Assert.Null(await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", InstallationId: "invalid")));
+        Assert.Equal(2, await db.Devices.CountAsync());
+        Assert.Equal(1, await db.Devices.CountAsync(x => x.TrustState == DeviceTrustState.Trusted));
+    }
 }
