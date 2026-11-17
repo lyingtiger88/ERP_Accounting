@@ -16,6 +16,8 @@ dependencies:
   sqflite_common: ^2.5.13
   sqflite_common_ffi: ^2.4.3
   url_launcher: ^6.3.2
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.5.0
 
 dev_dependencies:
   flutter_test:
