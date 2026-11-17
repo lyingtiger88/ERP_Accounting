@@ -31,7 +31,7 @@ MFA can be optional for normal users and mandatory for privileged roles such as 
 - The code expires after five minutes, is stored only as a SHA-256 hash, is bound to the issuing user and company, and is invalidated when a replacement is issued.
 - The new device must still authenticate with the account password and, when enabled, MFA; the pairing code only upgrades the new device from Pending to Trusted.
 - A code is consumed atomically and cannot be reused. Issuance and successful/failed pairing are written to the security audit log.
-- This is the secure manual-code foundation. QR rendering/scanning and device approval UX remain follow-up work; the app must not describe this stage as completed QR scanning.
+- The pairing code is rendered as a QR in Settings and can be scanned by the Android login screen. Windows supports secure manual entry because the selected camera-scanner package does not support Windows. A separate device-approval/push workflow remains future work.
 
 ## QR pairing
 QR pairing is optional and is not a replacement for MFA.
