@@ -60,9 +60,9 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Trusted-device domain model
 - [x] Persistent sessions + rotating refresh tokens
 - [x] User/role administration screens
-- [ ] TOTP 2FA
-- [ ] Backup recovery codes
-- [x] Trusted-device management + session revocation
+- [x] TOTP 2FA enrollment and login verification (API + Windows/Android settings UI; automated security validation pending)
+- [x] One-time backup recovery codes (hashed at rest and consumed once)
+- [x] Trusted-device management UI/API + session revocation
 - [ ] Optional QR device pairing
 - [ ] Step-up authentication for sensitive operations
 - [x] Accounting audit log
@@ -106,6 +106,16 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Windows offline cache validation path
 - [ ] Android device validation
 - [x] Secure local credential storage
+
+### Phase 1 — MFA implementation notes
+
+- TOTP secrets are protected with ASP.NET Core Data Protection and are never stored as plaintext.
+- The Data Protection key ring is persisted under `data-protection-keys/`; production deployments must persist and back up this directory securely across restarts and instances.
+- Login requires a valid TOTP or unused recovery code when MFA is enabled; no session is issued before verification.
+- TOTP accepts the current 30-second counter with a ±1 step clock-skew window and tracks the last accepted counter to reject replay.
+- Ten random recovery codes are generated once during enrollment; only SHA-256 hashes are stored and each code is consumed on use.
+- MFA enrollment, confirmation, disablement and recovery are audited.
+- The authenticator setup key is shown only during enrollment. The user must store the recovery codes safely when shown.
 
 ### Phase 2 — Synchronization Engine
 
