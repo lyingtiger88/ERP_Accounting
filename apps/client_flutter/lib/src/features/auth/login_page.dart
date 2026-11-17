@@ -444,10 +444,17 @@ class _LoginPageState extends State<LoginPage> {
                                   textCapitalization: TextCapitalization.characters,
                                   maxLength: 16,
                                   textDirection: TextDirection.ltr,
-                                  decoration: const InputDecoration(
+                                  decoration: InputDecoration(
                                     labelText: 'کد اتصال دستگاه جدید (اختیاری)',
-                                    helperText: 'این کد را از بخش دستگاه‌ها در دستگاه قبلی دریافت کنید.',
-                                    prefixIcon: Icon(Icons.devices_other_outlined),
+                                    helperText: 'کد را از دستگاه قبلی دریافت کنید یا QR را اسکن کنید.',
+                                    prefixIcon: const Icon(Icons.devices_other_outlined),
+                                    suffixIcon: Platform.isAndroid
+                                        ? IconButton(
+                                            tooltip: 'اسکن QR',
+                                            onPressed: _busy ? null : _scanPairingCode,
+                                            icon: const Icon(Icons.qr_code_scanner),
+                                          )
+                                        : null,
                                     counterText: '',
                                   ),
                                 ),
