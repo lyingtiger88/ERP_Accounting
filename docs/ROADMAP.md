@@ -19,8 +19,9 @@
 - [x] Persistent authorization / rotating refresh-token model
 - [x] TOTP MFA (server enrollment, login verification, Windows/Android settings UI; automated validation pending)
 - [x] One-time recovery codes (hashed storage and single-use validation)
-- [x] Trusted-device management UI/API and session revocation
-- [ ] Optional QR pairing (pairing-code backend, QR display and Android scanning implemented; Windows manual entry and end-to-end device validation pending)
+- [x] Trusted-device management UI/API and session revocation (physical sync denial verified)
+- [ ] Automatic sign-out after remote revocation (implemented; physical retest pending)
+- [x] Optional QR pairing (Windows and Android physical validation; reuse returns HTTP 401)
 - [x] Chart of accounts
 - [x] Iranian Persian base chart + hierarchy metadata
 - [x] Account nature and control/postable rules
@@ -107,5 +108,5 @@
 - [ ] Disaster recovery
 - [ ] Security review
 - [ ] Windows installer
-- [ ] Android release build
+- [ ] Android signed Release build (CI configured; signing identity and first signed build verification pending)
 - [ ] Store-ready branding and metadata
