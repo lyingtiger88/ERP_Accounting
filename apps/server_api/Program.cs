@@ -99,6 +99,22 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true
             });
     });
+    options.AddPolicy("mfa", httpContext =>
+    {
+        var key =
+            httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: key,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
 });
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -264,7 +280,7 @@ auth.MapPost("/mfa/setup", async (
     if (user is null) return Results.Unauthorized();
     if (user.MfaEnabled) return Results.Conflict(new { error = "MFA is already enabled." });
     return Results.Ok(await mfaService.BeginSetupAsync(user.Id, user.Username, cancellationToken));
-});
+}).RequireRateLimiting("mfa");
 
 auth.MapPost("/mfa/enable", async (
     HttpRequest request, MfaCodeRequest payload, AuthService authService,
@@ -275,7 +291,7 @@ auth.MapPost("/mfa/enable", async (
     try { return Results.Ok(await mfaService.ConfirmSetupAsync(user.Id, payload.Code, cancellationToken)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-});
+}).RequireRateLimiting("mfa");
 
 auth.MapPost("/mfa/disable", async (
     HttpRequest request, MfaDisableRequest payload, AuthService authService,
@@ -290,7 +306,7 @@ auth.MapPost("/mfa/disable", async (
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-});
+}).RequireRateLimiting("mfa");
 
 auth.MapPost("/refresh", async (
     RefreshSessionRequest request,
