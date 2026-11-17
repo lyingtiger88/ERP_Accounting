@@ -99,6 +99,55 @@ public sealed class DevicePairingTests
     }
 
     [Fact]
+    public async Task IssuingReplacementCode_InvalidatesPreviousCode()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var company = new Company { Name = "Pairing Replacement Test" };
+        var hasher = new PasswordHasher<AppUser>();
+        var user = new AppUser
+        {
+            CompanyId = company.Id,
+            Username = "replacement-owner",
+            DisplayName = "Replacement Owner",
+            PasswordHash = string.Empty,
+            Role = UserRole.Owner
+        };
+        user.PasswordHash = hasher.HashPassword(user, "Strong-Test-Password-2026");
+        db.Companies.Add(company);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = new AuthService(db, hasher);
+        var first = await service.CreateDevicePairingCodeAsync(user.Id);
+        var second = await service.CreateDevicePairingCodeAsync(user.Id);
+        Assert.NotEqual(first.Code, second.Code);
+
+        var result = await service.LoginAsync(new LoginRequest(
+            user.Username,
+            "Strong-Test-Password-2026",
+            "Replacement Device",
+            "windows",
+            PairingCode: first.Code));
+
+        Assert.Null(result);
+        var success = await service.LoginAsync(new LoginRequest(
+            user.Username,
+            "Strong-Test-Password-2026",
+            "Replacement Device",
+            "windows",
+            PairingCode: second.Code));
+
+        Assert.NotNull(success);
+        Assert.Equal(DeviceTrustState.Trusted,
+            (await db.Devices.SingleAsync(x => x.UserId == user.Id)).TrustState);
+    }
+
+    [Fact]
     public async Task PairingCode_IsBoundToIssuingUser()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
