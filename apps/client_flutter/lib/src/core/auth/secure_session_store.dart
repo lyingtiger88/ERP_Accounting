@@ -50,8 +50,17 @@ class SecureSessionStore {
   SecureSession? _memory;
   Future<String>? _installationIdentity;
 
-  Future<String> installationId() =>
-      _installationIdentity ??= _loadInstallationId();
+  Future<String> installationId() async {
+    final operation = _installationIdentity ??= _loadInstallationId();
+    try {
+      return await operation;
+    } catch (_) {
+      if (identical(_installationIdentity, operation)) {
+        _installationIdentity = null;
+      }
+      rethrow;
+    }
+  }
 
   Future<String> _loadInstallationId() async {
     const key = 'erp.installation_id';
