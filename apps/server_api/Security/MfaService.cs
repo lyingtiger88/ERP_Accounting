@@ -68,31 +68,58 @@ public sealed class MfaService(
 
     public async Task<bool> VerifyLoginCodeAsync(Guid userId, string? code, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(code)) return false;
         var row = await db.MfaCredentials.SingleOrDefaultAsync(x => x.UserId == userId, ct);
         if (row is null || row.EnabledAt is null || string.IsNullOrWhiteSpace(row.ProtectedSecret))
             return false;
-        var secret = protector.Unprotect(row.ProtectedSecret);
-        var acceptedStep = MatchTotpStep(secret, code, DateTimeOffset.UtcNow);
-        if (acceptedStep is not null)
+        var now = DateTimeOffset.UtcNow;
+        if (row.LockedUntil is DateTimeOffset lockedUntil && lockedUntil > now)
+            return false;
+
+        var valid = false;
+        if (!string.IsNullOrWhiteSpace(code))
         {
-            if (row.LastAcceptedTimeStep is long previous && acceptedStep <= previous)
-                return false;
-            row.LastAcceptedTimeStep = acceptedStep;
-            row.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(ct);
-            return true;
+            var secret = protector.Unprotect(row.ProtectedSecret);
+            var acceptedStep = MatchTotpStep(secret, code, now);
+            if (acceptedStep is not null)
+            {
+                if (row.LastAcceptedTimeStep is not long previous || acceptedStep > previous)
+                {
+                    row.LastAcceptedTimeStep = acceptedStep;
+                    valid = true;
+                }
+            }
+            else
+            {
+                var hashes = JsonSerializer.Deserialize<List<string>>(row.RecoveryCodeHashesJson) ?? [];
+                var hash = HashCode(NormalizeRecoveryCode(code));
+                var index = hashes.FindIndex(x => CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(x), Encoding.UTF8.GetBytes(hash)));
+                if (index >= 0)
+                {
+                    hashes.RemoveAt(index);
+                    row.RecoveryCodeHashesJson = JsonSerializer.Serialize(hashes);
+                    valid = true;
+                }
+            }
         }
-        var hashes = JsonSerializer.Deserialize<List<string>>(row.RecoveryCodeHashesJson) ?? [];
-        var hash = HashCode(NormalizeRecoveryCode(code));
-        var index = hashes.FindIndex(x => CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(x), Encoding.UTF8.GetBytes(hash)));
-        if (index < 0) return false;
-        hashes.RemoveAt(index);
-        row.RecoveryCodeHashesJson = JsonSerializer.Serialize(hashes);
-        row.UpdatedAt = DateTimeOffset.UtcNow;
+
+        if (valid)
+        {
+            row.FailedAttempts = 0;
+            row.LockedUntil = null;
+        }
+        else
+        {
+            row.FailedAttempts++;
+            if (row.FailedAttempts >= 5)
+            {
+                row.LockedUntil = now.AddMinutes(10);
+                row.FailedAttempts = 0;
+            }
+        }
+        row.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
-        return true;
+        return valid;
     }
 
     public async Task DisableAsync(AppUser user, string password, string code, CancellationToken ct)
