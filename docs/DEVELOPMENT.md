@@ -120,3 +120,22 @@ Next:
 4. TOTP MFA and recovery codes
 5. QR device pairing
 6. Sync change journal
+
+## Signed Android release delivery
+
+Pull requests compile the Release APK for validation but do not distribute a debug-key APK. A main-branch CI run signs and verifies the distribution APK using the **existing** Android publisher keystore; missing or mismatched configuration fails the job. Do not create a replacement key for an installed application.
+
+Configure repository Actions secrets (never commit or paste keystore bytes/passwords into issues or chat):
+
+- `ZARR_ANDROID_KEYSTORE_BASE64`: existing keystore encoded as Base64
+- `ZARR_ANDROID_KEYSTORE_PASSWORD`
+- `ZARR_ANDROID_KEY_PASSWORD`
+- `ZARR_ANDROID_KEY_ALIAS`
+
+Configure Actions variables:
+
+- `ZARR_ANDROID_APPLICATION_ID`: exact existing application ID ending in `.zarr`; other IDs require a reviewed platform-generation adjustment. Do not change the ID of installed clients.
+- `ZARR_ANDROID_CERT_SHA256`: existing APK signing certificate SHA-256 digest (not the APK file hash).
+- `ZARR_ANDROID_VERSION_CODE_BASE`: nonnegative integer chosen so base + CI run number exceeds all previously distributed version codes. Keep it stable thereafter.
+
+The signed artifact is named `Zarr-Android-Release-Signed`. Validate installation as an in-place upgrade on a backed-up test device before distribution. Debug-signed installed packages cannot be upgraded using a different signing certificate. For testing the release client against a local server, configure HTTPS with a trusted certificate; do not assume debug-only cleartext connectivity works in Release.
