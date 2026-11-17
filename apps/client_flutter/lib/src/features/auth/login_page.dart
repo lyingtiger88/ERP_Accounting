@@ -191,6 +191,43 @@ class _LoginPageState extends State<LoginPage> {
           normalizedServer.length - 1,
         );
       }
+
+      var currentServer = ApiClient.configuredBaseUrl;
+      while (currentServer.endsWith('/')) {
+        currentServer = currentServer.substring(0, currentServer.length - 1);
+      }
+
+      if (normalizedServer != currentServer) {
+        final serverUri = Uri.parse(normalizedServer);
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('تغییر آدرس سرور؟'),
+            content: Text(
+              'کد QR درخواست اتصال به این سرور را دارد:\\n\\n' +
+                  normalizedServer +
+                  (serverUri.scheme == 'http'
+                      ? '\\n\\nهشدار: ارتباط HTTP رمزنگاری نشده است.'
+                      : '') +
+                  '\\n\\nفقط در صورتی ادامه دهید که این آدرس متعلق به سازمان شماست.',
+              textDirection: TextDirection.ltr,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('انصراف'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('تأیید سرور'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed != true) return;
+      }
+
       await widget.localDatabase.setMeta('api_base_url', normalizedServer);
       ApiClient.configureBaseUrl(normalizedServer);
     }
