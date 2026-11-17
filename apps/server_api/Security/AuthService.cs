@@ -123,6 +123,41 @@ public sealed class AuthService(
         }
 
         var now = DateTimeOffset.UtcNow;
+        DevicePairingChallenge? pairingChallenge = null;
+        if (!string.IsNullOrWhiteSpace(request.PairingCode))
+        {
+            var codeHash = HashToken(request.PairingCode.Trim().ToUpperInvariant());
+            pairingChallenge = await db.DevicePairingChallenges
+                .FirstOrDefaultAsync(x =>
+                    x.CompanyId == user.CompanyId &&
+                    x.UserId == user.Id &&
+                    x.CodeHash == codeHash &&
+                    x.UsedAt == null &&
+                    x.ExpiresAt > now,
+                    cancellationToken);
+
+            if (pairingChallenge is null)
+            {
+                AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR", "DENIED",
+                    user.Username, "Invalid, expired or already-used pairing code.");
+                await db.SaveChangesAsync(cancellationToken);
+                return null;
+            }
+
+            var consumed = await db.DevicePairingChallenges
+                .Where(x => x.Id == pairingChallenge.Id &&
+                            x.UsedAt == null &&
+                            x.ExpiresAt > now)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(x => x.UsedAt, now),
+                    cancellationToken);
+
+            if (consumed != 1)
+            {
+                return null;
+            }
+        }
+
         var deviceName = request.DeviceName.Trim();
         var platform = request.Platform.Trim();
         var normalizedDeviceName = deviceName.ToLowerInvariant();
@@ -144,7 +179,9 @@ public sealed class AuthService(
                 UserId = user.Id,
                 DeviceName = deviceName,
                 Platform = platform,
-                TrustState = DeviceTrustState.Pending,
+                TrustState = pairingChallenge is null
+                    ? DeviceTrustState.Pending
+                    : DeviceTrustState.Trusted,
                 LastSeenAt = now
             };
 
@@ -153,6 +190,17 @@ public sealed class AuthService(
         else
         {
             device.LastSeenAt = now;
+            if (pairingChallenge is not null)
+            {
+                device.TrustState = DeviceTrustState.Trusted;
+                device.RevokedAt = null;
+            }
+        }
+
+        if (pairingChallenge is not null)
+        {
+            AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR", "SUCCESS",
+                user.Username, "Device=" + deviceName + "; Platform=" + platform);
         }
 
         await RevokeExpiredSessionsAsync(now, cancellationToken);
@@ -382,6 +430,39 @@ public sealed class AuthService(
                 x.Details,
                 x.CreatedAt))
             .ToArray();
+    }
+
+    public async Task<DevicePairingCodeResponse> CreateDevicePairingCodeAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(
+            x => x.Id == userId && x.IsActive,
+            cancellationToken)
+            ?? throw new InvalidOperationException("Active user session is required.");
+
+        var now = DateTimeOffset.UtcNow;
+        await db.DevicePairingChallenges
+            .Where(x => x.UserId == userId && x.UsedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.UsedAt, now),
+                cancellationToken);
+
+        var code = Convert.ToHexString(RandomNumberGenerator.GetBytes(8));
+        var expiresAt = now.AddMinutes(5);
+        db.DevicePairingChallenges.Add(new DevicePairingChallenge
+        {
+            CompanyId = user.CompanyId,
+            UserId = user.Id,
+            CodeHash = HashToken(code),
+            CreatedAt = now,
+            ExpiresAt = expiresAt
+        });
+
+        AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR_CODE", "SUCCESS",
+            user.Username, "A one-time device pairing code was issued.");
+        await db.SaveChangesAsync(cancellationToken);
+        return new DevicePairingCodeResponse(code, expiresAt);
     }
 
     public async Task<IReadOnlyList<DeviceResponse>> GetDevicesAsync(
