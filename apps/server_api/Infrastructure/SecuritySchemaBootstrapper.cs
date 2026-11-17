@@ -112,6 +112,7 @@ public static class SecuritySchemaBootstrapper
             "ProtectedSecret" TEXT NULL,
             "PendingProtectedSecret" TEXT NULL,
             "RecoveryCodeHashesJson" TEXT NOT NULL,
+            "LastAcceptedTimeStep" INTEGER NULL,
             "EnabledAt" TEXT NULL,
             "UpdatedAt" TEXT NOT NULL,
             FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
@@ -203,6 +204,7 @@ public static class SecuritySchemaBootstrapper
             "ProtectedSecret" character varying(2048) NULL,
             "PendingProtectedSecret" character varying(2048) NULL,
             "RecoveryCodeHashesJson" text NOT NULL,
+            "LastAcceptedTimeStep" bigint NULL,
             "EnabledAt" timestamp with time zone NULL,
             "UpdatedAt" timestamp with time zone NOT NULL,
             FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
