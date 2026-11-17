@@ -27,6 +27,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _totpCode = TextEditingController();
   ApiClient _apiClient = ApiClient();
 
   bool _obscurePassword = true;
@@ -37,6 +38,7 @@ class _LoginPageState extends State<LoginPage> {
   void dispose() {
     _username.dispose();
     _password.dispose();
+    _totpCode.dispose();
     super.dispose();
   }
 
@@ -128,6 +130,7 @@ class _LoginPageState extends State<LoginPage> {
         username: _username.text,
         password: _password.text,
         deviceName: Platform.isAndroid ? 'Android Device' : 'Windows PC',
+        totpCode: _totpCode.text.trim().isEmpty ? null : _totpCode.text.trim(),
       );
 
       if (!mounted) return;
@@ -400,6 +403,18 @@ class _LoginPageState extends State<LoginPage> {
                                             : Icons.visibility_off_outlined,
                                       ),
                                     ),
+                                  ),
+                                ),
+                                TextField(
+                                  controller: _totpCode,
+                                  enabled: !_busy,
+                                  keyboardType: TextInputType.number,
+                                  maxLength: 16,
+                                  textDirection: TextDirection.ltr,
+                                  decoration: const InputDecoration(
+                                    labelText: 'کد تأیید دومرحله‌ای (در صورت فعال بودن)',
+                                    prefixIcon: Icon(Icons.security_outlined),
+                                    counterText: '',
                                   ),
                                 ),
                                 if (_error != null) ...[
