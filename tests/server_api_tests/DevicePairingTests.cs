@@ -375,4 +375,86 @@ public sealed class DevicePairingTests
         Assert.Equal(2, await db.Devices.CountAsync());
         Assert.Equal(1, await db.Devices.CountAsync(x => x.TrustState == DeviceTrustState.Trusted));
     }
+    [Fact]
+    public async Task PairingCode_CannotBeUsedByAnotherCompanyUser()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var hasher = new PasswordHasher<AppUser>();
+        var firstCompany = new Company { Name = "Pairing Owner Company" };
+        var secondCompany = new Company { Name = "Other Company" };
+        AppUser CreateUser(Company company, string username)
+        {
+            var user = new AppUser
+            {
+                CompanyId = company.Id,
+                Username = username,
+                DisplayName = username,
+                PasswordHash = string.Empty,
+                Role = UserRole.Owner
+            };
+            user.PasswordHash = hasher.HashPassword(user, "Strong-Test-Password-2026");
+            return user;
+        }
+        var first = CreateUser(firstCompany, "pair-owner");
+        var second = CreateUser(secondCompany, "other-owner");
+        db.Companies.AddRange(firstCompany, secondCompany);
+        db.Users.AddRange(first, second);
+        await db.SaveChangesAsync();
+
+        var service = new AuthService(db, hasher);
+        var issued = await service.CreateDevicePairingCodeAsync(first.Id);
+        var crossCompany = await service.LoginAsync(new LoginRequest(
+            second.Username,
+            "Strong-Test-Password-2026",
+            "Foreign Device",
+            "windows",
+            PairingCode: issued.Code,
+            InstallationId: new string('c', 64)));
+
+        Assert.Null(crossCompany);
+        Assert.Empty(await db.Devices.ToListAsync());
+        var valid = await service.LoginAsync(new LoginRequest(
+            first.Username,
+            "Strong-Test-Password-2026",
+            "Owner Device",
+            "windows",
+            PairingCode: issued.Code,
+            InstallationId: new string('d', 64)));
+        Assert.NotNull(valid);
+        Assert.Single(await db.Devices.ToListAsync());
+    }
+
+    [Fact]
+    public async Task SameInstallationId_IsUniqueAcrossRepeatedLoginAndDisplayNameChanges()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Stable Identity Test", "stable-owner", "Owner", password));
+        var installationId = new string('e', 64);
+        var first = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Windows PC", "windows",
+            PairingCode: (await service.CreateDevicePairingCodeAsync(owner.Id)).Code,
+            InstallationId: installationId));
+        Assert.NotNull(first);
+        var second = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Windows PC - Renamed", "windows",
+            InstallationId: installationId));
+        Assert.NotNull(second);
+        var devices = await db.Devices.ToListAsync();
+        var device = Assert.Single(devices);
+        Assert.Equal(DeviceTrustState.Trusted, device.TrustState);
+        Assert.Equal("Windows PC - Renamed", device.DeviceName);
+        Assert.Equal(64, device.InstallationIdHash!.Length);
+        Assert.NotEqual(installationId, device.InstallationIdHash);
+    }
 }
