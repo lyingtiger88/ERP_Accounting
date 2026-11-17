@@ -48,7 +48,7 @@ public sealed class MfaService(
         if (acceptedStep is null)
             throw new ArgumentException("Authenticator code is invalid.");
         var recovery = Enumerable.Range(0, 10)
-            .Select(_ => Convert.ToHexString(RandomNumberGenerator.GetBytes(8)))
+            .Select(_ => Convert.ToHexString(RandomNumberGenerator.GetBytes(12)))
             .ToArray();
         row.ProtectedSecret = row.PendingProtectedSecret;
         row.PendingProtectedSecret = null;
