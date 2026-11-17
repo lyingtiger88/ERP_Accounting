@@ -283,13 +283,13 @@ jobs:
           if (-not (Test-Path $env:BDFR_PFX_PATH)) { throw "Prepared PFX file is missing." }
           $sdk = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $sdk) { throw "Windows SDK SignTool not found." }
+          # Sign payloads first, then rebuild the installer with the signed payload.
           $files = @(
             Get-ChildItem "apps/client_flutter/build/windows/x64/runner/Release" -Recurse -File |
               Where-Object { $_.Extension -in ".exe", ".dll" }
-            Get-Item "artifacts/Zarr-Setup-x64.exe"
           )
           if ($files.Count -lt 2) { throw "Expected Windows app binaries and installer." }
-          foreach ($file in $files) {
+          function Sign-ZarrFile($file) {
             Write-Host "Signing $($file.Name)"
             & $sdk.FullName sign /f "$env:BDFR_PFX_PATH" /p "$env:PFX_PASSWORD" /fd SHA256 $file.FullName
             if ($LASTEXITCODE -ne 0) { throw "SignTool signing failed: $($file.Name)" }
@@ -308,6 +308,12 @@ jobs:
               Write-Host "Authenticode signature and trust chain are valid for $($file.Name)."
             }
           }
+          foreach ($file in $files) { Sign-ZarrFile $file }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMySourceDir="$env:GITHUB_WORKSPACE\apps\client_flutter\build\windows\x64\runner\Release" /DMyOutputDir="$env:GITHUB_WORKSPACE\artifacts" /DMyAppVersion="0.5.$env:GITHUB_RUN_NUMBER" installer\Zarr.iss
+          if ($LASTEXITCODE -ne 0) { throw "Signed payload installer build failed." }
+          $installer = Get-Item "artifacts/Zarr-Setup-x64.exe"
+          Sign-ZarrFile $installer
+          $files += $installer
           $files | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 } |
             ForEach-Object { "$($_.Hash) *$($_.Path)" } |
             Set-Content artifacts/signing/SHA256SUMS.txt
@@ -316,7 +322,7 @@ jobs:
       - name: Upload Windows update installer
         uses: actions/upload-artifact@v6
         with:
-          name: Zarr-Windows-Installer
+          name: ${{ github.event_name == 'pull_request' && 'Zarr-Windows-Installer-Unsigned-Validation' || 'Zarr-Windows-Installer-Signed' }}
           path: artifacts/Zarr-Setup-x64.exe
           if-no-files-found: error
           retention-days: 30
@@ -331,7 +337,7 @@ jobs:
       - name: Upload Windows beta artifact
         uses: actions/upload-artifact@v6
         with:
-          name: Zarr-Windows-Beta
+          name: ${{ github.event_name == 'pull_request' && 'Zarr-Windows-Unsigned-Validation' || 'Zarr-Windows-Release-Signed' }}
           path: apps/client_flutter/build/windows/x64/runner/Release/**
           if-no-files-found: error
           retention-days: 14
