@@ -12,7 +12,8 @@ public sealed record LoginRequest(
     string DeviceName,
     string Platform,
     string? TotpCode = null,
-    string? PairingCode = null);
+    string? PairingCode = null,
+    string? InstallationId = null);
 
 public sealed record LoginResponse(
     string AccessToken,
