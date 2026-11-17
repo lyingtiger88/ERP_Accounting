@@ -285,6 +285,55 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> getMfaStatus({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'GET',
+      '/api/me',
+      bearerToken: bearerToken,
+    );
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> beginMfaSetup({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/auth/mfa/setup',
+      bearerToken: bearerToken,
+      body: const <String, dynamic>{},
+    );
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<Map<String, dynamic>> enableMfa({
+    required String bearerToken,
+    required String code,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/auth/mfa/enable',
+      bearerToken: bearerToken,
+      body: {'code': code},
+    );
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<void> disableMfa({
+    required String bearerToken,
+    required String password,
+    required String code,
+  }) async {
+    await _request(
+      'POST',
+      '/api/auth/mfa/disable',
+      bearerToken: bearerToken,
+      body: {'password': password, 'code': code},
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getTrustedDevices({
     required String bearerToken,
   }) async {
