@@ -63,7 +63,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] TOTP 2FA enrollment and login verification (API + Windows/Android settings UI; automated security validation pending)
 - [x] One-time backup recovery codes (hashed at rest and consumed once)
 - [x] Trusted-device management UI/API + session revocation
-- [ ] Optional QR device pairing
+- [ ] Optional QR device pairing (one-time pairing-code backend and manual-code UI implemented; QR display/scanning pending)
 - [ ] Step-up authentication for sensitive operations
 - [x] Accounting audit log
 - [x] Security audit log
