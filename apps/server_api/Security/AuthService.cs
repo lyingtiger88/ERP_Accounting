@@ -10,7 +10,8 @@ namespace ERPAccounting.Api.Security;
 
 public sealed class AuthService(
     AppDbContext db,
-    PasswordHasher<AppUser> passwordHasher)
+    PasswordHasher<AppUser> passwordHasher,
+    MfaService mfaService)
 {
     private static readonly TimeSpan AccessLifetime =
         TimeSpan.FromMinutes(30);
@@ -107,6 +108,15 @@ public sealed class AuthService(
                 "DENIED",
                 user.Username,
                 "Password verification failed.");
+            await db.SaveChangesAsync(cancellationToken);
+            return null;
+        }
+
+        if (user.MfaEnabled &&
+            !await mfaService.VerifyLoginCodeAsync(user.Id, request.TotpCode, cancellationToken))
+        {
+            AddSecurityAudit(user.CompanyId, user.Id, "MFA_LOGIN", "DENIED",
+                user.Username, "Missing or invalid TOTP/recovery code.");
             await db.SaveChangesAsync(cancellationToken);
             return null;
         }
