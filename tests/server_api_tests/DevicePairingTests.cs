@@ -12,6 +12,47 @@ namespace ERPAccounting.Api.Tests;
 public sealed class DevicePairingTests
 {
     [Fact]
+    public async Task PairingCode_ExpiredChallenge_IsRejected()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var company = new Company { Name = "Pairing Expiry Test" };
+        var hasher = new PasswordHasher<AppUser>();
+        var user = new AppUser
+        {
+            CompanyId = company.Id,
+            Username = "expiry-owner",
+            DisplayName = "Expiry Owner",
+            PasswordHash = string.Empty,
+            Role = UserRole.Owner
+        };
+        user.PasswordHash = hasher.HashPassword(user, "Strong-Test-Password-2026");
+        db.Companies.Add(company);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = new AuthService(db, hasher);
+        var issued = await service.CreateDevicePairingCodeAsync(user.Id);
+        var challenge = await db.DevicePairingChallenges.SingleAsync();
+        challenge.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await db.SaveChangesAsync();
+
+        var result = await service.LoginAsync(new LoginRequest(
+            user.Username,
+            "Strong-Test-Password-2026",
+            "Expired Pairing Device",
+            "android",
+            PairingCode: issued.Code));
+
+        Assert.Null(result);
+        Assert.Empty(await db.Devices.ToListAsync());
+    }
+
+    [Fact]
     public async Task PairingCode_TrustsNewDevice_AndIsSingleUse()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
