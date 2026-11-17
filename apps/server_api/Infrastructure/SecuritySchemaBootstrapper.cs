@@ -105,6 +105,22 @@ public static class SecuritySchemaBootstrapper
         CREATE INDEX IF NOT EXISTS "IX_zarr_company_licenses_AuthUserId"
         ON zarr_company_licenses ("AuthUserId");
         """
+        """
+        CREATE TABLE IF NOT EXISTS user_mfa_credentials (
+            "Id" TEXT NOT NULL CONSTRAINT "PK_user_mfa_credentials" PRIMARY KEY,
+            "UserId" TEXT NOT NULL,
+            "ProtectedSecret" TEXT NULL,
+            "PendingProtectedSecret" TEXT NULL,
+            "RecoveryCodeHashesJson" TEXT NOT NULL,
+            "EnabledAt" TEXT NULL,
+            "UpdatedAt" TEXT NOT NULL,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_user_mfa_credentials_UserId"
+        ON user_mfa_credentials ("UserId");
+        """,
     ];
 
     private static readonly string[] PostgresCommands =
@@ -180,5 +196,21 @@ public static class SecuritySchemaBootstrapper
         CREATE INDEX IF NOT EXISTS "IX_zarr_company_licenses_AuthUserId"
         ON zarr_company_licenses ("AuthUserId");
         """
+        """
+        CREATE TABLE IF NOT EXISTS user_mfa_credentials (
+            "Id" uuid NOT NULL CONSTRAINT "PK_user_mfa_credentials" PRIMARY KEY,
+            "UserId" uuid NOT NULL,
+            "ProtectedSecret" character varying(2048) NULL,
+            "PendingProtectedSecret" character varying(2048) NULL,
+            "RecoveryCodeHashesJson" text NOT NULL,
+            "EnabledAt" timestamp with time zone NULL,
+            "UpdatedAt" timestamp with time zone NOT NULL,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_user_mfa_credentials_UserId"
+        ON user_mfa_credentials ("UserId");
+        """,
     ];
 }
