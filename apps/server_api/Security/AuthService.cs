@@ -146,10 +146,17 @@ public sealed class AuthService(
                 return null;
             }
 
+            var consumeAt = DateTimeOffset.UtcNow;
+            if (pairingChallenge.ExpiresAt <= consumeAt)
+            {
+                AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR", "DENIED",
+                    user.Username, "Pairing code expired before it could be consumed.");
+                await db.SaveChangesAsync(cancellationToken);
+                return null;
+            }
+
             var consumed = await db.DevicePairingChallenges
-                .Where(x => x.Id == pairingChallenge.Id &&
-                            x.UsedAt == null &&
-                            x.ExpiresAt == pairingChallenge.ExpiresAt)
+                .Where(x => x.Id == pairingChallenge.Id && x.UsedAt == null)
                 .ExecuteUpdateAsync(
                     setters => setters.SetProperty(x => x.UsedAt, now),
                     cancellationToken);
