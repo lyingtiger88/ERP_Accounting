@@ -265,4 +265,29 @@ public sealed class DevicePairingTests
         Assert.NotNull(await service.RefreshAsync(new RefreshSessionRequest(desktop.RefreshToken)));
         Assert.Equal(DeviceTrustState.Revoked, phone.TrustState);
     }
+    [Fact]
+    public async Task RefreshRotation_RejectsPreviouslyUsedRefreshTokenAndAccessToken()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Rotation Test", "rotation-owner", "Owner", password));
+        var first = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Desktop", "windows"));
+        Assert.NotNull(first);
+
+        var second = await service.RefreshAsync(new RefreshSessionRequest(first.RefreshToken));
+        Assert.NotNull(second);
+        Assert.NotEqual(first.RefreshToken, second.RefreshToken);
+        Assert.Null(await service.RefreshAsync(new RefreshSessionRequest(first.RefreshToken)));
+        Assert.Null(await service.ResolveAsync(first.AccessToken));
+        Assert.NotNull(await service.ResolveAsync(second.AccessToken));
+        Assert.NotNull(await service.RefreshAsync(new RefreshSessionRequest(second.RefreshToken)));
+    }
 }
