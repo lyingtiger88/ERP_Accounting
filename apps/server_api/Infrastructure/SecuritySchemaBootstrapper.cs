@@ -12,6 +12,20 @@ public static class SecuritySchemaBootstrapper
 
         if (provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
         {
+            var connection = db.Database.GetDbConnection();
+            var openedHere = connection.State != System.Data.ConnectionState.Open;
+            if (openedHere) await connection.OpenAsync(cancellationToken);
+            try
+            {
+                await using var query = connection.CreateCommand();
+                query.CommandText = "SELECT COUNT(*) FROM pragma_table_info('trusted_devices') WHERE name = 'InstallationIdHash'";
+                if (Convert.ToInt64(await query.ExecuteScalarAsync(cancellationToken)) == 0)
+                    await db.Database.ExecuteSqlRawAsync("ALTER TABLE trusted_devices ADD COLUMN InstallationIdHash TEXT NULL", cancellationToken);
+            }
+            finally
+            {
+                if (openedHere) await connection.CloseAsync();
+            }
             foreach (var command in SqliteCommands)
             {
                 await db.Database.ExecuteSqlRawAsync(
@@ -34,6 +48,7 @@ public static class SecuritySchemaBootstrapper
 
     private static readonly string[] SqliteCommands =
     [
+        "CREATE UNIQUE INDEX IF NOT EXISTS IX_trusted_devices_UserId_InstallationIdHash ON trusted_devices (UserId, InstallationIdHash);",
         """
         CREATE TABLE IF NOT EXISTS device_pairing_challenges (
             "Id" TEXT NOT NULL CONSTRAINT "PK_device_pairing_challenges" PRIMARY KEY,
@@ -149,6 +164,8 @@ public static class SecuritySchemaBootstrapper
 
     private static readonly string[] PostgresCommands =
     [
+        "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"InstallationIdHash\" character varying(64) NULL;",
+        "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_trusted_devices_UserId_InstallationIdHash\" ON trusted_devices (\"UserId\", \"InstallationIdHash\");",
         """
         CREATE TABLE IF NOT EXISTS device_pairing_challenges (
             "Id" uuid NOT NULL CONSTRAINT "PK_device_pairing_challenges" PRIMARY KEY,
