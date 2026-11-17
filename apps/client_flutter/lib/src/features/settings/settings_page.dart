@@ -774,8 +774,10 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final showDevices = !_isDemo;
+    final showMfa = !_isDemo;
     final tabs =
-        2 +
+        1 +
+        (showMfa ? 1 : 0) +
         (_canManageUsers ? 2 : 0) +
         (showDevices ? 1 : 0) +
         1;
@@ -797,10 +799,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icon(Icons.manage_accounts_outlined),
                       text: 'کاربران و نقش‌ها',
                     ),
-                  const Tab(
-                    icon: Icon(Icons.security_outlined),
-                    text: 'احراز هویت دومرحله‌ای',
-                  ),
+                  if (showMfa)
+                    const Tab(
+                      icon: Icon(Icons.security_outlined),
+                      text: 'احراز هویت دومرحله‌ای',
+                    ),
                   if (showDevices)
                     const Tab(
                       icon: Icon(Icons.devices_outlined),
@@ -825,7 +828,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: TabBarView(
                   children: [
                     if (_canManageUsers) _usersTab(),
-                    _mfaTab(),
+                    if (showMfa) _mfaTab(),
                     if (showDevices) _devicesTab(),
                     if (_canManageUsers) _auditTab(),
                     _backupTab(),
