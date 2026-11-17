@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -119,6 +120,50 @@ class _LoginPageState extends State<LoginPage> {
         content: Text('آدرس سرور ذخیره شد.'),
       ),
     );
+  }
+
+  Future<void> _scanPairingCode() async {
+    if (!Platform.isAndroid || _busy) return;
+
+    final scanned = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('اسکن کد اتصال زر'),
+        content: SizedBox(
+          width: 340,
+          height: 360,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: MobileScanner(
+              onDetect: (capture) {
+                if (capture.barcodes.isEmpty) return;
+                final value = capture.barcodes.first.rawValue?.trim() ?? '';
+                final normalized = value.toUpperCase();
+                final isPairingCode = normalized.length == 16 &&
+                    normalized.split('').every(
+                      (character) => '0123456789ABCDEF'.contains(character),
+                    );
+                if (isPairingCode) {
+                  Navigator.of(dialogContext).pop(normalized);
+                }
+              },
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('انصراف'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || scanned == null) return;
+    setState(() {
+      _pairingCode.text = scanned;
+      _error = null;
+    });
   }
 
   Future<void> _login() async {
@@ -428,10 +473,17 @@ class _LoginPageState extends State<LoginPage> {
                                   textCapitalization: TextCapitalization.characters,
                                   maxLength: 16,
                                   textDirection: TextDirection.ltr,
-                                  decoration: const InputDecoration(
+                                  decoration: InputDecoration(
                                     labelText: 'کد اتصال دستگاه جدید (اختیاری)',
-                                    helperText: 'این کد را از بخش دستگاه‌ها در دستگاه قبلی دریافت کنید.',
-                                    prefixIcon: Icon(Icons.devices_other_outlined),
+                                    helperText: 'کد را از دستگاه قبلی دریافت کنید یا QR را اسکن کنید.',
+                                    prefixIcon: const Icon(Icons.devices_other_outlined),
+                                    suffixIcon: Platform.isAndroid
+                                        ? IconButton(
+                                            tooltip: 'اسکن QR',
+                                            onPressed: _busy ? null : _scanPairingCode,
+                                            icon: const Icon(Icons.qr_code_scanner),
+                                          )
+                                        : null,
                                     counterText: '',
                                   ),
                                 ),
