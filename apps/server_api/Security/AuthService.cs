@@ -313,18 +313,18 @@ public sealed class AuthService(
                 x => x.Id == deviceId,
                 cancellationToken);
 
-            if (device is not null)
+            if (device is null ||
+                device.UserId != session.UserId ||
+                device.CompanyId != session.CompanyId ||
+                device.TrustState == DeviceTrustState.Revoked)
             {
-                if (device.TrustState == DeviceTrustState.Revoked)
-                {
-                    session.RevokedAt = now;
-                    session.RevokeReason = "DeviceRevoked";
-                    await db.SaveChangesAsync(cancellationToken);
-                    return null;
-                }
-
-                device.LastSeenAt = now;
+                session.RevokedAt = now;
+                session.RevokeReason = "DeviceRevokedOrInvalid";
+                await db.SaveChangesAsync(cancellationToken);
+                return null;
             }
+
+            device.LastSeenAt = now;
         }
 
         // Compare-and-swap prevents concurrent requests from rotating the same token.
