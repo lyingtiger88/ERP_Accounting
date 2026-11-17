@@ -26,6 +26,13 @@ MFA can be optional for normal users and mandatory for privileged roles such as 
 - MFA verification locks for 10 minutes after five consecutive invalid codes; lock state is persisted in the database.
 - MFA setup, enable and disable endpoints are rate-limited to five requests per five minutes per source IP as an additional abuse-control layer.
 
+## Implemented one-time device pairing code
+- An authenticated session can issue a random, one-time pairing code for a new device.
+- The code expires after five minutes, is stored only as a SHA-256 hash, is bound to the issuing user and company, and is invalidated when a replacement is issued.
+- The new device must still authenticate with the account password and, when enabled, MFA; the pairing code only upgrades the new device from Pending to Trusted.
+- A code is consumed atomically and cannot be reused. Issuance and successful/failed pairing are written to the security audit log.
+- This is the secure manual-code foundation. QR rendering/scanning and device approval UX remain follow-up work; the app must not describe this stage as completed QR scanning.
+
 ## QR pairing
 QR pairing is optional and is not a replacement for MFA.
 
