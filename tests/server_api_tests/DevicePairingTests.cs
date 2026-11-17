@@ -457,4 +457,45 @@ public sealed class DevicePairingTests
         Assert.Equal(64, device.InstallationIdHash!.Length);
         Assert.NotEqual(installationId, device.InstallationIdHash);
     }
+    [Fact]
+    public async Task UserCannotRevokeAnotherUsersDevice()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var hasher = new PasswordHasher<AppUser>();
+        var company = new Company { Name = "Shared Company" };
+        AppUser CreateUser(string username)
+        {
+            var user = new AppUser
+            {
+                CompanyId = company.Id,
+                Username = username,
+                DisplayName = username,
+                PasswordHash = string.Empty,
+                Role = UserRole.Owner
+            };
+            user.PasswordHash = hasher.HashPassword(user, "Strong-Test-Password-2026");
+            return user;
+        }
+        var owner = CreateUser("device-owner");
+        var colleague = CreateUser("device-colleague");
+        db.Companies.Add(company);
+        db.Users.AddRange(owner, colleague);
+        await db.SaveChangesAsync();
+        var service = new AuthService(db, hasher);
+        var login = await service.LoginAsync(new LoginRequest(
+            owner.Username, "Strong-Test-Password-2026", "Owner PC", "windows",
+            PairingCode: (await service.CreateDevicePairingCodeAsync(owner.Id)).Code,
+            InstallationId: new string('f', 64)));
+        Assert.NotNull(login);
+        var device = await db.Devices.SingleAsync();
+
+        Assert.False(await service.RevokeDeviceAsync(colleague.Id, device.Id));
+        Assert.Equal(DeviceTrustState.Trusted, device.TrustState);
+        Assert.True(await service.RevokeDeviceAsync(owner.Id, device.Id));
+        Assert.Equal(DeviceTrustState.Revoked, device.TrustState);
+    }
 }
