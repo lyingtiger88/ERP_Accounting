@@ -63,9 +63,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         $"Unsupported Database:Provider '{databaseProvider}'. Use Sqlite or Postgres.");
 });
 
+var dataProtectionPath = Path.Combine(
+    builder.Environment.ContentRootPath, "data-protection-keys");
+Directory.CreateDirectory(dataProtectionPath);
 builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(
-        builder.Environment.ContentRootPath, "data-protection-keys")))
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
     .SetApplicationName("Zarr");
 builder.Services.AddSingleton<PasswordHasher<AppUser>>();
 builder.Services.AddScoped<MfaService>();
