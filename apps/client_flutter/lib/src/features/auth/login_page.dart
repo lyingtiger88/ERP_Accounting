@@ -204,12 +204,12 @@ class _LoginPageState extends State<LoginPage> {
           builder: (dialogContext) => AlertDialog(
             title: const Text('تغییر آدرس سرور؟'),
             content: Text(
-              'کد QR درخواست اتصال به این سرور را دارد:\\n\\n' +
+              'کد QR درخواست اتصال به این سرور را دارد:\n\n' +
                   normalizedServer +
                   (serverUri.scheme == 'http'
-                      ? '\\n\\nهشدار: ارتباط HTTP رمزنگاری نشده است.'
+                      ? '\n\nهشدار: ارتباط HTTP رمزنگاری نشده است.'
                       : '') +
-                  '\\n\\nفقط در صورتی ادامه دهید که این آدرس متعلق به سازمان شماست.',
+                  '\n\nفقط در صورتی ادامه دهید که این آدرس متعلق به سازمان شماست.',
               textDirection: TextDirection.ltr,
             ),
             actions: [
