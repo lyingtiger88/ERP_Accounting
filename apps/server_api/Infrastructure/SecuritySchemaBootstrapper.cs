@@ -35,6 +35,27 @@ public static class SecuritySchemaBootstrapper
     private static readonly string[] SqliteCommands =
     [
         """
+        CREATE TABLE IF NOT EXISTS device_pairing_challenges (
+            "Id" TEXT NOT NULL CONSTRAINT "PK_device_pairing_challenges" PRIMARY KEY,
+            "CompanyId" TEXT NOT NULL,
+            "UserId" TEXT NOT NULL,
+            "CodeHash" TEXT NOT NULL,
+            "CreatedAt" TEXT NOT NULL,
+            "ExpiresAt" TEXT NOT NULL,
+            "UsedAt" TEXT NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_device_pairing_challenges_CodeHash"
+        ON device_pairing_challenges ("CodeHash");
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_device_pairing_challenges_UserId_ExpiresAt_UsedAt"
+        ON device_pairing_challenges ("UserId", "ExpiresAt", "UsedAt");
+        """,
+        """
         CREATE TABLE IF NOT EXISTS auth_sessions (
             "Id" TEXT NOT NULL CONSTRAINT "PK_auth_sessions" PRIMARY KEY,
             "CompanyId" TEXT NOT NULL,
@@ -128,6 +149,27 @@ public static class SecuritySchemaBootstrapper
 
     private static readonly string[] PostgresCommands =
     [
+        """
+        CREATE TABLE IF NOT EXISTS device_pairing_challenges (
+            "Id" uuid NOT NULL CONSTRAINT "PK_device_pairing_challenges" PRIMARY KEY,
+            "CompanyId" uuid NOT NULL,
+            "UserId" uuid NOT NULL,
+            "CodeHash" character varying(64) NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "ExpiresAt" timestamp with time zone NOT NULL,
+            "UsedAt" timestamp with time zone NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_device_pairing_challenges_CodeHash"
+        ON device_pairing_challenges ("CodeHash");
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_device_pairing_challenges_UserId_ExpiresAt_UsedAt"
+        ON device_pairing_challenges ("UserId", "ExpiresAt", "UsedAt");
+        """,
         """
         CREATE TABLE IF NOT EXISTS auth_sessions (
             "Id" uuid NOT NULL CONSTRAINT "PK_auth_sessions" PRIMARY KEY,
