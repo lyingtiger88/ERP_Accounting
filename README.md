@@ -115,6 +115,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - TOTP accepts the current 30-second counter with a ±1 step clock-skew window and tracks the last accepted counter to reject replay.
 - Ten random 96-bit recovery codes are generated once during enrollment; only SHA-256 hashes are stored and each code is consumed on use.
 - MFA enrollment, confirmation, disablement and recovery are audited.
+- MFA verification locks for 10 minutes after five consecutive invalid codes; setup/enable/disable endpoints are rate-limited to five requests per five minutes per source IP.
 - The authenticator setup key is shown only during enrollment. The user must store the recovery codes safely when shown.
 
 ### Phase 2 — Synchronization Engine
