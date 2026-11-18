@@ -49,6 +49,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _loadingUsers = false;
   bool _loadingDevices = false;
   bool _loadingSessions = false;
+  String? _sessionLoadError;
   String _timeZoneId = 'Asia/Tehran';
   bool _timeZoneReady = false;
   bool _loadingAudit = false;
@@ -392,7 +393,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _loadSessions() async {
     if (_isDemo) return;
-    if (mounted) setState(() => _loadingSessions = true);
+    if (mounted) setState(() { _loadingSessions = true; _sessionLoadError = null; });
     try {
       final sessions = await _api.getActiveSessions(
         bearerToken: widget.accessToken,
@@ -400,7 +401,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       setState(() => _sessions = sessions);
     } on ApiException catch (error) {
-      _message(error.message);
+      if (mounted) setState(() => _sessionLoadError = error.message);
     } finally {
       if (mounted) setState(() => _loadingSessions = false);
     }
@@ -481,7 +482,7 @@ class _SettingsPageState extends State<SettingsPage> {
         deviceId: device['id'].toString(),
       );
       _message('دسترسی دستگاه و Sessionهای آن باطل شد.');
-      await _loadDevices();
+      await Future.wait([_loadDevices(), _loadSessions()]);
     } on ApiException catch (error) {
       _message(error.message);
     } finally {
@@ -496,7 +497,7 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('حذف کامل دستگاه'),
         content: Text(
-          'دستگاه «$name» از فهرست این حساب حذف می‌شود. نشست‌های مرتبط باطل و از اتصال به این دستگاه جدا می‌شوند؛ سوابق امنیتی حفظ خواهند شد. برای استفاده مجدد، دستگاه باید دوباره جفت‌سازی شود. ادامه می‌دهید؟',
+          'دستگاه «$name» از فهرست این حساب حذف می‌شود. نشست‌های مرتبط باطل و از اتصال به این دستگاه جدا می‌شوند؛ سوابق امنیتی حفظ خواهند شد. برای استفاده مجدد، دستگاه باید دوباره ثبت شود. ادامه می‌دهید؟',
         ),
         actions: [
           TextButton(
@@ -1415,8 +1416,10 @@ class _SettingsPageState extends State<SettingsPage> {
         Expanded(
           child: _loadingSessions
               ? const Center(child: CircularProgressIndicator())
-              : _sessions.isEmpty
-                  ? const Center(child: Text('نشست فعالی وجود ندارد.'))
+              : _sessionLoadError != null
+                  ? Center(child: Text('خطا در دریافت نشست‌ها: $_sessionLoadError'))
+                  : _sessions.isEmpty
+                  ? const Center(child: Text('سرور هیچ نشست فعالی گزارش نکرد؛ اتصال را بازخوانی کنید.'))
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
                       itemCount: _sessions.length,
@@ -1436,6 +1439,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                     const Icon(Icons.devices_outlined),
                                     const SizedBox(width: 8),
                                     Expanded(child: Text(device, style: Theme.of(context).textTheme.titleMedium)),
+                                    if (session['isCurrent'] == true)
+                                      const Chip(label: Text('نشست جاری')),
                                   ],
                                 ),
                                 const Divider(height: 22),
