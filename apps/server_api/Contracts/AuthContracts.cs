@@ -55,4 +55,5 @@ public sealed record SessionResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset LastRefreshedAt,
     DateTimeOffset AccessExpiresAt,
-    DateTimeOffset RefreshExpiresAt);
+    DateTimeOffset RefreshExpiresAt,
+    bool IsCurrent = false);
