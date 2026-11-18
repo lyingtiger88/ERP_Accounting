@@ -405,6 +405,23 @@ auth.MapGet("/devices", async (
             cancellationToken));
 }).RequireRateLimiting("auth");
 
+auth.MapDelete("/devices/{deviceId:guid}", async (
+    HttpRequest request,
+    Guid deviceId,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+
+    var deleted = await authService.DeleteDeviceAsync(
+        user.Id, deviceId, cancellationToken);
+
+    return deleted
+        ? Results.Ok(new { deleted = true })
+        : Results.NotFound(new { error = "Device was not found." });
+}).RequireRateLimiting("auth");
+
 auth.MapPost("/devices/{deviceId:guid}/revoke", async (
     HttpRequest request,
     Guid deviceId,
