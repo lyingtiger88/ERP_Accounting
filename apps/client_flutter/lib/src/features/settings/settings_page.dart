@@ -413,8 +413,8 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context) => AlertDialog(
         title: const Text('حذف کامل نشست‌ها'),
         content: const Text(
-          'تمام نشست‌های فعال این حساب، روی همه دستگاه‌ها، باطل می‌شوند. '
-          'این عملیات شامل همین دستگاه نیز می‌شود و پس از آن باید دوباره وارد حساب شوید. ادامه می‌دهید؟',
+          'تمام نشست‌های دیگر این حساب، از جمله گوشی‌های جفت‌شده با QR، باطل می‌شوند. '
+          'نشست همین دستگاهی که اکنون با آن کار می‌کنید حفظ خواهد شد. ادامه می‌دهید؟',
         ),
         actions: [
           TextButton(
@@ -423,7 +423,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('حذف همه نشست‌ها'),
+            child: const Text('خروج از سایر دستگاه‌ها'),
           ),
         ],
       ),
@@ -432,15 +432,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
     setState(() => _busy = true);
     try {
-      await _api.revokeAllSessions(bearerToken: widget.accessToken);
-      await SecureSessionStore.instance.clear();
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => LoginPage(localDatabase: widget.localDatabase),
-        ),
-        (_) => false,
+      final revokedCount = await _api.revokeAllSessions(
+        bearerToken: widget.accessToken,
       );
+      _message('$revokedCount نشست دیگر باطل شد؛ نشست فعلی حفظ شده است.');
+      await Future.wait([_loadSessions(), _loadDevices()]);
     } on ApiException catch (error) {
       _message(error.message);
     } finally {
