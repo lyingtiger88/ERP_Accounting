@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -255,6 +256,29 @@ class _LoginPageState extends State<LoginPage> {
     });
   }
 
+  Future<String> _currentDeviceName() async {
+    final plugin = DeviceInfoPlugin();
+    try {
+      if (Platform.isAndroid) {
+        final info = await plugin.androidInfo;
+        final manufacturer = info.manufacturer.trim();
+        final model = info.model.trim();
+        final label = [manufacturer, model]
+            .where((part) => part.isNotEmpty)
+            .join(' ');
+        return label.isEmpty ? 'Android device' : label;
+      }
+      if (Platform.isWindows) {
+        final info = await plugin.windowsInfo;
+        final name = info.computerName.trim();
+        return name.isEmpty ? 'Windows PC' : name;
+      }
+      return '${Platform.operatingSystem} device';
+    } catch (_) {
+      return Platform.isAndroid ? 'Android device' : 'Windows PC';
+    }
+  }
+
   Future<void> _login() async {
     setState(() {
       _busy = true;
@@ -265,7 +289,7 @@ class _LoginPageState extends State<LoginPage> {
       final result = await _apiClient.login(
         username: _username.text,
         password: _password.text,
-        deviceName: Platform.isAndroid ? 'Android Device' : 'Windows PC',
+        deviceName: await _currentDeviceName(),
         totpCode: _totpCode.text.trim().isEmpty ? null : _totpCode.text.trim(),
         pairingCode: _pairingCode.text.trim().isEmpty ? null : _pairingCode.text.trim(),
       );
