@@ -435,7 +435,9 @@ class _SettingsPageState extends State<SettingsPage> {
       await SecureSessionStore.instance.clear();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginPage()),
+        MaterialPageRoute(
+          builder: (_) => LoginPage(localDatabase: widget.localDatabase),
+        ),
         (_) => false,
       );
     } on ApiException catch (error) {
@@ -1484,7 +1486,6 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _backupTab() {
     return ListView(
       padding: const EdgeInsets.all(20),
-      children: [sessionSection,
       children: [
         Card(
           child: Padding(
