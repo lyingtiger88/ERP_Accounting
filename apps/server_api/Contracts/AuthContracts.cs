@@ -47,3 +47,12 @@ public sealed record MfaCodeRequest(string Code);
 public sealed record MfaDisableRequest(string Password, string Code);
 public sealed record MfaSetupResponse(string Secret, string OtpauthUri);
 public sealed record MfaEnableResponse(bool Enabled, IReadOnlyList<string> RecoveryCodes);
+
+public sealed record SessionResponse(
+    Guid Id,
+    string? DeviceName,
+    string? Platform,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastRefreshedAt,
+    DateTimeOffset AccessExpiresAt,
+    DateTimeOffset RefreshExpiresAt);
