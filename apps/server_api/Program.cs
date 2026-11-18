@@ -382,11 +382,23 @@ auth.MapDelete("/sessions", async (
     var user = await CurrentUserAsync(request, authService, cancellationToken);
     if (user is null) return Results.Unauthorized();
 
+    var bearerToken = request.Headers.Authorization.ToString();
+    var currentAccessToken = bearerToken.StartsWith(
+        "Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? bearerToken["Bearer ".Length..].Trim()
+        : null;
+
     var revokedCount = await authService.RevokeAllSessionsAsync(
         user.Id,
+        currentAccessToken,
         cancellationToken);
 
-    return Results.Ok(new { revoked = true, revokedCount });
+    return Results.Ok(new
+    {
+        revoked = true,
+        revokedCount,
+        currentSessionPreserved = currentAccessToken is not null
+    });
 }).RequireRateLimiting("auth");
 
 auth.MapGet("/devices", async (
