@@ -603,6 +603,50 @@ public sealed class AuthService(
             .ToArray();
     }
 
+    public async Task<bool> DeleteDeviceAsync(
+        Guid userId,
+        Guid deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await db.Devices.FirstOrDefaultAsync(
+            x => x.Id == deviceId && x.UserId == userId,
+            cancellationToken);
+        if (device is null) return false;
+
+        var sessions = await db.AuthSessions
+            .Where(x => x.UserId == userId && x.DeviceId == deviceId)
+            .ToArrayAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var session in sessions)
+        {
+            if (session.RevokedAt is null)
+            {
+                session.RevokedAt = now;
+                session.RevokeReason = "DeviceDeleted";
+            }
+            // Preserve session/audit history without retaining a FK to a
+            // device record that the owner explicitly removed.
+            session.DeviceId = null;
+        }
+
+        var user = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+
+        AddSecurityAudit(
+            device.CompanyId,
+            userId,
+            "DEVICE_DELETE",
+            "SUCCESS",
+            user?.Username,
+            "Device=" + device.DeviceName + "; Platform=" + device.Platform +
+            "; RelatedSessions=" + sessions.Length);
+
+        db.Devices.Remove(device);
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<bool> RevokeDeviceAsync(
         Guid userId,
         Guid deviceId,
