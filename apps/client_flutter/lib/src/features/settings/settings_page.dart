@@ -941,7 +941,7 @@ class _SettingsPageState extends State<SettingsPage> {
         (showMfa ? 1 : 0) +
         (_canManageUsers ? 2 : 0) +
         (showDevices ? 2 : 0) +
-        1;
+        2;
 
     return Directionality(
       textDirection: TextDirection.rtl,
