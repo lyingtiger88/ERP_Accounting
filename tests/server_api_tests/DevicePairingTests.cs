@@ -526,4 +526,36 @@ public sealed class DevicePairingTests
         Assert.Single(devices.Where(x => x.RequiresRePairing));
         Assert.Single(devices.Where(x => !x.RequiresRePairing));
     }
+    [Fact]
+    public async Task Sessions_ListCurrentAndRemoveDeletedDevice()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Session Test", "session-owner", "Owner", password));
+        var first = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Windows PC", "windows", InstallationId: new string('a', 64)));
+        var second = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Phone", "android", InstallationId: new string('b', 64)));
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        var sessions = await service.GetActiveSessionsAsync(owner.Id, currentAccessToken: second.AccessToken);
+        Assert.Equal(2, sessions.Count);
+        Assert.True(sessions[0].IsCurrent);
+        Assert.Equal("Phone", sessions[0].DeviceName);
+        Assert.False(sessions[1].IsCurrent);
+        var device = await db.Devices.SingleAsync(x => x.DeviceName == "Phone");
+        Assert.False(await service.DeleteDeviceAsync(Guid.NewGuid(), device.Id));
+        Assert.True(await service.DeleteDeviceAsync(owner.Id, device.Id));
+        Assert.Null(await service.ResolveAsync(second.AccessToken));
+        Assert.Null(await service.RefreshAsync(new RefreshSessionRequest(second.RefreshToken)));
+        Assert.NotNull(await service.ResolveAsync(first.AccessToken));
+        Assert.Single(await service.GetDevicesAsync(owner.Id));
+        Assert.Single(await service.GetActiveSessionsAsync(owner.Id));
+    }
 }
