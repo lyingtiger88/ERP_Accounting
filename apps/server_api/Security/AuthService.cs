@@ -517,6 +517,69 @@ public sealed class AuthService(
         return new DevicePairingCodeResponse(code, expiresAt);
     }
 
+    public async Task<IReadOnlyList<SessionResponse>> GetActiveSessionsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await RevokeExpiredSessionsAsync(now, cancellationToken);
+
+        return await db.AuthSessions
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.RevokedAt == null)
+            .OrderByDescending(x => x.LastRefreshedAt)
+            .Select(x => new SessionResponse(
+                x.Id,
+                x.DeviceId == null
+                    ? null
+                    : db.Devices
+                        .Where(d => d.Id == x.DeviceId.Value)
+                        .Select(d => d.DeviceName)
+                        .FirstOrDefault(),
+                x.DeviceId == null
+                    ? null
+                    : db.Devices
+                        .Where(d => d.Id == x.DeviceId.Value)
+                        .Select(d => d.Platform)
+                        .FirstOrDefault(),
+                x.CreatedAt,
+                x.LastRefreshedAt,
+                x.AccessExpiresAt,
+                x.RefreshExpiresAt))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<int> RevokeAllSessionsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var sessions = await db.AuthSessions
+            .Where(x => x.UserId == userId && x.RevokedAt == null)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var session in sessions)
+        {
+            session.RevokedAt = now;
+            session.RevokeReason = "RevokeAllSessions";
+        }
+
+        if (sessions.Length == 0)
+        {
+            return 0;
+        }
+
+        AddSecurityAudit(
+            sessions[0].CompanyId,
+            userId,
+            "REVOKE_ALL_SESSIONS",
+            "SUCCESS",
+            null,
+            $"All active sessions revoked. Count={sessions.Length}");
+        await db.SaveChangesAsync(cancellationToken);
+        return sessions.Length;
+    }
+
     public async Task<IReadOnlyList<DeviceResponse>> GetDevicesAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
