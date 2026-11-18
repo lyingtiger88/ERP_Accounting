@@ -588,4 +588,43 @@ public sealed class DevicePairingTests
         Assert.Equal("android", session.Platform);
         Assert.True(session.IsCurrent);
     }
+    [Fact]
+    public async Task RevokeAllOtherSessions_PreservesCallingSessionAndRevokesQrPairedSession()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Revoke Other Sessions Test", "revoke-other-owner", "Owner", password));
+
+        var desktop = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Windows PC", "windows",
+            InstallationId: new string('d', 64)));
+        var phone = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "QR Paired Phone", "android",
+            InstallationId: new string('e', 64)));
+        Assert.NotNull(desktop);
+        Assert.NotNull(phone);
+
+        var revoked = await service.RevokeAllSessionsAsync(
+            owner.Id, desktop.AccessToken);
+
+        Assert.Equal(1, revoked);
+        Assert.NotNull(await service.ResolveAsync(desktop.AccessToken));
+        Assert.Null(await service.ResolveAsync(phone.AccessToken));
+        Assert.NotNull(await service.RefreshAsync(
+            new RefreshSessionRequest(desktop.RefreshToken)));
+        Assert.Null(await service.RefreshAsync(
+            new RefreshSessionRequest(phone.RefreshToken)));
+
+        var active = await service.GetActiveSessionsAsync(
+            owner.Id, currentAccessToken: desktop.AccessToken);
+        var current = Assert.Single(active);
+        Assert.True(current.IsCurrent);
+        Assert.Equal("Windows PC", current.DeviceName);
+    }
 }
