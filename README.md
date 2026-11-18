@@ -364,3 +364,10 @@ See:
 - `docs/OFFLINE_FIRST.md`
 - `docs/MIGRATIONS.md`
 - `docs/ROADMAP.md`
+
+
+### Current cross-platform validation target
+
+- Shared client version: `0.5.0-beta.2+6` for Windows and Android.
+- The latest pull-request CI validates Flutter analysis, API tests, Android release APK compilation, and Windows release/installer compilation.
+- This validation build is not a production-signed distribution release.
