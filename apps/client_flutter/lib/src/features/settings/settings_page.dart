@@ -1180,29 +1180,57 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ),
+        Card(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('نشست‌های فعال', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text('تعداد نشست‌های فعال: ${_sessions.length}'),
+                const SizedBox(height: 10),
+                if (_loadingSessions)
+                  const LinearProgressIndicator()
+                else if (_sessions.isEmpty)
+                  const Text('نشست فعالی وجود ندارد.')
+                else
+                  for (final session in _sessions.take(10))
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.login_outlined),
+                      title: Text(session['deviceName']?.toString() ?? 'دستگاه ناشناس'),
+                      subtitle: Text(session['platform']?.toString() ?? 'نامشخص'),
+                    ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: _busy || _sessions.isEmpty ? null : _revokeAllSessions,
+                  icon: const Icon(Icons.delete_sweep_outlined),
+                  label: const Text('حذف کامل همه نشست‌ها'),
+                ),
+              ],
+            ),
+          ),
+        ),
         Expanded(
           child: _loadingDevices
               ? const Center(child: CircularProgressIndicator())
               : _devices.isEmpty
-                  ? const Center(
-                      child: Text('دستگاه ثبت‌شده‌ای وجود ندارد.'),
-                    )
+                  ? const Center(child: Text('دستگاه ثبت‌شده‌ای وجود ندارد.'))
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                       itemCount: _devices.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final device = _devices[index];
-                        final state =
-                            device['trustState']?.toString() ?? 'Pending';
+                        final state = device['trustState']?.toString() ?? 'Pending';
                         final revoked = state == 'Revoked';
-
                         return Card(
                           child: ListTile(
                             leading: CircleAvatar(
                               child: Icon(
-                                device['platform']?.toString().toLowerCase() ==
-                                        'android'
+                                device['platform']?.toString().toLowerCase() == 'android'
                                     ? Icons.phone_android_outlined
                                     : Icons.computer_outlined,
                               ),
@@ -1218,18 +1246,13 @@ class _SettingsPageState extends State<SettingsPage> {
                                           : 'در انتظار اعتماد') +
                                   (device['lastSeenAt'] == null
                                       ? ''
-                                      : ' • آخرین فعالیت: ' +
-                                          device['lastSeenAt'].toString()),
+                                      : ' • آخرین فعالیت: ' + device['lastSeenAt'].toString()),
                             ),
                             trailing: revoked
                                 ? const Chip(label: Text('لغو شده'))
                                 : OutlinedButton.icon(
-                                    onPressed: _busy
-                                        ? null
-                                        : () => _revokeDevice(device),
-                                    icon: const Icon(
-                                      Icons.phonelink_erase_outlined,
-                                    ),
+                                    onPressed: _busy ? null : () => _revokeDevice(device),
+                                    icon: const Icon(Icons.phonelink_erase_outlined),
                                     label: const Text('لغو دسترسی'),
                                   ),
                           ),
@@ -1240,39 +1263,6 @@ class _SettingsPageState extends State<SettingsPage> {
       ],
     );
   }
-
-    final sessionSection = Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('نشست‌های فعال', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text('تعداد نشست‌های فعال: ${_sessions.length}'),
-            const SizedBox(height: 10),
-            if (_loadingSessions)
-              const LinearProgressIndicator()
-            else if (_sessions.isEmpty)
-              const Text('نشست فعالی وجود ندارد.')
-            else
-              for (final session in _sessions.take(10))
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.login_outlined),
-                  title: Text(session['deviceName']?.toString() ?? 'دستگاه ناشناس'),
-                  subtitle: Text(session['platform']?.toString() ?? 'نامشخص'),
-                ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: _busy || _sessions.isEmpty ? null : _revokeAllSessions,
-              icon: const Icon(Icons.delete_sweep_outlined),
-              label: const Text('حذف کامل همه نشست‌ها'),
-            ),
-          ],
-        ),
-      ),
-    );
 
   Widget _auditTab() {
     if (_loadingAudit) {
