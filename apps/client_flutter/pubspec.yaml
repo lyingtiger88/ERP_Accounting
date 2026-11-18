@@ -19,6 +19,7 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.5.0
   timezone: ^0.10.1
+  device_info_plus: ^12.3.0
 
 dev_dependencies:
   flutter_test:
