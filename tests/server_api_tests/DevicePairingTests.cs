@@ -616,13 +616,14 @@ public sealed class DevicePairingTests
         Assert.Equal(1, revoked);
         Assert.NotNull(await service.ResolveAsync(desktop.AccessToken));
         Assert.Null(await service.ResolveAsync(phone.AccessToken));
-        Assert.NotNull(await service.RefreshAsync(
-            new RefreshSessionRequest(desktop.RefreshToken)));
+        var refreshedDesktop = await service.RefreshAsync(
+            new RefreshSessionRequest(desktop.RefreshToken));
+        Assert.NotNull(refreshedDesktop);
         Assert.Null(await service.RefreshAsync(
             new RefreshSessionRequest(phone.RefreshToken)));
 
         var active = await service.GetActiveSessionsAsync(
-            owner.Id, currentAccessToken: desktop.AccessToken);
+            owner.Id, currentAccessToken: refreshedDesktop.AccessToken);
         var current = Assert.Single(active);
         Assert.True(current.IsCurrent);
         Assert.Equal("Windows PC", current.DeviceName);
