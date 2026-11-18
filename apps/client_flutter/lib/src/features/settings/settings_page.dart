@@ -46,12 +46,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _loadingUsers = false;
   bool _loadingDevices = false;
+  bool _loadingSessions = false;
   bool _loadingAudit = false;
   bool _loadingMfa = false;
   bool _mfaEnabled = false;
   bool _busy = false;
   List<Map<String, dynamic>> _users = const [];
   List<Map<String, dynamic>> _devices = const [];
+  List<Map<String, dynamic>> _sessions = const [];
   List<Map<String, dynamic>> _audit = const [];
   List<String> _backups = const [];
 
@@ -71,6 +73,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await Future.wait([
       _loadUsers(),
       _loadDevices(),
+      _loadSessions(),
       _loadMfa(),
       _loadAudit(),
       _loadBackups(),
@@ -283,6 +286,61 @@ class _SettingsPageState extends State<SettingsPage> {
       if (mounted) {
         setState(() => _loadingDevices = false);
       }
+    }
+  }
+
+  Future<void> _loadSessions() async {
+    if (_isDemo) return;
+    if (mounted) setState(() => _loadingSessions = true);
+    try {
+      final sessions = await _api.getActiveSessions(
+        bearerToken: widget.accessToken,
+      );
+      if (!mounted) return;
+      setState(() => _sessions = sessions);
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _loadingSessions = false);
+    }
+  }
+
+  Future<void> _revokeAllSessions() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف کامل نشست‌ها'),
+        content: const Text(
+          'تمام نشست‌های فعال این حساب، روی همه دستگاه‌ها، باطل می‌شوند. '
+          'این عملیات شامل همین دستگاه نیز می‌شود و پس از آن باید دوباره وارد حساب شوید. ادامه می‌دهید؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('حذف همه نشست‌ها'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await _api.revokeAllSessions(bearerToken: widget.accessToken);
+      await SecureSessionStore.instance.clear();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -1183,6 +1241,39 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+    final sessionSection = Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('نشست‌های فعال', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text('تعداد نشست‌های فعال: ${_sessions.length}'),
+            const SizedBox(height: 10),
+            if (_loadingSessions)
+              const LinearProgressIndicator()
+            else if (_sessions.isEmpty)
+              const Text('نشست فعالی وجود ندارد.')
+            else
+              for (final session in _sessions.take(10))
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.login_outlined),
+                  title: Text(session['deviceName']?.toString() ?? 'دستگاه ناشناس'),
+                  subtitle: Text(session['platform']?.toString() ?? 'نامشخص'),
+                ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: _busy || _sessions.isEmpty ? null : _revokeAllSessions,
+              icon: const Icon(Icons.delete_sweep_outlined),
+              label: const Text('حذف کامل همه نشست‌ها'),
+            ),
+          ],
+        ),
+      ),
+    );
+
   Widget _auditTab() {
     if (_loadingAudit) {
       return const Center(child: CircularProgressIndicator());
@@ -1252,6 +1343,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _backupTab() {
     return ListView(
       padding: const EdgeInsets.all(20),
+      children: [sessionSection,
       children: [
         Card(
           child: Padding(
