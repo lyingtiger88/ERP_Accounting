@@ -558,4 +558,34 @@ public sealed class DevicePairingTests
         Assert.Single(await service.GetDevicesAsync(owner.Id));
         Assert.Single(await service.GetActiveSessionsAsync(owner.Id));
     }
+    [Fact]
+    public async Task PasswordLoginWithoutQr_StillRegistersNamedPendingDeviceAndSession()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "No QR Device Test", "noqr-owner", "Owner", password));
+
+        var login = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Google Pixel 9", "android",
+            InstallationId: new string('c', 64)));
+
+        Assert.NotNull(login);
+        var device = await db.Devices.SingleAsync(x => x.UserId == owner.Id);
+        Assert.Equal("Google Pixel 9", device.DeviceName);
+        Assert.Equal("android", device.Platform);
+        Assert.Equal(DeviceTrustState.Pending, device.TrustState);
+
+        var sessions = await service.GetActiveSessionsAsync(
+            owner.Id, currentAccessToken: login.AccessToken);
+        var session = Assert.Single(sessions);
+        Assert.Equal("Google Pixel 9", session.DeviceName);
+        Assert.Equal("android", session.Platform);
+        Assert.True(session.IsCurrent);
+    }
 }
