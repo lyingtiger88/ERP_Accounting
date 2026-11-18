@@ -551,33 +551,45 @@ public sealed class AuthService(
 
     public async Task<int> RevokeAllSessionsAsync(
         Guid userId,
+        string? currentAccessToken = null,
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var currentHash = string.IsNullOrWhiteSpace(currentAccessToken)
+            ? null
+            : HashToken(currentAccessToken);
+
         var sessions = await db.AuthSessions
             .Where(x => x.UserId == userId && x.RevokedAt == null)
             .ToArrayAsync(cancellationToken);
 
+        var revokedCount = 0;
         foreach (var session in sessions)
         {
+            // Keep the session used to authorize this request alive.
+            // Revoke every other session, including QR-paired devices.
+            if (currentHash is not null && session.AccessTokenHash == currentHash)
+                continue;
+
             session.RevokedAt = now;
-            session.RevokeReason = "RevokeAllSessions";
+            session.RevokeReason = "RevokeAllOtherSessions";
+            revokedCount++;
         }
 
-        if (sessions.Length == 0)
+        var companyId = sessions.FirstOrDefault()?.CompanyId;
+        if (revokedCount > 0 && companyId is Guid auditCompanyId)
         {
-            return 0;
+            AddSecurityAudit(
+                auditCompanyId,
+                userId,
+                "REVOKE_ALL_OTHER_SESSIONS",
+                "SUCCESS",
+                null,
+                $"Other active sessions revoked. Count={revokedCount}; current session preserved={currentHash is not null}");
+            await db.SaveChangesAsync(cancellationToken);
         }
 
-        AddSecurityAudit(
-            sessions[0].CompanyId,
-            userId,
-            "REVOKE_ALL_SESSIONS",
-            "SUCCESS",
-            null,
-            $"All active sessions revoked. Count={sessions.Length}");
-        await db.SaveChangesAsync(cancellationToken);
-        return sessions.Length;
+        return revokedCount;
     }
 
     public async Task<IReadOnlyList<DeviceResponse>> GetDevicesAsync(
