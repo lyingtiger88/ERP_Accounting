@@ -75,6 +75,13 @@ class SecureSessionStore {
     return id;
   }
 
+  static const _timeZoneId = 'erp.time_zone_id';
+
+  Future<String?> readTimeZoneId() => _storage.read(key: _timeZoneId);
+
+  Future<void> writeTimeZoneId(String timeZoneId) =>
+      _storage.write(key: _timeZoneId, value: timeZoneId);
+
   Future<void> write(SecureSession session) async {
     _memory = session;
     await Future.wait([
