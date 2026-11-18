@@ -370,7 +370,8 @@ auth.MapGet("/sessions", async (
     var user = await CurrentUserAsync(request, authService, cancellationToken);
     return user is null
         ? Results.Unauthorized()
-        : Results.Ok(await authService.GetActiveSessionsAsync(user.Id, cancellationToken));
+        : Results.Ok(await authService.GetActiveSessionsAsync(user.Id, cancellationToken,
+            request.Headers.Authorization.ToString()["Bearer ".Length..].Trim()));
 }).RequireRateLimiting("auth");
 
 auth.MapDelete("/sessions", async (
