@@ -362,6 +362,32 @@ auth.MapPost("/devices/pairing-code", async (
     }
 }).RequireRateLimiting("mfa");
 
+auth.MapGet("/sessions", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await authService.GetActiveSessionsAsync(user.Id, cancellationToken));
+}).RequireRateLimiting("auth");
+
+auth.MapDelete("/sessions", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+
+    var revokedCount = await authService.RevokeAllSessionsAsync(
+        user.Id,
+        cancellationToken);
+
+    return Results.Ok(new { revoked = true, revokedCount });
+}).RequireRateLimiting("auth");
+
 auth.MapGet("/devices", async (
     HttpRequest request,
     AuthService authService,
