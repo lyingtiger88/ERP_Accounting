@@ -376,6 +376,30 @@ class ApiClient {
     return Map<String, dynamic>.from(payload as Map);
   }
 
+  Future<List<Map<String, dynamic>>> getActiveSessions({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/auth/sessions',
+      bearerToken: bearerToken,
+    );
+    return (response as List<dynamic>)
+        .map((value) => Map<String, dynamic>.from(value as Map))
+        .toList(growable: false);
+  }
+
+  Future<int> revokeAllSessions({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'DELETE',
+      '/api/auth/sessions',
+      bearerToken: bearerToken,
+    );
+    return (response['revokedCount'] as num?)?.toInt() ?? 0;
+  }
+
   Future<List<Map<String, dynamic>>> getTrustedDevices({
     required String bearerToken,
   }) async {
