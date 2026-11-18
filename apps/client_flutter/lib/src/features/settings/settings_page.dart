@@ -489,6 +489,47 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _deleteDevice(Map<String, dynamic> device) async {
+    final name = device['deviceName']?.toString() ?? 'دستگاه ناشناس';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('حذف کامل دستگاه'),
+        content: Text(
+          'دستگاه «$name» از فهرست این حساب حذف می‌شود. نشست‌های مرتبط باطل و از اتصال به این دستگاه جدا می‌شوند؛ سوابق امنیتی حفظ خواهند شد. برای استفاده مجدد، دستگاه باید دوباره جفت‌سازی شود. ادامه می‌دهید؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('حذف کامل دستگاه'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await _api.deleteTrustedDevice(
+        bearerToken: widget.accessToken,
+        deviceId: device['id'].toString(),
+      );
+      _message('دستگاه حذف شد و نشست‌های مرتبط باطل شدند.');
+      await Future.wait([_loadDevices(), _loadSessions()]);
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _loadAudit() async {
     if (!_canManageUsers) return;
 
@@ -1311,13 +1352,36 @@ class _SettingsPageState extends State<SettingsPage> {
                               (device['lastSeenAt'] == null ? '' :
                                 ' • آخرین فعالیت: ' + _formatRegionalTime(device['lastSeenAt'])),
                             ),
-                            trailing: revoked
-                                ? const Chip(label: Text('لغو شده'))
-                                : OutlinedButton.icon(
-                                    onPressed: _busy ? null : () => _revokeDevice(device),
-                                    icon: const Icon(Icons.phonelink_erase_outlined),
-                                    label: const Text('لغو دسترسی'),
+                            trailing: PopupMenuButton<String>(
+                              enabled: !_busy,
+                              tooltip: 'عملیات دستگاه',
+                              onSelected: (action) {
+                                if (action == 'revoke' && !revoked) {
+                                  _revokeDevice(device);
+                                } else if (action == 'delete') {
+                                  _deleteDevice(device);
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                if (!revoked)
+                                  const PopupMenuItem(
+                                    value: 'revoke',
+                                    child: ListTile(
+                                      dense: true,
+                                      leading: Icon(Icons.phonelink_erase_outlined),
+                                      title: Text('لغو دسترسی'),
+                                    ),
                                   ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: ListTile(
+                                    dense: true,
+                                    leading: Icon(Icons.delete_outline),
+                                    title: Text('حذف کامل دستگاه'),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },
