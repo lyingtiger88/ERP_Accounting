@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 import '../../licensing/zarr_license_page.dart';
 import '../../core/app_version.dart';
 
@@ -47,6 +49,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _loadingUsers = false;
   bool _loadingDevices = false;
   bool _loadingSessions = false;
+  String _timeZoneId = 'Asia/Tehran';
+  bool _timeZoneReady = false;
   bool _loadingAudit = false;
   bool _loadingMfa = false;
   bool _mfaEnabled = false;
@@ -66,7 +70,104 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    tzdata.initializeTimeZones();
+    _loadTimeZone();
     _loadAll();
+  }
+
+  static const _timeZones = <String, String>{
+    'Asia/Tehran': 'تهران',
+    'Europe/Berlin': 'برلین',
+    'Europe/London': 'لندن',
+    'Europe/Paris': 'پاریس',
+    'Europe/Istanbul': 'استانبول',
+    'Asia/Dubai': 'دبی',
+    'Asia/Riyadh': 'ریاض',
+    'Asia/Kabul': 'کابل',
+    'Asia/Karachi': 'کراچی',
+    'Asia/Kolkata': 'کلکته',
+    'Asia/Tokyo': 'توکیو',
+    'Asia/Shanghai': 'شانگهای',
+    'Asia/Singapore': 'سنگاپور',
+    'America/New_York': 'نیویورک',
+    'America/Chicago': 'شیکاگو',
+    'America/Los_Angeles': 'لس‌آنجلس',
+    'Australia/Sydney': 'سیدنی',
+    'UTC': 'UTC',
+  };
+
+  Future<void> _loadTimeZone() async {
+    final saved = await SecureSessionStore.instance.readTimeZoneId();
+    if (!mounted) return;
+    setState(() {
+      if (saved != null && _timeZones.containsKey(saved)) {
+        _timeZoneId = saved;
+      }
+      _timeZoneReady = true;
+    });
+  }
+
+  Future<void> _saveTimeZone(String? value) async {
+    if (value == null || !_timeZones.containsKey(value)) return;
+    setState(() => _timeZoneId = value);
+    await SecureSessionStore.instance.writeTimeZoneId(value);
+    if (mounted) _message('منطقه زمانی ذخیره شد.');
+  }
+
+  String _formatRegionalTime(dynamic value) {
+    if (value == null) return 'ثبت نشده';
+    final parsed = DateTime.tryParse(value.toString());
+    if (parsed == null) return value.toString();
+    final local = tz.TZDateTime.from(parsed.toUtc(), tz.getLocation(_timeZoneId));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.year)}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+  }
+
+  Widget _locationTimeZoneTab() {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('منطقه زمانی مختصات مکانی', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                const Text(
+                  'زمان رویدادها و اتصال‌ها در برنامه بر اساس منطقه زمانی انتخاب‌شده نمایش داده می‌شود. '
+                  'زمان ذخیره‌شده در سرور همچنان UTC باقی می‌ماند و فقط نمایش محلی تغییر می‌کند.',
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  value: _timeZoneId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'منطقه زمانی',
+                    prefixIcon: Icon(Icons.public),
+                  ),
+                  items: [
+                    for (final entry in _timeZones.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text('${entry.value} — ${entry.key}', textDirection: TextDirection.ltr),
+                      ),
+                  ],
+                  onChanged: !_timeZoneReady || _busy ? null : _saveTimeZone,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'زمان فعلی: ${_formatRegionalTime(DateTime.now().toUtc().toIso8601String())}',
+                  textDirection: TextDirection.ltr,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _loadAll() async {
@@ -839,7 +940,7 @@ class _SettingsPageState extends State<SettingsPage> {
         1 +
         (showMfa ? 1 : 0) +
         (_canManageUsers ? 2 : 0) +
-        (showDevices ? 1 : 0) +
+        (showDevices ? 2 : 0) +
         1;
 
     return Directionality(
@@ -864,11 +965,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icon(Icons.security_outlined),
                       text: 'احراز هویت دومرحله‌ای',
                     ),
-                  if (showDevices)
-                    const Tab(
-                      icon: Icon(Icons.devices_outlined),
-                      text: 'دستگاه‌ها',
-                    ),
+                  if (showDevices) ...[
+                    const Tab(icon: Icon(Icons.devices_outlined), text: 'دستگاه‌ها'),
+                    const Tab(icon: Icon(Icons.login_outlined), text: 'نشست‌ها'),
+                  ],
+                  const Tab(icon: Icon(Icons.public_outlined), text: 'مختصات مکانی'),
                   if (_canManageUsers)
                     const Tab(
                       icon: Icon(Icons.security_outlined),
@@ -890,6 +991,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     if (_canManageUsers) _usersTab(),
                     if (showMfa) _mfaTab(),
                     if (showDevices) _devicesTab(),
+                    if (showDevices) _sessionsTab(),
+                    _locationTimeZoneTab(),
                     if (_canManageUsers) _auditTab(),
                     _backupTab(),
                     _aboutTab(),
@@ -1180,39 +1283,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ),
-        Card(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('نشست‌های فعال', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text('تعداد نشست‌های فعال: ${_sessions.length}'),
-                const SizedBox(height: 10),
-                if (_loadingSessions)
-                  const LinearProgressIndicator()
-                else if (_sessions.isEmpty)
-                  const Text('نشست فعالی وجود ندارد.')
-                else
-                  for (final session in _sessions.take(10))
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.login_outlined),
-                      title: Text(session['deviceName']?.toString() ?? 'دستگاه ناشناس'),
-                      subtitle: Text(session['platform']?.toString() ?? 'نامشخص'),
-                    ),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: _busy || _sessions.isEmpty ? null : _revokeAllSessions,
-                  icon: const Icon(Icons.delete_sweep_outlined),
-                  label: const Text('حذف کامل همه نشست‌ها'),
-                ),
-              ],
-            ),
-          ),
-        ),
         Expanded(
           child: _loadingDevices
               ? const Center(child: CircularProgressIndicator())
@@ -1229,24 +1299,15 @@ class _SettingsPageState extends State<SettingsPage> {
                         return Card(
                           child: ListTile(
                             leading: CircleAvatar(
-                              child: Icon(
-                                device['platform']?.toString().toLowerCase() == 'android'
-                                    ? Icons.phone_android_outlined
-                                    : Icons.computer_outlined,
-                              ),
+                              child: Icon(device['platform']?.toString().toLowerCase() == 'android'
+                                  ? Icons.phone_android_outlined : Icons.computer_outlined),
                             ),
                             title: Text(device['deviceName'].toString()),
                             subtitle: Text(
-                              device['platform'].toString() +
-                                  ' • ' +
-                                  (revoked
-                                      ? 'لغو شده'
-                                      : state == 'Trusted'
-                                          ? 'قابل اعتماد'
-                                          : 'در انتظار اعتماد') +
-                                  (device['lastSeenAt'] == null
-                                      ? ''
-                                      : ' • آخرین فعالیت: ' + device['lastSeenAt'].toString()),
+                              device['platform'].toString() + ' • ' +
+                              (revoked ? 'لغو شده' : state == 'Trusted' ? 'قابل اعتماد' : 'در انتظار اعتماد') +
+                              (device['lastSeenAt'] == null ? '' :
+                                ' • آخرین فعالیت: ' + _formatRegionalTime(device['lastSeenAt'])),
                             ),
                             trailing: revoked
                                 ? const Chip(label: Text('لغو شده'))
@@ -1261,6 +1322,96 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
         ),
       ],
+    );
+  }
+
+  Widget _sessionsTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'نشست‌های فعال — ${_sessions.length}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: 'بازخوانی',
+                onPressed: _busy || _loadingSessions ? null : _loadSessions,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _loadingSessions
+              ? const Center(child: CircularProgressIndicator())
+              : _sessions.isEmpty
+                  ? const Center(child: Text('نشست فعالی وجود ندارد.'))
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                      itemCount: _sessions.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final session = _sessions[index];
+                        final device = session['deviceName']?.toString() ?? 'دستگاه ناشناس';
+                        final platform = session['platform']?.toString() ?? 'نامشخص';
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.devices_outlined),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: Text(device, style: Theme.of(context).textTheme.titleMedium)),
+                                  ],
+                                ),
+                                const Divider(height: 22),
+                                _sessionInfoRow('پلتفرم', platform),
+                                _sessionInfoRow('زمان اتصال', _formatRegionalTime(session['createdAt'])),
+                                _sessionInfoRow('آخرین تمدید', _formatRegionalTime(session['lastRefreshedAt'])),
+                                _sessionInfoRow('انقضای دسترسی', _formatRegionalTime(session['accessExpiresAt'])),
+                                _sessionInfoRow('انقضای نشست', _formatRegionalTime(session['refreshExpiresAt'])),
+                                _sessionInfoRow('منطقه زمانی', _timeZoneId),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+        if (_sessions.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _revokeAllSessions,
+                icon: const Icon(Icons.delete_sweep_outlined),
+                label: const Text('حذف کامل همه نشست‌ها'),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _sessionInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 120, child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
+          Expanded(child: SelectableText(value, textDirection: TextDirection.ltr)),
+        ],
+      ),
     );
   }
 
