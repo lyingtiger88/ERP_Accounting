@@ -519,34 +519,34 @@ public sealed class AuthService(
 
     public async Task<IReadOnlyList<SessionResponse>> GetActiveSessionsAsync(
         Guid userId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? currentAccessToken = null)
     {
         var now = DateTimeOffset.UtcNow;
-        await RevokeExpiredSessionsAsync(now, cancellationToken);
-
-        return await db.AuthSessions
-            .AsNoTracking()
+        var currentHash = string.IsNullOrWhiteSpace(currentAccessToken)
+            ? null : HashToken(currentAccessToken);
+        var sessions = await db.AuthSessions.AsNoTracking()
             .Where(x => x.UserId == userId && x.RevokedAt == null)
-            .OrderByDescending(x => x.LastRefreshedAt)
-            .Select(x => new SessionResponse(
-                x.Id,
-                x.DeviceId == null
-                    ? null
-                    : db.Devices
-                        .Where(d => d.Id == x.DeviceId.Value)
-                        .Select(d => d.DeviceName)
-                        .FirstOrDefault(),
-                x.DeviceId == null
-                    ? null
-                    : db.Devices
-                        .Where(d => d.Id == x.DeviceId.Value)
-                        .Select(d => d.Platform)
-                        .FirstOrDefault(),
-                x.CreatedAt,
-                x.LastRefreshedAt,
-                x.AccessExpiresAt,
-                x.RefreshExpiresAt))
             .ToArrayAsync(cancellationToken);
+        var devices = await db.Devices.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        // SQLite cannot order DateTimeOffset in SQL.
+        return sessions
+            .Where(x => x.RefreshExpiresAt > now &&
+                (x.DeviceId == null ||
+                 (devices.TryGetValue(x.DeviceId.Value, out var d) &&
+                  d.TrustState != DeviceTrustState.Revoked)))
+            .OrderByDescending(x => currentHash != null && x.AccessTokenHash == currentHash)
+            .ThenByDescending(x => x.LastRefreshedAt)
+            .Select(x =>
+            {
+                var device = x.DeviceId.HasValue
+                    ? devices.GetValueOrDefault(x.DeviceId.Value) : null;
+                return new SessionResponse(x.Id, device?.DeviceName, device?.Platform,
+                    x.CreatedAt, x.LastRefreshedAt, x.AccessExpiresAt,
+                    x.RefreshExpiresAt, currentHash != null && x.AccessTokenHash == currentHash);
+            }).ToArray();
     }
 
     public async Task<int> RevokeAllSessionsAsync(
