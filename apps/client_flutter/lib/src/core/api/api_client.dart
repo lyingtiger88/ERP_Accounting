@@ -428,6 +428,17 @@ class ApiClient {
     );
   }
 
+  Future<void> deleteTrustedDevice({
+    required String bearerToken,
+    required String deviceId,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/auth/devices/' + deviceId,
+      bearerToken: bearerToken,
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getSecurityAudit({
     required String bearerToken,
     int limit = 200,
