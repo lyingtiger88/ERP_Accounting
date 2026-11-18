@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../licensing/zarr_license_page.dart';
+import '../../core/app_version.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -867,6 +868,35 @@ class _SettingsPageState extends State<SettingsPage> {
                   const Text(
                     'برای اطلاعات محصولات، ثبت حساب کاربری، پشتیبانی و مدیریت اشتراک به وب‌سایت رسمی کالیا سافت مراجعه کنید.',
                     textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Column(
+                      children: [
+                        Text(
+                          'نسخه نرم‌افزار',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        SizedBox(height: 6),
+                        SelectableText(
+                          ZarrAppVersion.display,
+                          textDirection: TextDirection.ltr,
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          ZarrAppVersion.platforms,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 18),
                   SelectableText(
