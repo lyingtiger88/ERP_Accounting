@@ -1609,6 +1609,23 @@ public sealed class AccountingService(AppDbContext db)
                 "Opening balance requires at least two journal lines.");
         }
 
+        var openingAccountIds = request.Lines.Select(x => x.AccountId).Distinct().ToArray();
+        var openingAccounts = await db.Accounts.AsNoTracking()
+            .Where(x => x.CompanyId == companyId && openingAccountIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        if (openingAccounts.Count != openingAccountIds.Length)
+        {
+            throw new ArgumentException(
+                "One or more opening balance accounts are unavailable.");
+        }
+
+        if (openingAccounts.Values.Any(x =>
+                x.Type == AccountType.Revenue || x.Type == AccountType.Expense))
+        {
+            throw new ArgumentException(
+                "Opening balances can only be posted to balance-sheet accounts (assets, liabilities and equity).");
+        }
+
         var journalRequest = new CreateJournalRequest(
             null,
             fiscalYear.StartDate,
@@ -1669,24 +1686,32 @@ public sealed class AccountingService(AppDbContext db)
         CancellationToken cancellationToken = default)
     {
         var record = await db.OpeningBalances.AsNoTracking()
-            .Where(x => x.CompanyId == companyId && x.FiscalYearId == fiscalYearId)
-            .Join(
-                db.JournalEntries.AsNoTracking(),
-                x => x.JournalEntryId,
-                x => x.Id,
-                (record, journal) => new { record, journal })
-            .SingleOrDefaultAsync(cancellationToken);
+            .SingleOrDefaultAsync(
+                x => x.CompanyId == companyId && x.FiscalYearId == fiscalYearId,
+                cancellationToken);
 
         if (record is null) return null;
 
+        var journal = await db.JournalEntries.AsNoTracking()
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(
+                x => x.Id == record.JournalEntryId && x.CompanyId == companyId,
+                cancellationToken);
+
+        if (journal is null)
+        {
+            throw new InvalidOperationException(
+                "The opening balance record references a missing journal entry.");
+        }
+
         return new OpeningBalanceResponse(
-            record.record.FiscalYearId,
-            record.journal.Id,
-            record.journal.Number,
-            record.journal.DocumentDate,
-            record.journal.Lines.Sum(x => x.Debit),
-            record.journal.Lines.Sum(x => x.Credit),
-            record.record.CreatedAt);
+            record.FiscalYearId,
+            journal.Id,
+            journal.Number,
+            journal.DocumentDate,
+            journal.Lines.Sum(x => x.Debit),
+            journal.Lines.Sum(x => x.Credit),
+            record.CreatedAt);
     }
 
     public async Task<IReadOnlyList<JournalEntry>> GetJournalEntriesAsync(
