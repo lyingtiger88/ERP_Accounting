@@ -142,7 +142,7 @@ jobs:
           name: Zarr-Android-Validation-Unsigned
           path: apps/client_flutter/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
       - name: Build release APK with monotonic version code
         if: github.event_name != 'pull_request'
@@ -349,5 +349,5 @@ jobs:
           name: ${{ github.event_name == 'pull_request' && 'Zarr-Windows-Unsigned-Validation' || 'Zarr-Windows-Release-Signed' }}
           path: apps/client_flutter/build/windows/x64/runner/Release/**
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
