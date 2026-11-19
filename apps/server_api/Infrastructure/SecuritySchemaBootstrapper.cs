@@ -21,6 +21,20 @@ public static class SecuritySchemaBootstrapper
                 query.CommandText = "SELECT COUNT(*) FROM pragma_table_info('trusted_devices') WHERE name = 'InstallationIdHash'";
                 if (Convert.ToInt64(await query.ExecuteScalarAsync(cancellationToken)) == 0)
                     await db.Database.ExecuteSqlRawAsync("ALTER TABLE trusted_devices ADD COLUMN InstallationIdHash TEXT NULL", cancellationToken);
+                foreach (var column in new[]
+                {
+                    ("IsBlacklisted", "INTEGER NOT NULL DEFAULT 0"),
+                    ("BlacklistedAt", "TEXT NULL"),
+                    ("BlacklistReason", "TEXT NULL")
+                })
+                {
+                    await using var check = connection.CreateCommand();
+                    check.CommandText = "SELECT COUNT(*) FROM pragma_table_info('trusted_devices') WHERE name = '" + column.Item1 + "'";
+                    if (Convert.ToInt64(await check.ExecuteScalarAsync(cancellationToken)) == 0)
+                        await db.Database.ExecuteSqlRawAsync(
+                            "ALTER TABLE trusted_devices ADD COLUMN \"" + column.Item1 + "\" " + column.Item2,
+                            cancellationToken);
+                }
             }
             finally
             {
@@ -37,6 +51,11 @@ public static class SecuritySchemaBootstrapper
 
         if (provider.Contains("Npgsql", StringComparison.OrdinalIgnoreCase))
         {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"IsBlacklisted\" boolean NOT NULL DEFAULT FALSE; " +
+                "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"BlacklistedAt\" timestamp with time zone NULL; " +
+                "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"BlacklistReason\" character varying(500) NULL;",
+                cancellationToken);
             foreach (var command in PostgresCommands)
             {
                 await db.Database.ExecuteSqlRawAsync(
