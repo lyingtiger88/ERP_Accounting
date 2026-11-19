@@ -658,6 +658,42 @@ class ApiClient {
     return Map<String, dynamic>.from(payload as Map);
   }
 
+  Future<Map<String, dynamic>?> getOpeningBalance({
+    required String bearerToken,
+    required String fiscalYearId,
+  }) async {
+    try {
+      final payload = await _request(
+        'GET',
+        '/api/accounting/opening-balances/' + fiscalYearId,
+        bearerToken: bearerToken,
+      );
+      return Map<String, dynamic>.from(payload as Map);
+    } on ApiException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> createOpeningBalance({
+    required String bearerToken,
+    required String fiscalYearId,
+    required String description,
+    required List<Map<String, dynamic>> lines,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/accounting/opening-balances',
+      bearerToken: bearerToken,
+      body: {
+        'fiscalYearId': fiscalYearId,
+        'description': description,
+        'lines': lines,
+      },
+    );
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
   Future<List<Map<String, dynamic>>> getAccounts({
     required String bearerToken,
   }) async {
