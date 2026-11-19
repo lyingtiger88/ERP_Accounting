@@ -36,12 +36,14 @@ class _LoginPageState extends State<LoginPage> {
   ApiClient _apiClient = ApiClient();
 
   bool _obscurePassword = true;
+  bool _rememberCredentials = false;
   bool _busy = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    _loadRememberedCredentials();
     final message = widget.initialMessage;
     if (message != null && message.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,6 +62,30 @@ class _LoginPageState extends State<LoginPage> {
     _totpCode.dispose();
     _pairingCode.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRememberedCredentials() async {
+    try {
+      final enabled = await SecureSessionStore.instance.rememberCredentialsEnabled();
+      final credentials = await SecureSessionStore.instance.readSavedCredentials();
+      if (!mounted) return;
+      setState(() {
+        _rememberCredentials = enabled;
+        if (credentials != null) {
+          _username.text = credentials.$1;
+          _password.text = credentials.$2;
+        }
+      });
+    } catch (_) {
+      // Credential restoration is optional; login remains available.
+    }
+  }
+
+  Future<void> _setRememberCredentials(bool value) async {
+    setState(() => _rememberCredentials = value);
+    if (!value) {
+      await SecureSessionStore.instance.forgetCredentials();
+    }
   }
 
   Future<void> _configureServer() async {
@@ -307,6 +333,14 @@ class _LoginPageState extends State<LoginPage> {
       await SecureSessionStore.instance.write(
         result.toSecureSession(),
       );
+      if (_rememberCredentials) {
+        await SecureSessionStore.instance.saveCredentials(
+          username: _username.text.trim(),
+          password: _password.text,
+        );
+      } else {
+        await SecureSessionStore.instance.forgetCredentials();
+      }
 
       await widget.localDatabase.cacheUserProfile(
         userId: result.userId,
@@ -566,6 +600,21 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 4),
+                                CheckboxListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  value: _rememberCredentials,
+                                  onChanged: _busy
+                                      ? null
+                                      : (value) => _setRememberCredentials(value ?? false),
+                                  title: const Text('ذخیره نام کاربری و رمز عبور'),
+                                  subtitle: const Text(
+                                    'اطلاعات ورود به‌صورت رمزنگاری‌شده روی همین دستگاه نگهداری می‌شود.',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
                                 TextField(
                                   controller: _totpCode,
                                   enabled: !_busy,
