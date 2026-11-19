@@ -49,6 +49,9 @@ public sealed class TrustedDevice
     public required string Platform { get; set; }
     public string? PublicKeyFingerprint { get; set; }
     public string? InstallationIdHash { get; set; }
+    public bool IsBlacklisted { get; set; }
+    public DateTimeOffset? BlacklistedAt { get; set; }
+    public string? BlacklistReason { get; set; }
     public DeviceTrustState TrustState { get; set; } = DeviceTrustState.Pending;
     public DateTimeOffset FirstSeenAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastSeenAt { get; set; }
