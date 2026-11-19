@@ -664,15 +664,20 @@ public sealed class DevicePairingTests
             x => x.EventType == "LOGIN" && x.Outcome == "DENIED" &&
                  x.Details!.Contains("Blacklisted installation"));
 
+        // A pairing attempt while blacklisted must not consume the one-time code.
         Assert.True(await service.SetDeviceBlacklistAsync(owner.Id, device.Id, false));
         var passwordOnly = await service.LoginAsync(new LoginRequest(
             owner.Username, password, "Blocked Phone", "android",
             InstallationId: installation));
         Assert.Null(passwordOnly);
-        var newPairing = await service.CreateDevicePairingCodeAsync(owner.Id);
         var allowed = await service.LoginAsync(new LoginRequest(
             owner.Username, password, "Blocked Phone", "android",
-            PairingCode: newPairing.Code, InstallationId: installation));
+            PairingCode: pairing.Code, InstallationId: installation));
         Assert.NotNull(allowed);
+        var pairedDevice = await db.Devices.SingleAsync(x => x.Id == device.Id);
+        Assert.False(pairedDevice.IsBlacklisted);
+        Assert.Equal(DeviceTrustState.Trusted, pairedDevice.TrustState);
+        Assert.Equal(1, await db.Devices.CountAsync(x =>
+            x.UserId == owner.Id && x.InstallationIdHash == device.InstallationIdHash));
     }
 }
