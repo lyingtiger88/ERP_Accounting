@@ -416,6 +416,22 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<void> blacklistTrustedDevice({
+    required String bearerToken,
+    required String deviceId,
+  }) async {
+    await _request('POST', '/api/auth/devices/' + deviceId + '/blacklist',
+        bearerToken: bearerToken, body: const <String, dynamic>{});
+  }
+
+  Future<void> unblacklistTrustedDevice({
+    required String bearerToken,
+    required String deviceId,
+  }) async {
+    await _request('DELETE', '/api/auth/devices/' + deviceId + '/blacklist',
+        bearerToken: bearerToken);
+  }
+
   Future<void> revokeTrustedDevice({
     required String bearerToken,
     required String deviceId,
