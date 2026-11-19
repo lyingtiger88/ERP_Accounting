@@ -107,6 +107,20 @@ public sealed record CreateJournalRequest(
     Guid? FiscalYearId = null);
 
 
+public sealed record CreateOpeningBalanceRequest(
+    Guid FiscalYearId,
+    string? Description,
+    IReadOnlyList<CreateJournalLineRequest> Lines);
+
+public sealed record OpeningBalanceResponse(
+    Guid FiscalYearId,
+    Guid JournalEntryId,
+    string JournalNumber,
+    DateOnly DocumentDate,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    DateTimeOffset CreatedAt);
+
 public sealed record SyncJournalRequest(
     string ChangeId,
     string LocalDocumentId,
