@@ -1,0 +1,52 @@
+name: Zarr license validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/zarr-license-enforcement-foundation
+    paths:
+      - "apps/server_api/Security/ZarrLicenseService.cs"
+      - "apps/server_api/Program.cs"
+      - "tests/server_api_tests/**"
+      - ".github/workflows/zarr-license-tests.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/server_api/Security/ZarrLicenseService.cs"
+      - "apps/server_api/Program.cs"
+      - "tests/server_api_tests/**"
+      - ".github/workflows/zarr-license-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  server-license-tests:
+    name: ASP.NET licensing tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore tests
+        run: dotnet restore tests/server_api_tests/ERPAccounting.Api.Tests.csproj
+      - name: Run API tests
+        run: dotnet test tests/server_api_tests/ERPAccounting.Api.Tests.csproj --configuration Release --no-restore
+
+  flutter-entitlement-tests:
+    name: Flutter entitlement tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve dependencies
+        working-directory: apps/client_flutter
+        run: flutter pub get
+      - name: Run Flutter tests
+        working-directory: apps/client_flutter
+        run: flutter test

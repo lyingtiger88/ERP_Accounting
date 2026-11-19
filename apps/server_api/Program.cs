@@ -128,21 +128,28 @@ app.Use(async (context, next) =>
     {
         var auth = context.RequestServices.GetRequiredService<AuthService>();
         var user = await CurrentUserAsync(context.Request, auth, context.RequestAborted);
-        // Original endpoints remain responsible for rejecting missing/invalid
-        // ERP sessions; never grant a write merely for an anonymous request.
-        if (user != null)
+        // Enforcement must fail closed for every protected mutation. Do not
+        // rely on each endpoint remembering to reject a missing ERP session.
+        if (user is null)
         {
-            var licenses = context.RequestServices.GetRequiredService<ZarrLicenseService>();
-            if (!await licenses.CanWriteAsync(user.CompanyId, context.RequestAborted))
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    error = "zarr_subscription_read_only",
-                    message = "اشتراک زر معتبر نیست؛ اطلاعات فقط قابل مشاهده و گزارش‌گیری هستند."
-                }, cancellationToken: context.RequestAborted);
-                return;
-            }
+                error = "erp_authentication_required"
+            }, cancellationToken: context.RequestAborted);
+            return;
+        }
+
+        var licenses = context.RequestServices.GetRequiredService<ZarrLicenseService>();
+        if (!await licenses.CanWriteAsync(user.CompanyId, context.RequestAborted))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "zarr_subscription_read_only",
+                message = "اشتراک زر معتبر نیست؛ اطلاعات فقط قابل مشاهده و گزارش‌گیری هستند."
+            }, cancellationToken: context.RequestAborted);
+            return;
         }
     }
     await next(context);
@@ -417,8 +424,22 @@ app.MapPost("/api/license/link", async (
     catch (System.Text.Json.JsonException) { return Results.BadRequest(); }
 
     if (kaliiaUserId is null) return Results.Unauthorized();
-    await licenses.LinkCompanyAsync(
-        user.CompanyId, user.Id, kaliiaUserId.Value, cancellationToken);
+    try
+    {
+        await licenses.LinkCompanyAsync(
+            user.CompanyId, user.Id, kaliiaUserId.Value, cancellationToken);
+    }
+    catch (HttpRequestException) { return Results.StatusCode(503); }
+    catch (TaskCanceledException) { return Results.StatusCode(503); }
+    catch (InvalidOperationException)
+    {
+        return Results.Conflict(new
+        {
+            error = "zarr_company_transfer_required",
+            message = "این شرکت قبلاً به یک حساب کالیا متصل شده است؛ انتقال مالکیت باید از مسیر پشتیبانی و با تأیید انجام شود."
+        });
+    }
+
     return Results.Ok(new
     {
         productId = ZarrLicenseService.ProductId,
@@ -435,9 +456,41 @@ app.MapGet("/api/license/status", async (
 {
     var user = await CurrentUserAsync(request, authService, cancellationToken);
     if (user is null) return Results.Unauthorized();
+    var config = request.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+    var companyMode = config.GetValue<bool>("Kaliia:UseCompanyEntitlements");
     var linked = await licenses.HasCompanyLinkAsync(
         user.CompanyId, cancellationToken);
-    var canWrite = linked && await licenses.CanWriteAsync(
+    if (companyMode && linked)
+    {
+        try
+        {
+            var entitlement = await licenses.GetCompanyStatusAsync(
+                user.CompanyId, cancellationToken);
+            var companyCanWrite = entitlement.TryGetProperty("can_write", out var flag) &&
+                flag.ValueKind == System.Text.Json.JsonValueKind.True;
+            var offlineToken = companyCanWrite &&
+                !string.IsNullOrWhiteSpace(config["Kaliia:EntitlementPrivateKeyPem"]) &&
+                !string.IsNullOrWhiteSpace(config["Kaliia:EntitlementKeyId"])
+                    ? licenses.CreateSignedOfflineEntitlement(entitlement, user.CompanyId)
+                    : null;
+            return Results.Ok(new
+            {
+                productId = ZarrLicenseService.ProductId,
+                companyId = user.CompanyId,
+                linked = true,
+                canWrite = companyCanWrite,
+                companyEntitlementsEnabled = true,
+                entitlement,
+                offlineEntitlement = offlineToken,
+                enforcementEnabled = config.GetValue<bool>("Kaliia:EnforceZarrLicense")
+            });
+        }
+        catch (HttpRequestException) { return Results.StatusCode(503); }
+        catch (TaskCanceledException) { return Results.StatusCode(503); }
+        catch (System.Text.Json.JsonException) { return Results.StatusCode(503); }
+        catch (InvalidOperationException) { return Results.StatusCode(503); }
+    }
+    var canWrite = !companyMode && linked && await licenses.CanWriteAsync(
         user.CompanyId, cancellationToken);
     return Results.Ok(new
     {
@@ -445,11 +498,38 @@ app.MapGet("/api/license/status", async (
         companyId = user.CompanyId,
         linked,
         canWrite,
-        enforcementEnabled = request.HttpContext.RequestServices
-            .GetRequiredService<IConfiguration>()
-            .GetValue<bool>("Kaliia:EnforceZarrLicense")
+        companyEntitlementsEnabled = companyMode,
+        enforcementEnabled = config.GetValue<bool>("Kaliia:EnforceZarrLicense")
     });
 });
+
+// Explicit trial activation: ERP Owner session is required; the company and
+// Kaliia account binding are resolved server-side, never supplied by the client.
+app.MapPost("/api/license/trial/start", async (
+    HttpRequest request,
+    AuthService authService,
+    ZarrLicenseService licenses,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    if (user.Role != UserRole.Owner)
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    try
+    {
+        var entitlement = await licenses.StartCompanyTrialAsync(
+            user.CompanyId, cancellationToken);
+        return Results.Json(entitlement);
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.Conflict(new { error = "zarr_company_trial_not_ready" });
+    }
+    catch (HttpRequestException) { return Results.StatusCode(503); }
+    catch (TaskCanceledException) { return Results.StatusCode(503); }
+    catch (System.Text.Json.JsonException) { return Results.StatusCode(503); }
+}).RequireRateLimiting("auth");
 
 var admin = app.MapGroup("/api/admin");
 

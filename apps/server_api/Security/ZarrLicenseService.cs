@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text.Json;
 using ERPAccounting.Api.Domain;
 using ERPAccounting.Api.Infrastructure;
@@ -79,12 +80,35 @@ public sealed class ZarrLicenseService(
                 LinkedAt = DateTimeOffset.UtcNow,
             });
         }
+        else if (link.AuthUserId != kaliiaUserId)
+        {
+            // A different Kaliia account cannot silently take over a company's
+            // billing identity. Ownership transfer needs its own audited flow.
+            throw new InvalidOperationException(
+                "A Zarr company binding already exists; an audited transfer is required.");
+        }
         else
         {
-            link.AuthUserId = kaliiaUserId;
-            link.LinkedByUserId = ownerId;
-            link.LinkedAt = DateTimeOffset.UtcNow;
+            // Same-owner retries still verify the central mapping in company mode.
+            if (!configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+                return;
         }
+
+        if (configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+        {
+            // Central bind happens first and is idempotent. Never grant local
+            // access if the central authority rejects the owner/company pair.
+            await CallCompanyRpcAsync(
+                "zarr_bind_company",
+                new
+                {
+                    p_company_id = companyId,
+                    p_auth_user_id = kaliiaUserId,
+                    p_erp_owner_id = ownerId
+                },
+                cancellationToken);
+        }
+
         await database.SaveChangesAsync(cancellationToken);
     }
 
@@ -105,6 +129,10 @@ public sealed class ZarrLicenseService(
             .SingleOrDefaultAsync(x => x.CompanyId == companyId, cancellationToken);
         if (link is null || string.IsNullOrWhiteSpace(ServiceRoleKey))
             return false;
+
+        if (configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+            return await CanWriteCompanyEntitlementAsync(
+                companyId, link.AuthUserId, cancellationToken);
 
         try
         {
@@ -129,19 +157,208 @@ public sealed class ZarrLicenseService(
                 return false;
             var license = licenseJson[0];
             if (!license.TryGetProperty("status", out var status) ||
+                status.ValueKind != JsonValueKind.String ||
                 status.GetString() != "active")
                 return false;
-            if (!license.TryGetProperty("expires_at", out var expiry) ||
-                expiry.ValueKind == JsonValueKind.Null)
-                return true;
-            return expiry.ValueKind == JsonValueKind.String &&
-                DateTimeOffset.TryParse(expiry.GetString(), out var end) &&
-                end > DateTimeOffset.UtcNow;
+
+            if (!license.TryGetProperty("type", out var licenseType) ||
+                licenseType.ValueKind != JsonValueKind.String)
+                return false;
+
+            if (!license.TryGetProperty("expires_at", out var expiry))
+                return false;
+
+            // Only an explicit lifetime entitlement may omit expiry.
+            // Trial and subscription records must always have a future expiry.
+            if (licenseType.GetString() == "lifetime")
+                return expiry.ValueKind == JsonValueKind.Null;
+
+            if (licenseType.GetString() is not ("trial" or "subscription") ||
+                expiry.ValueKind != JsonValueKind.String ||
+                !DateTimeOffset.TryParse(expiry.GetString(), out var end))
+                return false;
+
+            return end > DateTimeOffset.UtcNow;
         }
         catch (HttpRequestException) { return false; }
         catch (TaskCanceledException) { return false; }
         catch (JsonException) { return false; }
         catch (InvalidOperationException) { return false; }
+    }
+
+    /// <summary>
+    /// Company-scoped entitlement path. Enabled only after migration of existing
+    /// company bindings and completion of server/client integration tests.
+    /// No account-scoped license may authorize writes in this mode.
+    /// </summary>
+    private async Task<bool> CanWriteCompanyEntitlementAsync(
+        Guid companyId, Guid authUserId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var status = await CallCompanyRpcAsync(
+                "zarr_company_license_status",
+                new { p_company_id = companyId, p_auth_user_id = authUserId },
+                cancellationToken);
+            return status.ValueKind == JsonValueKind.Object &&
+                   status.TryGetProperty("product_id", out var product) &&
+                   product.GetString() == ProductId &&
+                   status.TryGetProperty("company_id", out var company) &&
+                   company.GetString() == companyId.ToString() &&
+                   status.TryGetProperty("can_write", out var canWrite) &&
+                   canWrite.ValueKind == JsonValueKind.True;
+        }
+        catch (HttpRequestException) { return false; }
+        catch (TaskCanceledException) { return false; }
+        catch (JsonException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    public async Task<JsonElement> GetCompanyStatusAsync(
+        Guid companyId, CancellationToken cancellationToken)
+    {
+        if (!configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+            throw new InvalidOperationException("Company entitlements are not enabled.");
+
+        var binding = await database.ZarrCompanyLicenses.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.CompanyId == companyId, cancellationToken);
+        if (binding is null)
+            throw new InvalidOperationException("Company has no verified Kaliia link.");
+
+        var status = await CallCompanyRpcAsync(
+            "zarr_company_license_status",
+            new { p_company_id = companyId, p_auth_user_id = binding.AuthUserId },
+            cancellationToken);
+
+        if (status.ValueKind != JsonValueKind.Object ||
+            !status.TryGetProperty("company_id", out var remoteCompany) ||
+            remoteCompany.GetString() != companyId.ToString() ||
+            !status.TryGetProperty("product_id", out var remoteProduct) ||
+            remoteProduct.GetString() != ProductId)
+            throw new JsonException("Company entitlement response mismatch.");
+
+        return status;
+    }
+
+    /// <summary>
+    /// Issues a short-lived RS256 token for offline read/write grace. The token
+    /// never outlives the underlying entitlement and is bound to one company
+    /// and product. The private key must be supplied only via server secret config.
+    /// </summary>
+    public string CreateSignedOfflineEntitlement(
+        JsonElement entitlement, Guid companyId)
+    {
+        var pem = configuration["Kaliia:EntitlementPrivateKeyPem"];
+        if (string.IsNullOrWhiteSpace(pem))
+            throw new InvalidOperationException("Offline entitlement signing key is not configured.");
+
+        if (!entitlement.TryGetProperty("can_write", out var canWrite) ||
+            canWrite.ValueKind != JsonValueKind.True ||
+            !entitlement.TryGetProperty("status", out var status) ||
+            status.GetString() != "active" ||
+            !entitlement.TryGetProperty("generation", out var generation) ||
+            !generation.TryGetInt64(out var generationValue) ||
+            generationValue < 1)
+            throw new InvalidOperationException("Only an active company entitlement can be signed.");
+
+        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset? licenseExpiry = null;
+        if (entitlement.TryGetProperty("expires_at", out var expiry) &&
+            expiry.ValueKind == JsonValueKind.String)
+        {
+            if (!DateTimeOffset.TryParse(expiry.GetString(), out var parsedExpiry))
+                throw new JsonException("Invalid entitlement expiry.");
+            licenseExpiry = parsedExpiry.ToUniversalTime();
+            if (licenseExpiry <= now)
+                throw new InvalidOperationException("Entitlement is expired.");
+        }
+
+        var offlineExpiry = now.AddDays(7);
+        if (licenseExpiry is not null && licenseExpiry.Value < offlineExpiry)
+            offlineExpiry = licenseExpiry.Value;
+
+        var keyId = configuration["Kaliia:EntitlementKeyId"];
+        if (string.IsNullOrWhiteSpace(keyId) || keyId.Length > 80)
+            throw new InvalidOperationException("Offline entitlement key id is not configured.");
+
+        var header = new
+        {
+            alg = "RS256",
+            typ = "JWT",
+            kid = keyId
+        };
+        var payload = new
+        {
+            iss = "https://kaliia.soft",
+            aud = ProductId,
+            sub = companyId.ToString(),
+            company_id = companyId.ToString(),
+            product_id = ProductId,
+            status = "active",
+            can_write = true,
+            generation = generationValue,
+            iat = now.ToUnixTimeSeconds(),
+            exp = offlineExpiry.ToUnixTimeSeconds(),
+            license_expires_at = licenseExpiry?.ToUnixTimeSeconds()
+        };
+
+        static string Encode(object value) =>
+            Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(value))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        var signingInput = Encode(header) + "." + Encode(payload);
+        using var rsa = RSA.Create();
+        rsa.ImportFromPem(pem);
+        var signature = rsa.SignData(
+            System.Text.Encoding.ASCII.GetBytes(signingInput),
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        return signingInput + "." + Convert.ToBase64String(signature)
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    /// <summary>
+    /// This call is not made implicitly on login or on license status refresh.
+    /// Trial activation requires an explicit ERP Owner action.
+    /// </summary>
+    public async Task<JsonElement> StartCompanyTrialAsync(
+        Guid companyId, CancellationToken cancellationToken)
+    {
+        if (!configuration.GetValue<bool>("Kaliia:UseCompanyEntitlements"))
+            throw new InvalidOperationException("Company entitlements are not enabled.");
+
+        var binding = await database.ZarrCompanyLicenses.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.CompanyId == companyId, cancellationToken);
+        if (binding is null)
+            throw new InvalidOperationException("Company must be linked before trial activation.");
+
+        return await CallCompanyRpcAsync(
+            "zarr_start_company_trial",
+            new { p_company_id = companyId, p_auth_user_id = binding.AuthUserId },
+            cancellationToken);
+    }
+
+    private async Task<JsonElement> CallCompanyRpcAsync(
+        string rpcName, object body, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ServiceRoleKey))
+            throw new InvalidOperationException("Missing server-only service role key.");
+
+        using var http = httpClients.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(12);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, BaseUrl + "/rest/v1/rpc/" + rpcName);
+        request.Headers.TryAddWithoutValidation("apikey", ServiceRoleKey);
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", ServiceRoleKey);
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+
+        using var response = await http.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken));
+        return doc.RootElement.Clone();
     }
 
     private async Task<JsonElement> GetAdminJsonAsync(

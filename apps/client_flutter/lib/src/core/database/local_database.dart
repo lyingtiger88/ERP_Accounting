@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart' as mobile;
 import 'package:sqflite_common/sqlite_api.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../../licensing/zarr_offline_entitlement.dart';
 import '../demo/demo_mode.dart';
 import '../sync/sync_models.dart';
 
@@ -21,6 +22,18 @@ class LocalDatabase {
 
   Database? _database;
   String? _databasePath;
+  final ZarrOfflineEntitlementStore _licenseStore =
+      ZarrOfflineEntitlementStore();
+
+  Future<void> _requireCompanyWriteAccess(String companyId) async {
+    if (DemoMode.isDemoCompany(companyId)) return;
+    if (!await _licenseStore.canWrite(companyId: companyId)) {
+      throw StateError(
+        'مجوز نوشتن این شرکت معتبر نیست یا وضعیت مجوز هنوز بررسی نشده است. '
+        'به اینترنت متصل شوید و وضعیت اشتراک را به‌روزرسانی کنید.',
+      );
+    }
+  }
 
   bool get isOpen => _database != null;
   String? get databasePath => _databasePath;
@@ -1224,6 +1237,7 @@ class LocalDatabase {
     required Map<String, dynamic> payload,
     bool queueForSync = true,
   }) async {
+    await _requireCompanyWriteAccess(companyId);
     await _ensureDemoCapacity(companyId);
     final effectiveQueueForSync =
         DemoMode.isDemoCompany(companyId) ? false : queueForSync;
@@ -1837,6 +1851,7 @@ class LocalDatabase {
     required String type,
     String? nationalId,
   }) async {
+    await _requireCompanyWriteAccess(companyId);
     final trimmedCode = code.trim();
     final trimmedName = name.trim();
 
@@ -1902,6 +1917,7 @@ class LocalDatabase {
     String? nationalId,
     required bool isActive,
   }) async {
+    await _requireCompanyWriteAccess(detail.companyId);
     final trimmedCode = code.trim();
     final trimmedName = name.trim();
 
@@ -2209,6 +2225,7 @@ class LocalDatabase {
   Future<void> resolveDetailConflictKeepLocal(
     SyncConflictItem conflict,
   ) async {
+    await _requireCompanyWriteAccess(conflict.companyId);
     final serverRevision = conflict.serverRevision;
 
     if (serverRevision == null) {
@@ -2275,6 +2292,7 @@ class LocalDatabase {
     required List<LocalJournalLineInput> lines,
     required bool queueForSync,
   }) async {
+    await _requireCompanyWriteAccess(companyId);
     await _ensureDemoCapacity(companyId);
     final effectiveQueueForSync =
         DemoMode.isDemoCompany(companyId) ? false : queueForSync;
@@ -2444,6 +2462,7 @@ class LocalDatabase {
     required String documentId,
     required String companyId,
   }) async {
+    await _requireCompanyWriteAccess(companyId);
     await _db.transaction((txn) async {
       final documents = await txn.query(
         'local_accounting_documents',
@@ -2502,6 +2521,7 @@ class LocalDatabase {
     required List<LocalJournalLineInput> lines,
     required bool queueForSync,
   }) async {
+    await _requireCompanyWriteAccess(companyId);
     final effectiveLines = lines
         .where((line) => line.debit > 0 || line.credit > 0)
         .toList(growable: false);

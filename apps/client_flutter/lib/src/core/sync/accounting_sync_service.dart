@@ -13,6 +13,7 @@ class AccountingSyncRunResult {
     required this.pulled,
     required this.remainingOutbox,
     required this.stoppedByNetwork,
+    this.blockedByLicense = false,
     required this.startCursor,
     required this.endCursor,
   });
@@ -23,6 +24,7 @@ class AccountingSyncRunResult {
   final int pulled;
   final int remainingOutbox;
   final bool stoppedByNetwork;
+  final bool blockedByLicense;
   final int startCursor;
   final int endCursor;
 }
@@ -105,6 +107,7 @@ class AccountingSyncService {
         pulled: 0,
         remainingOutbox: push.remaining,
         stoppedByNetwork: true,
+        blockedByLicense: push.blockedByLicense,
         startCursor: currentCursor,
         endCursor: currentCursor,
       );
@@ -150,6 +153,7 @@ class AccountingSyncService {
       pulled: pull.pulled,
       remainingOutbox: push.remaining,
       stoppedByNetwork: false,
+      blockedByLicense: push.blockedByLicense,
       startCursor: pull.startCursor,
       endCursor: pull.endCursor,
     );

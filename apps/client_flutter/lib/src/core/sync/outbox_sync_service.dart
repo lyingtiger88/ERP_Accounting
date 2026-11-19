@@ -9,6 +9,7 @@ class SyncRunResult {
     required this.conflicts,
     required this.remaining,
     required this.stoppedByNetwork,
+    this.blockedByLicense = false,
   });
 
   final int processed;
@@ -17,9 +18,10 @@ class SyncRunResult {
   final int conflicts;
   final int remaining;
   final bool stoppedByNetwork;
+  final bool blockedByLicense;
 
   bool get hasErrors =>
-      failed > 0 || conflicts > 0 || stoppedByNetwork;
+      failed > 0 || conflicts > 0 || stoppedByNetwork || blockedByLicense;
 }
 
 class OutboxSyncService {
@@ -38,6 +40,51 @@ class OutboxSyncService {
     final pending = await localDatabase.getPendingOutbox(
       limit: batchSize,
     );
+
+    // Before replaying any queued changes, ask the ERP server for its current
+    // company-scoped write entitlement. Reads and local backups remain usable.
+    // Do not mark denied items as synced or destroy their payloads.
+    if (pending.isNotEmpty) {
+      try {
+        final license = await apiClient.zarrCompanyLicenseStatus(
+          bearerToken: bearerToken,
+        );
+        if (license['enforcementEnabled'] == true &&
+            license['canWrite'] != true) {
+          return SyncRunResult(
+            processed: 0,
+            synced: 0,
+            failed: 0,
+            conflicts: 0,
+            remaining: await localDatabase.pendingOutboxCount(),
+            stoppedByNetwork: false,
+            blockedByLicense: true,
+          );
+        }
+      } on ApiException catch (error) {
+        // A network/auth/service failure must never authorize replay.
+        return SyncRunResult(
+          processed: 0,
+          synced: 0,
+          failed: 0,
+          conflicts: 0,
+          remaining: await localDatabase.pendingOutboxCount(),
+          stoppedByNetwork: error.statusCode == null ||
+              error.statusCode == 503,
+          blockedByLicense: true,
+        );
+      } catch (_) {
+        return SyncRunResult(
+          processed: 0,
+          synced: 0,
+          failed: 0,
+          conflicts: 0,
+          remaining: await localDatabase.pendingOutboxCount(),
+          stoppedByNetwork: true,
+          blockedByLicense: true,
+        );
+      }
+    }
 
     var processed = 0;
     var synced = 0;

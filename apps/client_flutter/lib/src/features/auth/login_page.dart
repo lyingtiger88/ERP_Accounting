@@ -9,6 +9,7 @@ import '../../core/database/local_database.dart';
 import '../../core/demo/demo_mode.dart';
 import '../../core/demo/local_demo_business_engine.dart';
 import '../../core/sync/accounting_sync_service.dart';
+import '../../licensing/zarr_offline_entitlement.dart';
 import '../dashboard/dashboard_page.dart';
 import 'bootstrap_page.dart';
 
@@ -29,6 +30,7 @@ class _LoginPageState extends State<LoginPage> {
   final _password = TextEditingController();
   final _totpCode = TextEditingController();
   ApiClient _apiClient = ApiClient();
+  final _offlineLicenseStore = ZarrOfflineEntitlementStore();
 
   bool _obscurePassword = true;
   bool _busy = false;
@@ -104,6 +106,7 @@ class _LoginPageState extends State<LoginPage> {
       value,
     );
     await SecureSessionStore.instance.clear();
+    await _offlineLicenseStore.clear();
     ApiClient.configureBaseUrl(value);
 
     if (!mounted) return;
@@ -146,6 +149,28 @@ class _LoginPageState extends State<LoginPage> {
       await SecureSessionStore.instance.write(
         result.toSecureSession(),
       );
+
+      // Establish the current company license state before any user-originated
+      // local writes are enabled. An unavailable status is treated as unknown.
+      try {
+        final licenseStatus = await _apiClient.zarrCompanyLicenseStatus(
+          bearerToken: result.accessToken,
+        );
+        if (licenseStatus['companyId'] != result.companyId ||
+            licenseStatus['productId'] != 'zarr') {
+          await _offlineLicenseStore.markUnknown(result.companyId);
+        } else {
+          await _offlineLicenseStore.updateFromServer(
+            companyId: result.companyId,
+            enforcementEnabled: licenseStatus['enforcementEnabled'] == true,
+            token: licenseStatus['offlineEntitlement'] is String
+                ? licenseStatus['offlineEntitlement'] as String
+                : null,
+          );
+        }
+      } catch (_) {
+        await _offlineLicenseStore.markUnknown(result.companyId);
+      }
 
       await widget.localDatabase.cacheUserProfile(
         userId: result.userId,

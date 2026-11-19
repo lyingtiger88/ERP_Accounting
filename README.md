@@ -4,6 +4,10 @@ Cross-platform accounting and resource-management platform for Windows and Andro
 
 > **Product name:** زر (Zarr). The Flutter package and generated platform project use the product identity `zarr`; the backend keeps its internal `ERPAccounting.Api` namespace. Zarr is a standalone product, separate from Maal.
 
+## API container and future hosting
+
+The ASP.NET API has a non-root multi-stage Dockerfile for reproducible local container validation. No production host is currently provisioned and no image is published to a registry. See [the API hosting runbook](docs/API_HOSTING_RUNBOOK.md) for the local smoke test and the deferred production deployment checklist.
+
 ## Offline Demo Mode
 
 The Flutter client includes a serverless local demo mode from the login screen.
