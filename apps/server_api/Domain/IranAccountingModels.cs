@@ -80,6 +80,15 @@ public sealed class DetailAccount
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class OpeningBalanceRecord
+{
+    public required Guid FiscalYearId { get; set; }
+    public required Guid CompanyId { get; set; }
+    public required Guid JournalEntryId { get; set; }
+    public required Guid CreatedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class JournalEntryFiscalYear
 {
     public required Guid JournalEntryId { get; set; }
