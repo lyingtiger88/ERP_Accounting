@@ -1309,6 +1309,46 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _setDeviceBlacklist(
+    Map<String, dynamic> device, bool blacklist,
+  ) async {
+    final deviceId = device['id'].toString();
+    final name = device['deviceName']?.toString() ?? 'دستگاه';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(blacklist ? 'قرار دادن در فهرست سیاه' : 'خروج از فهرست سیاه'),
+        content: Text(blacklist
+            ? 'این دستگاه مسدود می‌شود، نشست‌های آن باطل می‌شوند و حتی با QR نیز اجازه ورود نخواهد داشت: $name'
+            : 'مسدودیت دستگاه برداشته می‌شود؛ اما برای ورود مجدد همچنان باید QR جدید جفت‌سازی شود. ادامه می‌دهید؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+              child: Text(blacklist ? 'مسدود کردن' : 'رفع مسدودیت')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      if (blacklist) {
+        await _api.blacklistTrustedDevice(
+          bearerToken: widget.accessToken, deviceId: deviceId,
+        );
+      } else {
+        await _api.unblacklistTrustedDevice(
+          bearerToken: widget.accessToken, deviceId: deviceId,
+        );
+      }
+      await Future.wait([_loadDevices(), _loadSessions(), _loadAudit()]);
+      if (mounted) _message(blacklist ? 'دستگاه مسدود شد.' : 'مسدودیت برداشته شد؛ ورود مجدد نیازمند QR است.');
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Widget _devicesTab() {
     return Column(
       children: [
@@ -1336,6 +1376,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         final device = _devices[index];
                         final state = device['trustState']?.toString() ?? 'Pending';
                         final revoked = state == 'Revoked';
+                        final blacklisted = device['isBlacklisted'] == true;
                         return Card(
                           child: ListTile(
                             leading: CircleAvatar(
@@ -1345,7 +1386,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             title: Text(device['deviceName'].toString()),
                             subtitle: Text(
                               device['platform'].toString() + ' • ' +
-                              (revoked ? 'لغو شده' : state == 'Trusted' ? 'قابل اعتماد' : 'در انتظار اعتماد') +
+                              (blacklisted ? 'مسدود در فهرست سیاه' : revoked ? 'لغو شده' : state == 'Trusted' ? 'قابل اعتماد' : 'در انتظار اعتماد') +
                               (device['lastSeenAt'] == null ? '' :
                                 ' • آخرین فعالیت: ' + _formatRegionalTime(device['lastSeenAt'])),
                             ),
@@ -1353,14 +1394,22 @@ class _SettingsPageState extends State<SettingsPage> {
                               enabled: !_busy,
                               tooltip: 'عملیات دستگاه',
                               onSelected: (action) {
-                                if (action == 'revoke' && !revoked) {
+                                if (action == 'blacklist') {
+                                  _setDeviceBlacklist(device, true);
+                                } else if (action == 'unblacklist') {
+                                  _setDeviceBlacklist(device, false);
+                                } else if (action == 'revoke' && !revoked) {
                                   _revokeDevice(device);
                                 } else if (action == 'delete') {
                                   _deleteDevice(device);
                                 }
                               },
                               itemBuilder: (context) => [
-                                if (!revoked)
+                                if (_canManageUsers && !blacklisted)
+                                  const PopupMenuItem(value: 'blacklist', child: ListTile(dense: true, leading: Icon(Icons.block), title: Text('قرار دادن در فهرست سیاه'))),
+                                if (_canManageUsers && blacklisted)
+                                  const PopupMenuItem(value: 'unblacklist', child: ListTile(dense: true, leading: Icon(Icons.check_circle_outline), title: Text('رفع مسدودیت'))),
+                                if (!revoked && !blacklisted)
                                   const PopupMenuItem(
                                     value: 'revoke',
                                     child: ListTile(
