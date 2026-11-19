@@ -435,6 +435,40 @@ auth.MapDelete("/devices/{deviceId:guid}", async (
         : Results.NotFound(new { error = "Device was not found." });
 }).RequireRateLimiting("auth");
 
+auth.MapPost("/devices/{deviceId:guid}/blacklist", async (
+    HttpRequest request,
+    Guid deviceId,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var actor = await CurrentUserAsync(request, authService, cancellationToken);
+    if (actor is null) return Results.Unauthorized();
+    if (!CanManageUsers(actor)) return Results.Forbid();
+
+    var changed = await authService.SetDeviceBlacklistAsync(
+        actor.Id, deviceId, true, cancellationToken: cancellationToken);
+    return changed
+        ? Results.Ok(new { blacklisted = true })
+        : Results.NotFound(new { error = "Device was not found." });
+}).RequireRateLimiting("auth");
+
+auth.MapDelete("/devices/{deviceId:guid}/blacklist", async (
+    HttpRequest request,
+    Guid deviceId,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var actor = await CurrentUserAsync(request, authService, cancellationToken);
+    if (actor is null) return Results.Unauthorized();
+    if (!CanManageUsers(actor)) return Results.Forbid();
+
+    var changed = await authService.SetDeviceBlacklistAsync(
+        actor.Id, deviceId, false, cancellationToken: cancellationToken);
+    return changed
+        ? Results.Ok(new { blacklisted = false, requiresPairing = true })
+        : Results.NotFound(new { error = "Device was not found." });
+}).RequireRateLimiting("auth");
+
 auth.MapPost("/devices/{deviceId:guid}/revoke", async (
     HttpRequest request,
     Guid deviceId,
