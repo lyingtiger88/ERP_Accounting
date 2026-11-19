@@ -630,4 +630,45 @@ public sealed class DevicePairingTests
         Assert.True(current.IsCurrent);
         Assert.Equal("Windows PC", current.DeviceName);
     }
+    [Fact]
+    public async Task BlacklistedInstallationCannotLoginEvenWithFreshQrPairingCode()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        await SecuritySchemaBootstrapper.EnsureAsync(db);
+        var service = new AuthService(db, new PasswordHasher<AppUser>());
+        const string password = "Strong-Test-Password-2026";
+        var (_, owner) = await service.BootstrapAsync(new BootstrapRequest(
+            "Blacklist Test", "blacklist-owner", "Owner", password));
+        var installation = new string('f', 64);
+        var first = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Blocked Phone", "android",
+            InstallationId: installation));
+        Assert.NotNull(first);
+        var device = await db.Devices.SingleAsync(x => x.UserId == owner.Id);
+
+        Assert.True(await service.SetDeviceBlacklistAsync(owner.Id, device.Id, true));
+        Assert.Null(await service.ResolveAsync(first.AccessToken));
+        var pairing = await service.CreateDevicePairingCodeAsync(owner.Id);
+        var denied = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Blocked Phone", "android",
+            PairingCode: pairing.Code, InstallationId: installation));
+        Assert.Null(denied);
+
+        var stored = await db.Devices.SingleAsync(x => x.Id == device.Id);
+        Assert.True(stored.IsBlacklisted);
+        Assert.Contains(await service.GetSecurityAuditAsync(owner.CompanyId),
+            x => x.EventType == "LOGIN" && x.Outcome == "DENIED" &&
+                 x.Details!.Contains("Blacklisted installation"));
+
+        Assert.True(await service.SetDeviceBlacklistAsync(owner.Id, device.Id, false));
+        var newPairing = await service.CreateDevicePairingCodeAsync(owner.Id);
+        var allowed = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Blocked Phone", "android",
+            PairingCode: newPairing.Code, InstallationId: installation));
+        Assert.NotNull(allowed);
+    }
 }
