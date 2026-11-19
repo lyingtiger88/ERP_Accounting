@@ -1242,7 +1242,7 @@ class ApiClient {
         'detailAccountId=' + Uri.encodeQueryComponent(detailAccountId),
     ];
 
-    final client = HttpClient();
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.getUrl(
         Uri.parse(
@@ -1255,7 +1255,7 @@ class ApiClient {
         HttpHeaders.authorizationHeader,
         'Bearer ' + bearerToken,
       );
-      final response = await request.close();
+      final response = await request.close().timeout(const Duration(seconds: 12));
       final bytes = await response.fold<List<int>>(
         <int>[],
         (buffer, chunk) => buffer..addAll(chunk),
@@ -1268,6 +1268,8 @@ class ApiClient {
         );
       }
       return bytes;
+    } on TimeoutException {
+      throw const ApiException('زمان انتظار پاسخ سرور به پایان رسید.');
     } on SocketException {
       throw const ApiException(
         'اتصال به سرور برقرار نشد. آدرس API و اجرای سرور را بررسی کنید.',
@@ -2189,7 +2191,7 @@ class ApiClient {
       }
 
       final response = await request.close();
-      final responseText = await response.transform(utf8.decoder).join();
+      final responseText = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 12));
       final dynamic decoded =
           responseText.isEmpty ? null : jsonDecode(responseText);
 
