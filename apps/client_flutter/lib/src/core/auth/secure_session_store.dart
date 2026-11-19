@@ -82,6 +82,45 @@ class SecureSessionStore {
   Future<void> writeTimeZoneId(String timeZoneId) =>
       _storage.write(key: _timeZoneId, value: timeZoneId);
 
+  static const _savedUsername = 'erp.saved_username';
+  static const _savedPassword = 'erp.saved_password';
+  static const _rememberCredentials = 'erp.remember_credentials';
+
+  Future<bool> rememberCredentialsEnabled() async =>
+      (await _storage.read(key: _rememberCredentials)) == '1';
+
+  Future<(String, String)?> readSavedCredentials() async {
+    if (!await rememberCredentialsEnabled()) return null;
+    final values = await Future.wait([
+      _storage.read(key: _savedUsername),
+      _storage.read(key: _savedPassword),
+    ]);
+    if (values[0] == null || values[0]!.isEmpty ||
+        values[1] == null || values[1]!.isEmpty) {
+      return null;
+    }
+    return (values[0]!, values[1]!);
+  }
+
+  Future<void> saveCredentials({
+    required String username,
+    required String password,
+  }) async {
+    await Future.wait([
+      _storage.write(key: _savedUsername, value: username),
+      _storage.write(key: _savedPassword, value: password),
+      _storage.write(key: _rememberCredentials, value: '1'),
+    ]);
+  }
+
+  Future<void> forgetCredentials() async {
+    await Future.wait([
+      _storage.delete(key: _savedUsername),
+      _storage.delete(key: _savedPassword),
+      _storage.write(key: _rememberCredentials, value: '0'),
+    ]);
+  }
+
   Future<void> write(SecureSession session) async {
     _memory = session;
     await Future.wait([
