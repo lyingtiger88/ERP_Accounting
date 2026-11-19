@@ -184,6 +184,60 @@ public static class AccountingSchemaBootstrapper
             ON accounting_projects ("CompanyId", "Code");
             """,
             """
+            """
+            CREATE TABLE IF NOT EXISTS opening_balances (
+                "FiscalYearId" TEXT NOT NULL
+                    CONSTRAINT "PK_opening_balances" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "JournalEntryId" TEXT NOT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_opening_balances_fiscal_years"
+                    FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_opening_balances_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_opening_balances_journals"
+                    FOREIGN KEY ("JournalEntryId") REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_opening_balances_users"
+                    FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_opening_balances_JournalEntryId"
+            ON opening_balances ("JournalEntryId");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS opening_balances (
+                "FiscalYearId" uuid NOT NULL
+                    CONSTRAINT "PK_opening_balances" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "JournalEntryId" uuid NOT NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_opening_balances_fiscal_years"
+                    FOREIGN KEY ("FiscalYearId") REFERENCES fiscal_years ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_opening_balances_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_opening_balances_journals"
+                    FOREIGN KEY ("JournalEntryId") REFERENCES journal_entries ("Id")
+                    ON DELETE RESTRICT,
+                CONSTRAINT "FK_opening_balances_users"
+                    FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
+            );
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_opening_balances_JournalEntryId"
+            ON opening_balances ("JournalEntryId");
+            """,
             CREATE TABLE IF NOT EXISTS journal_entry_fiscal_years (
                 "JournalEntryId" TEXT NOT NULL
                     CONSTRAINT "PK_journal_entry_fiscal_years" PRIMARY KEY,
