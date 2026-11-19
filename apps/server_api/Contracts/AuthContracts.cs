@@ -41,7 +41,10 @@ public sealed record DeviceResponse(
     string TrustState,
     DateTimeOffset FirstSeenAt,
     DateTimeOffset? LastSeenAt,
-    bool RequiresRePairing = false);
+    bool RequiresRePairing = false,
+    bool IsBlacklisted = false,
+    DateTimeOffset? BlacklistedAt = null,
+    string? BlacklistReason = null);
 
 public sealed record MfaCodeRequest(string Code);
 public sealed record MfaDisableRequest(string Password, string Code);
