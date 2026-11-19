@@ -1701,14 +1701,24 @@ public sealed class AccountingService(AppDbContext db)
         SyncJournalRequest request,
         CancellationToken cancellationToken = default)
     {
-        var changeId = request.ChangeId.Trim();
-        var localDocumentId = request.LocalDocumentId.Trim();
-
-        if (string.IsNullOrWhiteSpace(changeId) ||
-            string.IsNullOrWhiteSpace(localDocumentId))
+        if (request is null ||
+            string.IsNullOrWhiteSpace(request.ChangeId) ||
+            string.IsNullOrWhiteSpace(request.LocalDocumentId))
         {
             throw new ArgumentException(
                 "ChangeId and LocalDocumentId are required.");
+        }
+
+        var changeId = request.ChangeId.Trim();
+        var localDocumentId = request.LocalDocumentId.Trim();
+
+        if (changeId.Length > 128 ||
+            localDocumentId.Length > 128 ||
+            changeId.Any(char.IsControl) ||
+            localDocumentId.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "ChangeId and LocalDocumentId must be valid identifiers of at most 128 characters.");
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(

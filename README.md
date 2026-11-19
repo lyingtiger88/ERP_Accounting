@@ -62,8 +62,9 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] User/role administration screens
 - [x] TOTP 2FA enrollment and login verification (API + Windows/Android settings UI; automated security validation pending)
 - [x] One-time backup recovery codes (hashed at rest and consumed once)
-- [x] Trusted-device management UI/API + session revocation
-- [ ] Optional QR device pairing
+- [x] Trusted-device management UI/API + session revocation (Android sync rejected after revocation in physical test)
+- [ ] Automatic sign-out after remote revocation (implemented; physical retest pending)
+- [x] Optional QR device pairing (Windows manual entry and Android scanning physically validated; one-time-code reuse rejected)
 - [ ] Step-up authentication for sensitive operations
 - [x] Accounting audit log
 - [x] Security audit log
@@ -115,6 +116,10 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - TOTP accepts the current 30-second counter with a ±1 step clock-skew window and tracks the last accepted counter to reject replay.
 - Ten random 96-bit recovery codes are generated once during enrollment; only SHA-256 hashes are stored and each code is consumed on use.
 - MFA enrollment, confirmation, disablement and recovery are audited.
+- MFA verification locks for 10 minutes after five consecutive invalid codes; setup/enable/disable endpoints are rate-limited to five requests per five minutes per source IP.
+- New devices remain Pending unless the user supplies a valid, single-use pairing code issued from an authenticated session.
+- Device installation identifiers are normalized and hashed before storage; the server enforces one record per user/installation identifier and does not infer identity from the editable device display name.
+- Legacy device records without an installation identifier are retained (never silently merged or deleted) and the device-list API marks them with `requiresRePairing: true` so clients can guide a safe re-pairing flow. Pairing codes expire after five minutes, are stored only as SHA-256 hashes, are bound to the issuing user/company, and are invalidated when a replacement code is issued.
 - The authenticator setup key is shown only during enrollment. The user must store the recovery codes safely when shown.
 
 ### Phase 2 — Synchronization Engine
@@ -244,9 +249,9 @@ Key beta hardening now implemented:
 - [ ] Security review
 - [ ] Performance profiling
 - [ ] Database encryption strategy
-- [ ] Windows installer
+- [x] Windows installer build (CI smoke verified; production signing and upgrade validation pending)
 - [ ] Windows auto-update
-- [ ] Android release build
+- [ ] Android signed Release build (CI configured; existing signing identity and first signed build verification pending)
 - [ ] Android update strategy
 - [ ] Store-ready screenshots and metadata
 - [ ] Final product branding
@@ -359,3 +364,10 @@ See:
 - `docs/OFFLINE_FIRST.md`
 - `docs/MIGRATIONS.md`
 - `docs/ROADMAP.md`
+
+
+### Current cross-platform validation target
+
+- Shared client version: `0.5.0-beta.2+6` for Windows and Android.
+- The latest pull-request CI validates Flutter analysis, API tests, Android release APK compilation, and Windows release/installer compilation.
+- This validation build is not a production-signed distribution release.

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -16,9 +18,11 @@ class LoginPage extends StatefulWidget {
   const LoginPage({
     super.key,
     required this.localDatabase,
+    this.initialMessage,
   });
 
   final LocalDatabase localDatabase;
+  final String? initialMessage;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -28,18 +32,60 @@ class _LoginPageState extends State<LoginPage> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _totpCode = TextEditingController();
+  final _pairingCode = TextEditingController();
   ApiClient _apiClient = ApiClient();
 
   bool _obscurePassword = true;
+  bool _rememberCredentials = false;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedCredentials();
+    final message = widget.initialMessage;
+    if (message != null && message.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {
     _username.dispose();
     _password.dispose();
     _totpCode.dispose();
+    _pairingCode.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRememberedCredentials() async {
+    try {
+      final enabled = await SecureSessionStore.instance.rememberCredentialsEnabled();
+      final credentials = await SecureSessionStore.instance.readSavedCredentials();
+      if (!mounted) return;
+      setState(() {
+        _rememberCredentials = enabled;
+        if (credentials != null) {
+          _username.text = credentials.$1;
+          _password.text = credentials.$2;
+        }
+      });
+    } catch (_) {
+      // Credential restoration is optional; login remains available.
+    }
+  }
+
+  Future<void> _setRememberCredentials(bool value) async {
+    setState(() => _rememberCredentials = value);
+    if (!value) {
+      await SecureSessionStore.instance.forgetCredentials();
+    }
   }
 
   Future<void> _configureServer() async {
@@ -119,6 +165,146 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  Future<void> _scanPairingCode() async {
+    if (!Platform.isAndroid || _busy) return;
+
+    var scanCompleted = false;
+    final scanned = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('اسکن کد اتصال زر'),
+        content: SizedBox(
+          width: 340,
+          height: 360,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: MobileScanner(
+              onDetect: (capture) {
+                if (scanCompleted || capture.barcodes.isEmpty) return;
+                final rawValue = capture.barcodes.first.rawValue?.trim() ?? '';
+                final parsed = Uri.tryParse(rawValue);
+                var code = rawValue.toUpperCase();
+                String? server;
+                if (parsed != null &&
+                    parsed.scheme == 'zarr' &&
+                    parsed.host == 'pair') {
+                  code = parsed.queryParameters['code']?.toUpperCase() ?? '';
+                  server = parsed.queryParameters['server'];
+                }
+
+                final isPairingCode = code.length == 16 &&
+                    code.split('').every(
+                      (character) => '0123456789ABCDEF'.contains(character),
+                    );
+                final serverUri = server == null ? null : Uri.tryParse(server);
+                final validServer = server == null ||
+                    (serverUri != null &&
+                        serverUri.host.isNotEmpty &&
+                        (serverUri.scheme == 'http' ||
+                            serverUri.scheme == 'https'));
+
+                if (isPairingCode && validServer) {
+                  scanCompleted = true;
+                  Navigator.of(dialogContext).pop({
+                    'code': code,
+                    if (server != null) 'server': server,
+                  });
+                }
+              },
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('انصراف'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || scanned == null) return;
+
+    final server = scanned['server'];
+    if (server != null) {
+      var normalizedServer = server.trim();
+      while (normalizedServer.endsWith('/')) {
+        normalizedServer = normalizedServer.substring(
+          0,
+          normalizedServer.length - 1,
+        );
+      }
+
+      var currentServer = ApiClient.configuredBaseUrl;
+      while (currentServer.endsWith('/')) {
+        currentServer = currentServer.substring(0, currentServer.length - 1);
+      }
+
+      if (normalizedServer != currentServer) {
+        final serverUri = Uri.parse(normalizedServer);
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('تغییر آدرس سرور؟'),
+            content: Text(
+              'کد QR درخواست اتصال به این سرور را دارد:\n\n' +
+                  normalizedServer +
+                  (serverUri.scheme == 'http'
+                      ? '\n\nهشدار: ارتباط HTTP رمزنگاری نشده است.'
+                      : '') +
+                  '\n\nفقط در صورتی ادامه دهید که این آدرس متعلق به سازمان شماست.',
+              textDirection: TextDirection.ltr,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('انصراف'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('تأیید سرور'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed != true) return;
+      }
+
+      await widget.localDatabase.setMeta('api_base_url', normalizedServer);
+      ApiClient.configureBaseUrl(normalizedServer);
+    }
+
+    setState(() {
+      if (server != null) _apiClient = ApiClient();
+      _pairingCode.text = scanned['code'] ?? '';
+      _error = null;
+    });
+  }
+
+  Future<String> _currentDeviceName() async {
+    final plugin = DeviceInfoPlugin();
+    try {
+      if (Platform.isAndroid) {
+        final info = await plugin.androidInfo;
+        final manufacturer = info.manufacturer.trim();
+        final model = info.model.trim();
+        final label = [manufacturer, model]
+            .where((part) => part.isNotEmpty)
+            .join(' ');
+        return label.isEmpty ? 'Android device' : label;
+      }
+      if (Platform.isWindows) {
+        final info = await plugin.windowsInfo;
+        final name = info.computerName.trim();
+        return name.isEmpty ? 'Windows PC' : name;
+      }
+      return '${Platform.operatingSystem} device';
+    } catch (_) {
+      return Platform.isAndroid ? 'Android device' : 'Windows PC';
+    }
+  }
+
   Future<void> _login() async {
     setState(() {
       _busy = true;
@@ -129,8 +315,9 @@ class _LoginPageState extends State<LoginPage> {
       final result = await _apiClient.login(
         username: _username.text,
         password: _password.text,
-        deviceName: Platform.isAndroid ? 'Android Device' : 'Windows PC',
+        deviceName: await _currentDeviceName(),
         totpCode: _totpCode.text.trim().isEmpty ? null : _totpCode.text.trim(),
+        pairingCode: _pairingCode.text.trim().isEmpty ? null : _pairingCode.text.trim(),
       );
 
       if (!mounted) return;
@@ -146,6 +333,14 @@ class _LoginPageState extends State<LoginPage> {
       await SecureSessionStore.instance.write(
         result.toSecureSession(),
       );
+      if (_rememberCredentials) {
+        await SecureSessionStore.instance.saveCredentials(
+          username: _username.text.trim(),
+          password: _password.text,
+        );
+      } else {
+        await SecureSessionStore.instance.forgetCredentials();
+      }
 
       await widget.localDatabase.cacheUserProfile(
         userId: result.userId,
@@ -405,6 +600,21 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 4),
+                                CheckboxListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  value: _rememberCredentials,
+                                  onChanged: _busy
+                                      ? null
+                                      : (value) => _setRememberCredentials(value ?? false),
+                                  title: const Text('ذخیره نام کاربری و رمز عبور'),
+                                  subtitle: const Text(
+                                    'اطلاعات ورود به‌صورت رمزنگاری‌شده روی همین دستگاه نگهداری می‌شود.',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
                                 TextField(
                                   controller: _totpCode,
                                   enabled: !_busy,
@@ -414,6 +624,28 @@ class _LoginPageState extends State<LoginPage> {
                                   decoration: const InputDecoration(
                                     labelText: 'کد تأیید دومرحله‌ای (در صورت فعال بودن)',
                                     prefixIcon: Icon(Icons.security_outlined),
+                                    counterText: '',
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: _pairingCode,
+                                  enabled: !_busy,
+                                  keyboardType: TextInputType.visiblePassword,
+                                  textCapitalization: TextCapitalization.characters,
+                                  maxLength: 16,
+                                  textDirection: TextDirection.ltr,
+                                  decoration: InputDecoration(
+                                    labelText: 'کد اتصال دستگاه جدید (اختیاری)',
+                                    helperText: 'کد را از دستگاه قبلی دریافت کنید یا QR را اسکن کنید.',
+                                    prefixIcon: const Icon(Icons.devices_other_outlined),
+                                    suffixIcon: Platform.isAndroid
+                                        ? IconButton(
+                                            tooltip: 'اسکن QR',
+                                            onPressed: _busy ? null : _scanPairingCode,
+                                            icon: const Icon(Icons.qr_code_scanner),
+                                          )
+                                        : null,
                                     counterText: '',
                                   ),
                                 ),
@@ -466,22 +698,6 @@ class _LoginPageState extends State<LoginPage> {
                                   style: TextStyle(fontSize: 12),
                                 ),
                                 const SizedBox(height: 12),
-                                OutlinedButton.icon(
-                                  onPressed: _busy
-                                      ? null
-                                      : () {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'QR Pairing در مرحله امنیت فعال خواهد شد.',
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                  icon: const Icon(Icons.qr_code_scanner),
-                                  label: const Text('اتصال اختیاری با QR'),
-                                ),
                                 const SizedBox(height: 10),
                                 TextButton(
                                   onPressed: _busy ? null : _openBootstrap,

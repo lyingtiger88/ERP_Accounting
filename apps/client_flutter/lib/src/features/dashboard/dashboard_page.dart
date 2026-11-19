@@ -86,6 +86,8 @@ class DashboardPage extends StatelessWidget {
             Expanded(
               child: _DashboardBody(
                 displayName: displayName,
+                role: role,
+                accessToken: accessToken,
                 companyId: companyId,
                 localDatabase: localDatabase,
                 accountsSynced: accountsSynced,
@@ -247,6 +249,8 @@ class _Navigation extends StatelessWidget {
 class _DashboardBody extends StatelessWidget {
   const _DashboardBody({
     required this.displayName,
+    required this.role,
+    required this.accessToken,
     required this.companyId,
     required this.localDatabase,
     required this.accountsSynced,
@@ -254,10 +258,74 @@ class _DashboardBody extends StatelessWidget {
   });
 
   final String displayName;
+  final String role;
+  final String accessToken;
   final String companyId;
   final LocalDatabase localDatabase;
   final bool accountsSynced;
   final bool isDemoMode;
+
+  Future<List<Map<String, dynamic>>> _loadRecentLogins() async {
+    if (isDemoMode || (role != 'Owner' && role != 'Administrator')) return const [];
+    final events = await ApiClient().getSecurityAudit(bearerToken: accessToken, limit: 40);
+    return events.where((event) =>
+      event['eventType']?.toString() == 'LOGIN' &&
+      event['outcome']?.toString() == 'SUCCESS'
+    ).take(8).toList(growable: false);
+  }
+
+  Widget _recentLoginAlerts() {
+    if (isDemoMode || (role != 'Owner' && role != 'Administrator')) return const SizedBox.shrink();
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _loadRecentLogins(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Card(child: Padding(padding: EdgeInsets.all(18), child: LinearProgressIndicator()));
+        }
+        if (snapshot.hasError) {
+          return const Card(child: ListTile(
+            leading: Icon(Icons.warning_amber_outlined),
+            title: Text('اعلان‌های ورود بارگذاری نشد'),
+          ));
+        }
+        final events = snapshot.data ?? const [];
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  const Icon(Icons.notifications_active_outlined),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('اعلان ورود کاربران', style: Theme.of(context).textTheme.titleMedium)),
+                  Text(events.length.toString()),
+                ]),
+                const Divider(),
+                if (events.isEmpty)
+                  const Text('ورود موفقی در رویدادهای اخیر ثبت نشده است.')
+                else
+                  for (final event in events)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(child: Icon(Icons.login, size: 18)),
+                      title: Text(event['username']?.toString() ?? 'کاربر'),
+                      subtitle: Text(event['details']?.toString() ?? 'ورود موفق'),
+                      trailing: Text(
+                        event['createdAt'] == null ? '' :
+                          (DateTime.tryParse(event['createdAt'].toString())?.toLocal().toString().substring(0, 16) ?? ''),
+                        textDirection: TextDirection.ltr,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<_LocalStatus> _loadLocalStatus() async {
     return _LocalStatus(
@@ -318,6 +386,8 @@ class _DashboardBody extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
+          _recentLoginAlerts(),
+          const SizedBox(height: 12),
           FutureBuilder<_LocalStatus>(
             future: _loadLocalStatus(),
             builder: (context, snapshot) {

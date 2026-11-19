@@ -11,7 +11,9 @@ public sealed record LoginRequest(
     string Password,
     string DeviceName,
     string Platform,
-    string? TotpCode = null);
+    string? TotpCode = null,
+    string? PairingCode = null,
+    string? InstallationId = null);
 
 public sealed record LoginResponse(
     string AccessToken,
@@ -30,15 +32,31 @@ public sealed record RefreshSessionRequest(
 public sealed record LogoutRequest(
     string? RefreshToken = null);
 
+public sealed record DevicePairingCodeResponse(string Code, DateTimeOffset ExpiresAt);
+
 public sealed record DeviceResponse(
     Guid Id,
     string DeviceName,
     string Platform,
     string TrustState,
     DateTimeOffset FirstSeenAt,
-    DateTimeOffset? LastSeenAt);
+    DateTimeOffset? LastSeenAt,
+    bool RequiresRePairing = false,
+    bool IsBlacklisted = false,
+    DateTimeOffset? BlacklistedAt = null,
+    string? BlacklistReason = null);
 
 public sealed record MfaCodeRequest(string Code);
 public sealed record MfaDisableRequest(string Password, string Code);
 public sealed record MfaSetupResponse(string Secret, string OtpauthUri);
 public sealed record MfaEnableResponse(bool Enabled, IReadOnlyList<string> RecoveryCodes);
+
+public sealed record SessionResponse(
+    Guid Id,
+    string? DeviceName,
+    string? Platform,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastRefreshedAt,
+    DateTimeOffset AccessExpiresAt,
+    DateTimeOffset RefreshExpiresAt,
+    bool IsCurrent = false);

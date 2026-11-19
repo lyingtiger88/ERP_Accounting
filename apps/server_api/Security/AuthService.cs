@@ -72,6 +72,18 @@ public sealed class AuthService(
         LoginRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(request.Username) ||
+            string.IsNullOrWhiteSpace(request.DeviceName) ||
+            string.IsNullOrWhiteSpace(request.Platform) ||
+            request.DeviceName.Trim().Length > 200 ||
+            request.Platform.Trim().Length > 80 ||
+            (request.InstallationId is not null &&
+             (request.InstallationId.Length != 64 ||
+              !request.InstallationId.All(Uri.IsHexDigit))))
+        {
+            return null;
+        }
+
         var normalizedUsername =
             request.Username.Trim().ToLowerInvariant();
 
@@ -123,18 +135,78 @@ public sealed class AuthService(
         }
 
         var now = DateTimeOffset.UtcNow;
+        DevicePairingChallenge? pairingChallenge = null;
+        if (!string.IsNullOrWhiteSpace(request.PairingCode))
+        {
+            var codeHash = HashToken(request.PairingCode.Trim().ToUpperInvariant());
+            // SQLite does not translate DateTimeOffset ordering reliably.
+            // The code hash is unique, so fetch at most one candidate and
+            // validate its expiry in memory before the atomic one-time consume.
+            pairingChallenge = await db.DevicePairingChallenges
+                .FirstOrDefaultAsync(x =>
+                    x.CompanyId == user.CompanyId &&
+                    x.UserId == user.Id &&
+                    x.CodeHash == codeHash &&
+                    x.UsedAt == null,
+                    cancellationToken);
+
+            if (pairingChallenge is null || pairingChallenge.ExpiresAt <= now)
+            {
+                AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR", "DENIED",
+                    user.Username, "Invalid, expired or already-used pairing code.");
+                await db.SaveChangesAsync(cancellationToken);
+                return null;
+            }
+
+        }
+
         var deviceName = request.DeviceName.Trim();
         var platform = request.Platform.Trim();
-        var normalizedDeviceName = deviceName.ToLowerInvariant();
-        var normalizedPlatform = platform.ToLowerInvariant();
+        var installationHash = string.IsNullOrWhiteSpace(request.InstallationId)
+            ? null : HashToken(request.InstallationId.Trim().ToLowerInvariant());
 
-        var device = await db.Devices.FirstOrDefaultAsync(
-            x =>
-                x.UserId == user.Id &&
-                x.TrustState != DeviceTrustState.Revoked &&
-                x.DeviceName.ToLower() == normalizedDeviceName &&
-                x.Platform.ToLower() == normalizedPlatform,
-            cancellationToken);
+        // Never inherit trust from a display name. Legacy clients without an
+        // installation identifier always receive a separate device record.
+        var device = installationHash is null ? null :
+            await db.Devices.FirstOrDefaultAsync(x =>
+                x.UserId == user.Id && x.InstallationIdHash == installationHash,
+                cancellationToken);
+
+        if (device?.IsBlacklisted == true)
+        {
+            AddSecurityAudit(user.CompanyId, user.Id, "LOGIN", "DENIED",
+                user.Username, "Blacklisted installation denied. Device=" + deviceName);
+            await db.SaveChangesAsync(cancellationToken);
+            return null;
+        }
+
+        if (pairingChallenge is not null)
+        {
+            var consumeAt = DateTimeOffset.UtcNow;
+            if (pairingChallenge.ExpiresAt <= consumeAt)
+            {
+                AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR", "DENIED",
+                    user.Username, "Pairing code expired before it could be consumed.");
+                await db.SaveChangesAsync(cancellationToken);
+                return null;
+            }
+
+            var consumed = await db.DevicePairingChallenges
+                .Where(x => x.Id == pairingChallenge.Id && x.UsedAt == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(x => x.UsedAt, consumeAt),
+                    cancellationToken);
+
+            if (consumed != 1) return null;
+        }
+
+        if (device?.TrustState == DeviceTrustState.Revoked && pairingChallenge is null)
+        {
+            AddSecurityAudit(user.CompanyId, user.Id, "LOGIN", "DENIED",
+                user.Username, "Revoked installation requires a new pairing code.");
+            await db.SaveChangesAsync(cancellationToken);
+            return null;
+        }
 
         if (device is null)
         {
@@ -144,15 +216,29 @@ public sealed class AuthService(
                 UserId = user.Id,
                 DeviceName = deviceName,
                 Platform = platform,
-                TrustState = DeviceTrustState.Pending,
+                InstallationIdHash = installationHash,
+                TrustState = pairingChallenge is null
+                    ? DeviceTrustState.Pending : DeviceTrustState.Trusted,
                 LastSeenAt = now
             };
-
             db.Devices.Add(device);
         }
         else
         {
+            device.DeviceName = deviceName;
+            device.Platform = platform;
             device.LastSeenAt = now;
+            if (pairingChallenge is not null)
+            {
+                device.TrustState = DeviceTrustState.Trusted;
+                device.RevokedAt = null;
+            }
+        }
+
+        if (pairingChallenge is not null)
+        {
+            AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR", "SUCCESS",
+                user.Username, "Device=" + deviceName + "; Platform=" + platform);
         }
 
         await RevokeExpiredSessionsAsync(now, cancellationToken);
@@ -230,30 +316,40 @@ public sealed class AuthService(
 
         var pair = CreateTokenPair(now);
 
-        session.AccessTokenHash = HashToken(pair.AccessToken);
-        session.RefreshTokenHash = HashToken(pair.RefreshToken);
-        session.AccessExpiresAt = pair.AccessExpiresAt;
-        session.RefreshExpiresAt = pair.RefreshExpiresAt;
-        session.LastRefreshedAt = now;
-
         if (session.DeviceId is Guid deviceId)
         {
             var device = await db.Devices.FirstOrDefaultAsync(
                 x => x.Id == deviceId,
                 cancellationToken);
 
-            if (device is not null)
+            if (device is null ||
+                device.UserId != session.UserId ||
+                device.CompanyId != session.CompanyId ||
+                device.TrustState == DeviceTrustState.Revoked)
             {
-                if (device.TrustState == DeviceTrustState.Revoked)
-                {
-                    session.RevokedAt = now;
-                    session.RevokeReason = "DeviceRevoked";
-                    await db.SaveChangesAsync(cancellationToken);
-                    return null;
-                }
-
-                device.LastSeenAt = now;
+                session.RevokedAt = now;
+                session.RevokeReason = "DeviceRevokedOrInvalid";
+                await db.SaveChangesAsync(cancellationToken);
+                return null;
             }
+
+            device.LastSeenAt = now;
+        }
+
+        // Compare-and-swap prevents concurrent requests from rotating the same token.
+        var rotated = await db.AuthSessions
+            .Where(x => x.Id == session.Id &&
+                        x.RefreshTokenHash == refreshHash &&
+                        x.RevokedAt == null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.AccessTokenHash, HashToken(pair.AccessToken))
+                .SetProperty(x => x.RefreshTokenHash, HashToken(pair.RefreshToken))
+                .SetProperty(x => x.AccessExpiresAt, pair.AccessExpiresAt)
+                .SetProperty(x => x.RefreshExpiresAt, pair.RefreshExpiresAt)
+                .SetProperty(x => x.LastRefreshedAt, now), cancellationToken);
+        if (rotated != 1)
+        {
+            return null;
         }
 
         AddSecurityAudit(
@@ -350,6 +446,19 @@ public sealed class AuthService(
             return null;
         }
 
+        // Defense in depth: a device marked revoked never authorizes a request,
+        // even if an older session row has not yet been marked revoked.
+        if (session.DeviceId is Guid deviceId &&
+            !await db.Devices.AsNoTracking().AnyAsync(
+                x => x.Id == deviceId &&
+                     x.UserId == session.UserId &&
+                     x.CompanyId == session.CompanyId &&
+                     x.TrustState != DeviceTrustState.Revoked,
+                cancellationToken))
+        {
+            return null;
+        }
+
         return await db.Users
             .AsNoTracking()
             .FirstOrDefaultAsync(
@@ -384,6 +493,114 @@ public sealed class AuthService(
             .ToArray();
     }
 
+    public async Task<DevicePairingCodeResponse> CreateDevicePairingCodeAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(
+            x => x.Id == userId && x.IsActive,
+            cancellationToken)
+            ?? throw new InvalidOperationException("Active user session is required.");
+
+        var now = DateTimeOffset.UtcNow;
+        await db.DevicePairingChallenges
+            .Where(x => x.UserId == userId && x.UsedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.UsedAt, now),
+                cancellationToken);
+
+        var code = Convert.ToHexString(RandomNumberGenerator.GetBytes(8));
+        var expiresAt = now.AddMinutes(5);
+        db.DevicePairingChallenges.Add(new DevicePairingChallenge
+        {
+            CompanyId = user.CompanyId,
+            UserId = user.Id,
+            CodeHash = HashToken(code),
+            CreatedAt = now,
+            ExpiresAt = expiresAt
+        });
+
+        AddSecurityAudit(user.CompanyId, user.Id, "DEVICE_PAIR_CODE", "SUCCESS",
+            user.Username, "A one-time device pairing code was issued.");
+        await db.SaveChangesAsync(cancellationToken);
+        return new DevicePairingCodeResponse(code, expiresAt);
+    }
+
+    public async Task<IReadOnlyList<SessionResponse>> GetActiveSessionsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default,
+        string? currentAccessToken = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var currentHash = string.IsNullOrWhiteSpace(currentAccessToken)
+            ? null : HashToken(currentAccessToken);
+        var sessions = await db.AuthSessions.AsNoTracking()
+            .Where(x => x.UserId == userId && x.RevokedAt == null)
+            .ToArrayAsync(cancellationToken);
+        var devices = await db.Devices.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        // SQLite cannot order DateTimeOffset in SQL.
+        return sessions
+            .Where(x => x.RefreshExpiresAt > now &&
+                (x.DeviceId == null ||
+                 (devices.TryGetValue(x.DeviceId.Value, out var d) &&
+                  d.TrustState != DeviceTrustState.Revoked)))
+            .OrderByDescending(x => currentHash != null && x.AccessTokenHash == currentHash)
+            .ThenByDescending(x => x.LastRefreshedAt)
+            .Select(x =>
+            {
+                var device = x.DeviceId.HasValue
+                    ? devices.GetValueOrDefault(x.DeviceId.Value) : null;
+                return new SessionResponse(x.Id, device?.DeviceName, device?.Platform,
+                    x.CreatedAt, x.LastRefreshedAt, x.AccessExpiresAt,
+                    x.RefreshExpiresAt, currentHash != null && x.AccessTokenHash == currentHash);
+            }).ToArray();
+    }
+
+    public async Task<int> RevokeAllSessionsAsync(
+        Guid userId,
+        string? currentAccessToken = null,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var currentHash = string.IsNullOrWhiteSpace(currentAccessToken)
+            ? null
+            : HashToken(currentAccessToken);
+
+        var sessions = await db.AuthSessions
+            .Where(x => x.UserId == userId && x.RevokedAt == null)
+            .ToArrayAsync(cancellationToken);
+
+        var revokedCount = 0;
+        foreach (var session in sessions)
+        {
+            // Keep the session used to authorize this request alive.
+            // Revoke every other session, including QR-paired devices.
+            if (currentHash is not null && session.AccessTokenHash == currentHash)
+                continue;
+
+            session.RevokedAt = now;
+            session.RevokeReason = "RevokeAllOtherSessions";
+            revokedCount++;
+        }
+
+        var companyId = sessions.FirstOrDefault()?.CompanyId;
+        if (revokedCount > 0 && companyId is Guid auditCompanyId)
+        {
+            AddSecurityAudit(
+                auditCompanyId,
+                userId,
+                "REVOKE_ALL_OTHER_SESSIONS",
+                "SUCCESS",
+                null,
+                $"Other active sessions revoked. Count={revokedCount}; current session preserved={currentHash is not null}");
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return revokedCount;
+    }
+
     public async Task<IReadOnlyList<DeviceResponse>> GetDevicesAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
@@ -402,8 +619,56 @@ public sealed class AuthService(
                 x.Platform,
                 x.TrustState.ToString(),
                 x.FirstSeenAt,
-                x.LastSeenAt))
+                x.LastSeenAt,
+                x.InstallationIdHash is null,
+                x.IsBlacklisted,
+                x.BlacklistedAt,
+                x.BlacklistReason))
             .ToArray();
+    }
+
+    public async Task<bool> DeleteDeviceAsync(
+        Guid userId,
+        Guid deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await db.Devices.FirstOrDefaultAsync(
+            x => x.Id == deviceId && x.UserId == userId,
+            cancellationToken);
+        if (device is null) return false;
+
+        var sessions = await db.AuthSessions
+            .Where(x => x.UserId == userId && x.DeviceId == deviceId)
+            .ToArrayAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var session in sessions)
+        {
+            if (session.RevokedAt is null)
+            {
+                session.RevokedAt = now;
+                session.RevokeReason = "DeviceDeleted";
+            }
+            // Preserve session/audit history without retaining a FK to a
+            // device record that the owner explicitly removed.
+            session.DeviceId = null;
+        }
+
+        var user = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+
+        AddSecurityAudit(
+            device.CompanyId,
+            userId,
+            "DEVICE_DELETE",
+            "SUCCESS",
+            user?.Username,
+            "Device=" + device.DeviceName + "; Platform=" + device.Platform +
+            "; RelatedSessions=" + sessions.Length);
+
+        db.Devices.Remove(device);
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<bool> RevokeDeviceAsync(
@@ -452,6 +717,58 @@ public sealed class AuthService(
             user?.Username,
             "Device=" + device.DeviceName +
             "; Platform=" + device.Platform);
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> SetDeviceBlacklistAsync(
+        Guid userId,
+        Guid deviceId,
+        bool blacklisted,
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await db.Devices.FirstOrDefaultAsync(
+            x => x.Id == deviceId && x.UserId == userId,
+            cancellationToken);
+        if (device is null) return false;
+
+        var now = DateTimeOffset.UtcNow;
+        device.IsBlacklisted = blacklisted;
+        device.BlacklistedAt = blacklisted ? now : null;
+        device.BlacklistReason = blacklisted
+            ? string.IsNullOrWhiteSpace(reason) ? "Blocked by account administrator" : reason.Trim()
+            : null;
+
+        if (blacklisted)
+        {
+            device.TrustState = DeviceTrustState.Revoked;
+            device.RevokedAt = now;
+            var sessions = await db.AuthSessions
+                .Where(x => x.UserId == userId && x.DeviceId == deviceId && x.RevokedAt == null)
+                .ToArrayAsync(cancellationToken);
+            foreach (var session in sessions)
+            {
+                session.RevokedAt = now;
+                session.RevokeReason = "DeviceBlacklisted";
+            }
+        }
+        else
+        {
+            // Unblocking does not restore trust or old sessions; a fresh QR pairing is required.
+            device.TrustState = DeviceTrustState.Revoked;
+            device.RevokedAt = now;
+        }
+
+        var username = await db.Users.AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => x.Username)
+            .FirstOrDefaultAsync(cancellationToken);
+        AddSecurityAudit(device.CompanyId, userId,
+            blacklisted ? "DEVICE_BLACKLIST" : "DEVICE_UNBLACKLIST",
+            "SUCCESS", username,
+            "Device=" + device.DeviceName + "; Platform=" + device.Platform +
+            "; Reason=" + (device.BlacklistReason ?? "none"));
         await db.SaveChangesAsync(cancellationToken);
         return true;
     }

@@ -3,7 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 import '../../licensing/zarr_license_page.dart';
+import '../../core/app_version.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/secure_session_store.dart';
@@ -44,31 +48,138 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _loadingUsers = false;
   bool _loadingDevices = false;
+  bool _loadingSessions = false;
+  String? _sessionLoadError;
+  String _timeZoneId = 'Asia/Tehran';
+  bool _timeZoneReady = false;
   bool _loadingAudit = false;
   bool _loadingMfa = false;
   bool _mfaEnabled = false;
   bool _busy = false;
   List<Map<String, dynamic>> _users = const [];
   List<Map<String, dynamic>> _devices = const [];
+  List<Map<String, dynamic>> _sessions = const [];
   List<Map<String, dynamic>> _audit = const [];
   List<String> _backups = const [];
 
   bool get _isDemo => DemoMode.isDemoToken(widget.accessToken);
 
-  bool get _canManageUsers =>
-      !_isDemo &&
-      (widget.role == 'Owner' || widget.role == 'Administrator');
+  bool get _canManageUsers {
+    final normalizedRole = widget.role.trim().toLowerCase();
+    return !_isDemo &&
+        (normalizedRole == 'owner' ||
+         normalizedRole == 'administrator' ||
+         normalizedRole == 'admin');
+  }
 
   @override
   void initState() {
     super.initState();
+    tzdata.initializeTimeZones();
+    _loadTimeZone();
     _loadAll();
+  }
+
+  static const _timeZones = <String, String>{
+    'Asia/Tehran': 'تهران',
+    'Europe/Berlin': 'برلین',
+    'Europe/London': 'لندن',
+    'Europe/Paris': 'پاریس',
+    'Europe/Istanbul': 'استانبول',
+    'Asia/Dubai': 'دبی',
+    'Asia/Riyadh': 'ریاض',
+    'Asia/Kabul': 'کابل',
+    'Asia/Karachi': 'کراچی',
+    'Asia/Kolkata': 'کلکته',
+    'Asia/Tokyo': 'توکیو',
+    'Asia/Shanghai': 'شانگهای',
+    'Asia/Singapore': 'سنگاپور',
+    'America/New_York': 'نیویورک',
+    'America/Chicago': 'شیکاگو',
+    'America/Los_Angeles': 'لس‌آنجلس',
+    'Australia/Sydney': 'سیدنی',
+    'UTC': 'UTC',
+  };
+
+  Future<void> _loadTimeZone() async {
+    final saved = await SecureSessionStore.instance.readTimeZoneId();
+    if (!mounted) return;
+    setState(() {
+      if (saved != null && _timeZones.containsKey(saved)) {
+        _timeZoneId = saved;
+      }
+      _timeZoneReady = true;
+    });
+  }
+
+  Future<void> _saveTimeZone(String? value) async {
+    if (value == null || !_timeZones.containsKey(value)) return;
+    setState(() => _timeZoneId = value);
+    await SecureSessionStore.instance.writeTimeZoneId(value);
+    if (mounted) _message('منطقه زمانی ذخیره شد.');
+  }
+
+  String _formatRegionalTime(dynamic value) {
+    if (value == null) return 'ثبت نشده';
+    final parsed = DateTime.tryParse(value.toString());
+    if (parsed == null) return value.toString();
+    final local = tz.TZDateTime.from(parsed.toUtc(), tz.getLocation(_timeZoneId));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.year)}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+  }
+
+  Widget _locationTimeZoneTab() {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('منطقه زمانی مختصات مکانی', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                const Text(
+                  'زمان رویدادها و اتصال‌ها در برنامه بر اساس منطقه زمانی انتخاب‌شده نمایش داده می‌شود. '
+                  'زمان ذخیره‌شده در سرور همچنان UTC باقی می‌ماند و فقط نمایش محلی تغییر می‌کند.',
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  value: _timeZoneId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'منطقه زمانی',
+                    prefixIcon: Icon(Icons.public),
+                  ),
+                  items: [
+                    for (final entry in _timeZones.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text('${entry.value} — ${entry.key}', textDirection: TextDirection.ltr),
+                      ),
+                  ],
+                  onChanged: !_timeZoneReady || _busy ? null : _saveTimeZone,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'زمان فعلی: ${_formatRegionalTime(DateTime.now().toUtc().toIso8601String())}',
+                  textDirection: TextDirection.ltr,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _loadAll() async {
     await Future.wait([
       _loadUsers(),
       _loadDevices(),
+      _loadSessions(),
       _loadMfa(),
       _loadAudit(),
       _loadBackups(),
@@ -284,6 +395,59 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _loadSessions() async {
+    if (_isDemo) return;
+    if (mounted) setState(() { _loadingSessions = true; _sessionLoadError = null; });
+    try {
+      final sessions = await _api.getActiveSessions(
+        bearerToken: widget.accessToken,
+      );
+      if (!mounted) return;
+      setState(() => _sessions = sessions);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _sessionLoadError = error.message);
+    } finally {
+      if (mounted) setState(() => _loadingSessions = false);
+    }
+  }
+
+  Future<void> _revokeAllSessions() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف کامل نشست‌ها'),
+        content: const Text(
+          'تمام نشست‌های دیگر این حساب، از جمله گوشی‌های جفت‌شده با QR، باطل می‌شوند. '
+          'نشست همین دستگاهی که اکنون با آن کار می‌کنید حفظ خواهد شد. ادامه می‌دهید؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('خروج از سایر دستگاه‌ها'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      final revokedCount = await _api.revokeAllSessions(
+        bearerToken: widget.accessToken,
+      );
+      _message('$revokedCount نشست دیگر باطل شد؛ نشست فعلی حفظ شده است.');
+      await Future.wait([_loadSessions(), _loadDevices()]);
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _revokeDevice(
     Map<String, dynamic> device,
   ) async {
@@ -318,7 +482,48 @@ class _SettingsPageState extends State<SettingsPage> {
         deviceId: device['id'].toString(),
       );
       _message('دسترسی دستگاه و Sessionهای آن باطل شد.');
-      await _loadDevices();
+      await Future.wait([_loadDevices(), _loadSessions()]);
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _deleteDevice(Map<String, dynamic> device) async {
+    final name = device['deviceName']?.toString() ?? 'دستگاه ناشناس';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('حذف کامل دستگاه'),
+        content: Text(
+          'دستگاه «$name» از فهرست این حساب حذف می‌شود. نشست‌های مرتبط باطل و از اتصال به این دستگاه جدا می‌شوند؛ سوابق امنیتی حفظ خواهند شد. برای استفاده مجدد، دستگاه باید دوباره ثبت شود. ادامه می‌دهید؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('انصراف'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('حذف کامل دستگاه'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await _api.deleteTrustedDevice(
+        bearerToken: widget.accessToken,
+        deviceId: device['id'].toString(),
+      );
+      _message('دستگاه حذف شد و نشست‌های مرتبط باطل شدند.');
+      await Future.wait([_loadDevices(), _loadSessions()]);
     } on ApiException catch (error) {
       _message(error.message);
     } finally {
@@ -779,8 +984,8 @@ class _SettingsPageState extends State<SettingsPage> {
         1 +
         (showMfa ? 1 : 0) +
         (_canManageUsers ? 2 : 0) +
-        (showDevices ? 1 : 0) +
-        1;
+        (showDevices ? 2 : 0) +
+        2;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -804,11 +1009,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icon(Icons.security_outlined),
                       text: 'احراز هویت دومرحله‌ای',
                     ),
-                  if (showDevices)
-                    const Tab(
-                      icon: Icon(Icons.devices_outlined),
-                      text: 'دستگاه‌ها',
-                    ),
+                  if (showDevices) ...[
+                    const Tab(icon: Icon(Icons.devices_outlined), text: 'دستگاه‌ها'),
+                    const Tab(icon: Icon(Icons.login_outlined), text: 'نشست‌ها'),
+                  ],
+                  const Tab(icon: Icon(Icons.public_outlined), text: 'مختصات مکانی'),
                   if (_canManageUsers)
                     const Tab(
                       icon: Icon(Icons.security_outlined),
@@ -830,6 +1035,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     if (_canManageUsers) _usersTab(),
                     if (showMfa) _mfaTab(),
                     if (showDevices) _devicesTab(),
+                    if (showDevices) _sessionsTab(),
+                    _locationTimeZoneTab(),
                     if (_canManageUsers) _auditTab(),
                     _backupTab(),
                     _aboutTab(),
@@ -866,6 +1073,35 @@ class _SettingsPageState extends State<SettingsPage> {
                   const Text(
                     'برای اطلاعات محصولات، ثبت حساب کاربری، پشتیبانی و مدیریت اشتراک به وب‌سایت رسمی کالیا سافت مراجعه کنید.',
                     textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Column(
+                      children: [
+                        Text(
+                          'نسخه نرم‌افزار',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        SizedBox(height: 6),
+                        SelectableText(
+                          ZarrAppVersion.display,
+                          textDirection: TextDirection.ltr,
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          ZarrAppVersion.platforms,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 18),
                   SelectableText(
@@ -986,61 +1222,325 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _devicesTab() {
-    if (_loadingDevices) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_devices.isEmpty) {
-      return const Center(
-        child: Text('دستگاه ثبت‌شده‌ای وجود ندارد.'),
+  Future<void> _createDevicePairingCode() async {
+    setState(() => _busy = true);
+    try {
+      final result = await _api.createDevicePairingCode(
+        bearerToken: widget.accessToken,
       );
+      if (!mounted) return;
+      final code = result['code']?.toString() ?? '';
+      final expiresAt = result['expiresAt']?.toString() ?? '';
+      final configuredServer = ApiClient.configuredBaseUrl;
+      final serverUri = Uri.tryParse(configuredServer);
+      final serverIsLoopback = serverUri == null ||
+          const {'localhost', '127.0.0.1', '::1', '10.0.2.2'}
+              .contains(serverUri.host.toLowerCase());
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('کد یک‌بارمصرف اتصال دستگاه'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'در دستگاه جدید، همین کد را در صفحه ورود وارد کنید. ورود همچنان به نام کاربری، رمز عبور و در صورت فعال بودن MFA به کد دومرحله‌ای نیاز دارد.',
+                ),
+                const SizedBox(height: 18),
+                Center(
+                  child: QrImageView(
+                    data: Uri(
+                      scheme: 'zarr',
+                      host: 'pair',
+                      queryParameters: {
+                        if (!serverIsLoopback) 'server': configuredServer,
+                        'code': code,
+                      },
+                    ).toString(),
+                    version: QrVersions.auto,
+                    size: 220,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SelectableText(
+                  code,
+                  textAlign: TextAlign.center,
+                  textDirection: TextDirection.ltr,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 3,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'اعتبار تا: ' + expiresAt,
+                  textDirection: TextDirection.ltr,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (serverIsLoopback) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'آدرس سرور این دستگاه محلی است. در دستگاه جدید، آدرس شبکه یا HTTPS سرور را جداگانه تنظیم کنید؛ QR فقط کد اتصال را منتقل می‌کند.',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                const Text(
+                  'با ساخت کد جدید، کد قبلی فوراً باطل می‌شود. این کد فقط یک‌بار قابل استفاده است.',
+                  textAlign: TextAlign.right,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('متوجه شدم'),
+            ),
+          ],
+        ),
+      );
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
+  }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(20),
-      itemCount: _devices.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final device = _devices[index];
-        final state = device['trustState']?.toString() ?? 'Pending';
-        final revoked = state == 'Revoked';
+  Future<void> _setDeviceBlacklist(
+    Map<String, dynamic> device, bool blacklist,
+  ) async {
+    final deviceId = device['id'].toString();
+    final name = device['deviceName']?.toString() ?? 'دستگاه';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(blacklist ? 'قرار دادن در فهرست سیاه' : 'خروج از فهرست سیاه'),
+        content: Text(blacklist
+            ? 'این دستگاه مسدود می‌شود، نشست‌های آن باطل می‌شوند و حتی با QR نیز اجازه ورود نخواهد داشت: $name'
+            : 'مسدودیت دستگاه برداشته می‌شود؛ اما برای ورود مجدد همچنان باید QR جدید جفت‌سازی شود. ادامه می‌دهید؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('انصراف')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+              child: Text(blacklist ? 'مسدود کردن' : 'رفع مسدودیت')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      if (blacklist) {
+        await _api.blacklistTrustedDevice(
+          bearerToken: widget.accessToken, deviceId: deviceId,
+        );
+      } else {
+        await _api.unblacklistTrustedDevice(
+          bearerToken: widget.accessToken, deviceId: deviceId,
+        );
+      }
+      await Future.wait([_loadDevices(), _loadSessions(), _loadAudit()]);
+      if (mounted) _message(blacklist ? 'دستگاه مسدود شد.' : 'مسدودیت برداشته شد؛ ورود مجدد نیازمند QR است.');
+    } on ApiException catch (error) {
+      _message(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              child: Icon(
-                device['platform']?.toString().toLowerCase() == 'android'
-                    ? Icons.phone_android_outlined
-                    : Icons.computer_outlined,
+  Widget _devicesTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _createDevicePairingCode,
+              icon: const Icon(Icons.add_link),
+              label: const Text('ایجاد کد اتصال دستگاه جدید'),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _loadingDevices
+              ? const Center(child: CircularProgressIndicator())
+              : _devices.isEmpty
+                  ? const Center(child: Text('دستگاه ثبت‌شده‌ای وجود ندارد.'))
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                      itemCount: _devices.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final device = _devices[index];
+                        final state = device['trustState']?.toString() ?? 'Pending';
+                        final revoked = state == 'Revoked';
+                        final blacklisted = device['isBlacklisted'] == true;
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              child: Icon(device['platform']?.toString().toLowerCase() == 'android'
+                                  ? Icons.phone_android_outlined : Icons.computer_outlined),
+                            ),
+                            title: Text(device['deviceName'].toString()),
+                            subtitle: Text(
+                              device['platform'].toString() + ' • ' +
+                              (blacklisted ? 'مسدود در فهرست سیاه' : revoked ? 'لغو شده' : state == 'Trusted' ? 'قابل اعتماد' : 'در انتظار اعتماد') +
+                              (device['lastSeenAt'] == null ? '' :
+                                ' • آخرین فعالیت: ' + _formatRegionalTime(device['lastSeenAt'])),
+                            ),
+                            trailing: blacklisted && _canManageUsers
+                                ? TextButton.icon(
+                                    onPressed: _busy
+                                        ? null
+                                        : () => _setDeviceBlacklist(device, false),
+                                    icon: const Icon(Icons.lock_open),
+                                    label: const Text('رفع مسدودیت'),
+                                  )
+                                : PopupMenuButton<String>(
+                              enabled: !_busy,
+                              tooltip: 'عملیات دستگاه',
+                              onSelected: (action) {
+                                if (action == 'blacklist') {
+                                  _setDeviceBlacklist(device, true);
+                                } else if (action == 'unblacklist') {
+                                  _setDeviceBlacklist(device, false);
+                                } else if (action == 'revoke' && !revoked) {
+                                  _revokeDevice(device);
+                                } else if (action == 'delete') {
+                                  _deleteDevice(device);
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                if (_canManageUsers && !blacklisted && device['requiresRePairing'] != true)
+                                  const PopupMenuItem(value: 'blacklist', child: ListTile(dense: true, leading: Icon(Icons.block), title: Text('قرار دادن در فهرست سیاه'))),
+                                if (_canManageUsers && blacklisted)
+                                  const PopupMenuItem(value: 'unblacklist', child: ListTile(dense: true, leading: Icon(Icons.check_circle_outline), title: Text('رفع مسدودیت'))),
+                                if (!revoked && !blacklisted)
+                                  const PopupMenuItem(
+                                    value: 'revoke',
+                                    child: ListTile(
+                                      dense: true,
+                                      leading: Icon(Icons.phonelink_erase_outlined),
+                                      title: Text('لغو دسترسی'),
+                                    ),
+                                  ),
+                                if (!blacklisted)
+                                  const PopupMenuItem(
+                                  value: 'delete',
+                                  child: ListTile(
+                                    dense: true,
+                                    leading: Icon(Icons.delete_outline),
+                                    title: Text('حذف کامل دستگاه'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sessionsTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'نشست‌های فعال — ${_sessions.length}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: 'بازخوانی',
+                onPressed: _busy || _loadingSessions ? null : _loadSessions,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _loadingSessions
+              ? const Center(child: CircularProgressIndicator())
+              : _sessionLoadError != null
+                  ? Center(child: Text('خطا در دریافت نشست‌ها: $_sessionLoadError'))
+                  : _sessions.isEmpty
+                  ? const Center(child: Text('سرور هیچ نشست فعالی گزارش نکرد؛ اتصال را بازخوانی کنید.'))
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                      itemCount: _sessions.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final session = _sessions[index];
+                        final device = session['deviceName']?.toString() ?? 'دستگاه ناشناس';
+                        final platform = session['platform']?.toString() ?? 'نامشخص';
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.devices_outlined),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: Text(device, style: Theme.of(context).textTheme.titleMedium)),
+                                    if (session['isCurrent'] == true)
+                                      const Chip(label: Text('نشست جاری')),
+                                  ],
+                                ),
+                                const Divider(height: 22),
+                                _sessionInfoRow('پلتفرم', platform),
+                                _sessionInfoRow('زمان اتصال', _formatRegionalTime(session['createdAt'])),
+                                _sessionInfoRow('آخرین تمدید', _formatRegionalTime(session['lastRefreshedAt'])),
+                                _sessionInfoRow('انقضای دسترسی', _formatRegionalTime(session['accessExpiresAt'])),
+                                _sessionInfoRow('انقضای نشست', _formatRegionalTime(session['refreshExpiresAt'])),
+                                _sessionInfoRow('منطقه زمانی', _timeZoneId),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+        if (_sessions.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _revokeAllSessions,
+                icon: const Icon(Icons.delete_sweep_outlined),
+                label: const Text('حذف کامل همه نشست‌ها'),
               ),
             ),
-            title: Text(device['deviceName'].toString()),
-            subtitle: Text(
-              device['platform'].toString() +
-                  ' • ' +
-                  (revoked
-                      ? 'لغو شده'
-                      : state == 'Trusted'
-                          ? 'قابل اعتماد'
-                          : 'در انتظار اعتماد') +
-                  (device['lastSeenAt'] == null
-                      ? ''
-                      : ' • آخرین فعالیت: ' +
-                          device['lastSeenAt'].toString()),
-            ),
-            trailing: revoked
-                ? const Chip(label: Text('Revoked'))
-                : OutlinedButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => _revokeDevice(device),
-                    icon: const Icon(Icons.phonelink_erase_outlined),
-                    label: const Text('لغو دسترسی'),
-                  ),
           ),
-        );
-      },
+      ],
+    );
+  }
+
+  Widget _sessionInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 120, child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
+          Expanded(child: SelectableText(value, textDirection: TextDirection.ltr)),
+        ],
+      ),
     );
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -137,6 +138,12 @@ class DetailAccountSyncResult {
 }
 
 class ApiClient {
+  static final StreamController<String> _sessionExpiredController =
+      StreamController<String>.broadcast();
+
+  static Stream<String> get sessionExpired =>
+      _sessionExpiredController.stream;
+
   ApiClient({String? baseUrl})
       : baseUrl = baseUrl ?? _runtimeBaseUrl ?? _defaultBaseUrl();
 
@@ -218,6 +225,7 @@ class ApiClient {
     required String password,
     required String deviceName,
     String? totpCode,
+    String? pairingCode,
   }) async {
     final payload = await _request(
       'POST',
@@ -227,15 +235,34 @@ class ApiClient {
         'password': password,
         'deviceName': deviceName,
         'platform': Platform.operatingSystem,
+        'installationId': await SecureSessionStore.instance.installationId(),
         if (totpCode != null && totpCode.trim().isNotEmpty)
           'totpCode': totpCode.trim(),
+        if (pairingCode != null && pairingCode.trim().isNotEmpty)
+          'pairingCode': pairingCode.trim().toUpperCase(),
       },
     );
 
     return LoginResult.fromJson(payload as Map<String, dynamic>);
   }
 
-  Future<LoginResult?> refreshSession({
+  static Future<LoginResult?>? _refreshInFlight;
+
+  Future<LoginResult?> refreshSession({String? refreshToken}) async {
+    final pending = _refreshInFlight;
+    if (pending != null) return pending;
+    final operation = _refreshSessionOnce(refreshToken: refreshToken);
+    _refreshInFlight = operation;
+    try {
+      return await operation;
+    } finally {
+      if (identical(_refreshInFlight, operation)) {
+        _refreshInFlight = null;
+      }
+    }
+  }
+
+  Future<LoginResult?> _refreshSessionOnce({
     String? refreshToken,
   }) async {
     final token = refreshToken ??
@@ -261,6 +288,9 @@ class ApiClient {
     } on ApiException catch (error) {
       if (error.statusCode == 401) {
         await SecureSessionStore.instance.clear();
+        _sessionExpiredController.add(
+          'دسترسی این دستگاه لغو شده یا نشست شما منقضی شده است؛ لطفاً دوباره وارد شوید.',
+        );
         return null;
       }
       rethrow;
@@ -334,6 +364,42 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> createDevicePairingCode({
+    required String bearerToken,
+  }) async {
+    final payload = await _request(
+      'POST',
+      '/api/auth/devices/pairing-code',
+      bearerToken: bearerToken,
+      body: const <String, dynamic>{},
+    );
+    return Map<String, dynamic>.from(payload as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getActiveSessions({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/auth/sessions',
+      bearerToken: bearerToken,
+    );
+    return (response as List<dynamic>)
+        .map((value) => Map<String, dynamic>.from(value as Map))
+        .toList(growable: false);
+  }
+
+  Future<int> revokeAllSessions({
+    required String bearerToken,
+  }) async {
+    final response = await _request(
+      'DELETE',
+      '/api/auth/sessions',
+      bearerToken: bearerToken,
+    );
+    return (response['revokedCount'] as num?)?.toInt() ?? 0;
+  }
+
   Future<List<Map<String, dynamic>>> getTrustedDevices({
     required String bearerToken,
   }) async {
@@ -350,6 +416,22 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<void> blacklistTrustedDevice({
+    required String bearerToken,
+    required String deviceId,
+  }) async {
+    await _request('POST', '/api/auth/devices/' + deviceId + '/blacklist',
+        bearerToken: bearerToken, body: const <String, dynamic>{});
+  }
+
+  Future<void> unblacklistTrustedDevice({
+    required String bearerToken,
+    required String deviceId,
+  }) async {
+    await _request('DELETE', '/api/auth/devices/' + deviceId + '/blacklist',
+        bearerToken: bearerToken);
+  }
+
   Future<void> revokeTrustedDevice({
     required String bearerToken,
     required String deviceId,
@@ -359,6 +441,17 @@ class ApiClient {
       '/api/auth/devices/' + deviceId + '/revoke',
       bearerToken: bearerToken,
       body: const <String, dynamic>{},
+    );
+  }
+
+  Future<void> deleteTrustedDevice({
+    required String bearerToken,
+    required String deviceId,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/auth/devices/' + deviceId,
+      bearerToken: bearerToken,
     );
   }
 
@@ -1165,7 +1258,7 @@ class ApiClient {
         'detailAccountId=' + Uri.encodeQueryComponent(detailAccountId),
     ];
 
-    final client = HttpClient();
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.getUrl(
         Uri.parse(
@@ -1178,7 +1271,7 @@ class ApiClient {
         HttpHeaders.authorizationHeader,
         'Bearer ' + bearerToken,
       );
-      final response = await request.close();
+      final response = await request.close().timeout(const Duration(seconds: 12));
       final bytes = await response.fold<List<int>>(
         <int>[],
         (buffer, chunk) => buffer..addAll(chunk),
@@ -1191,6 +1284,8 @@ class ApiClient {
         );
       }
       return bytes;
+    } on TimeoutException {
+      throw const ApiException('زمان انتظار پاسخ سرور به پایان رسید.');
     } on SocketException {
       throw const ApiException(
         'اتصال به سرور برقرار نشد. آدرس API و اجرای سرور را بررسی کنید.',
@@ -2112,13 +2207,26 @@ class ApiClient {
       }
 
       final response = await request.close();
-      final responseText = await response.transform(utf8.decoder).join();
+      final responseText = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 12));
       final dynamic decoded =
           responseText.isEmpty ? null : jsonDecode(responseText);
 
       if (response.statusCode == 401 &&
           allowRefresh &&
           bearerToken != null) {
+        // A parallel request may already have rotated our access token.
+        final latest = await SecureSessionStore.instance.currentAccessToken();
+        if (latest != null &&
+            latest.isNotEmpty &&
+            latest != effectiveBearerToken) {
+          return await _request(
+            method,
+            path,
+            body: body,
+            bearerToken: latest,
+            allowRefresh: false,
+          );
+        }
         final refreshed = await refreshSession();
         if (refreshed != null) {
           return await _request(

@@ -12,6 +12,34 @@ public static class SecuritySchemaBootstrapper
 
         if (provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
         {
+            var connection = db.Database.GetDbConnection();
+            var openedHere = connection.State != System.Data.ConnectionState.Open;
+            if (openedHere) await connection.OpenAsync(cancellationToken);
+            try
+            {
+                await using var query = connection.CreateCommand();
+                query.CommandText = "SELECT COUNT(*) FROM pragma_table_info('trusted_devices') WHERE name = 'InstallationIdHash'";
+                if (Convert.ToInt64(await query.ExecuteScalarAsync(cancellationToken)) == 0)
+                    await db.Database.ExecuteSqlRawAsync("ALTER TABLE trusted_devices ADD COLUMN InstallationIdHash TEXT NULL", cancellationToken);
+                foreach (var column in new[]
+                {
+                    ("IsBlacklisted", "INTEGER NOT NULL DEFAULT 0"),
+                    ("BlacklistedAt", "TEXT NULL"),
+                    ("BlacklistReason", "TEXT NULL")
+                })
+                {
+                    await using var check = connection.CreateCommand();
+                    check.CommandText = "SELECT COUNT(*) FROM pragma_table_info('trusted_devices') WHERE name = '" + column.Item1 + "'";
+                    if (Convert.ToInt64(await check.ExecuteScalarAsync(cancellationToken)) == 0)
+                        await db.Database.ExecuteSqlRawAsync(
+                            "ALTER TABLE trusted_devices ADD COLUMN \"" + column.Item1 + "\" " + column.Item2,
+                            cancellationToken);
+                }
+            }
+            finally
+            {
+                if (openedHere) await connection.CloseAsync();
+            }
             foreach (var command in SqliteCommands)
             {
                 await db.Database.ExecuteSqlRawAsync(
@@ -23,6 +51,11 @@ public static class SecuritySchemaBootstrapper
 
         if (provider.Contains("Npgsql", StringComparison.OrdinalIgnoreCase))
         {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"IsBlacklisted\" boolean NOT NULL DEFAULT FALSE; " +
+                "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"BlacklistedAt\" timestamp with time zone NULL; " +
+                "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"BlacklistReason\" character varying(500) NULL;",
+                cancellationToken);
             foreach (var command in PostgresCommands)
             {
                 await db.Database.ExecuteSqlRawAsync(
@@ -34,6 +67,28 @@ public static class SecuritySchemaBootstrapper
 
     private static readonly string[] SqliteCommands =
     [
+        "CREATE UNIQUE INDEX IF NOT EXISTS IX_trusted_devices_UserId_InstallationIdHash ON trusted_devices (UserId, InstallationIdHash);",
+        """
+        CREATE TABLE IF NOT EXISTS device_pairing_challenges (
+            "Id" TEXT NOT NULL CONSTRAINT "PK_device_pairing_challenges" PRIMARY KEY,
+            "CompanyId" TEXT NOT NULL,
+            "UserId" TEXT NOT NULL,
+            "CodeHash" TEXT NOT NULL,
+            "CreatedAt" TEXT NOT NULL,
+            "ExpiresAt" TEXT NOT NULL,
+            "UsedAt" TEXT NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_device_pairing_challenges_CodeHash"
+        ON device_pairing_challenges ("CodeHash");
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_device_pairing_challenges_UserId_ExpiresAt_UsedAt"
+        ON device_pairing_challenges ("UserId", "ExpiresAt", "UsedAt");
+        """,
         """
         CREATE TABLE IF NOT EXISTS auth_sessions (
             "Id" TEXT NOT NULL CONSTRAINT "PK_auth_sessions" PRIMARY KEY,
@@ -128,6 +183,29 @@ public static class SecuritySchemaBootstrapper
 
     private static readonly string[] PostgresCommands =
     [
+        "ALTER TABLE trusted_devices ADD COLUMN IF NOT EXISTS \"InstallationIdHash\" character varying(64) NULL;",
+        "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_trusted_devices_UserId_InstallationIdHash\" ON trusted_devices (\"UserId\", \"InstallationIdHash\");",
+        """
+        CREATE TABLE IF NOT EXISTS device_pairing_challenges (
+            "Id" uuid NOT NULL CONSTRAINT "PK_device_pairing_challenges" PRIMARY KEY,
+            "CompanyId" uuid NOT NULL,
+            "UserId" uuid NOT NULL,
+            "CodeHash" character varying(64) NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "ExpiresAt" timestamp with time zone NOT NULL,
+            "UsedAt" timestamp with time zone NULL,
+            FOREIGN KEY ("CompanyId") REFERENCES companies ("Id") ON DELETE CASCADE,
+            FOREIGN KEY ("UserId") REFERENCES users ("Id") ON DELETE CASCADE
+        );
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_device_pairing_challenges_CodeHash"
+        ON device_pairing_challenges ("CodeHash");
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS "IX_device_pairing_challenges_UserId_ExpiresAt_UsedAt"
+        ON device_pairing_challenges ("UserId", "ExpiresAt", "UsedAt");
+        """,
         """
         CREATE TABLE IF NOT EXISTS auth_sessions (
             "Id" uuid NOT NULL CONSTRAINT "PK_auth_sessions" PRIMARY KEY,

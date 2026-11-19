@@ -99,6 +99,22 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true
             });
     });
+    options.AddPolicy("mfa", httpContext =>
+    {
+        var key =
+            httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: key,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
 });
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -264,7 +280,7 @@ auth.MapPost("/mfa/setup", async (
     if (user is null) return Results.Unauthorized();
     if (user.MfaEnabled) return Results.Conflict(new { error = "MFA is already enabled." });
     return Results.Ok(await mfaService.BeginSetupAsync(user.Id, user.Username, cancellationToken));
-});
+}).RequireRateLimiting("mfa");
 
 auth.MapPost("/mfa/enable", async (
     HttpRequest request, MfaCodeRequest payload, AuthService authService,
@@ -275,7 +291,7 @@ auth.MapPost("/mfa/enable", async (
     try { return Results.Ok(await mfaService.ConfirmSetupAsync(user.Id, payload.Code, cancellationToken)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-});
+}).RequireRateLimiting("mfa");
 
 auth.MapPost("/mfa/disable", async (
     HttpRequest request, MfaDisableRequest payload, AuthService authService,
@@ -290,7 +306,7 @@ auth.MapPost("/mfa/disable", async (
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-});
+}).RequireRateLimiting("mfa");
 
 auth.MapPost("/refresh", async (
     RefreshSessionRequest request,
@@ -327,6 +343,64 @@ auth.MapPost("/logout", async (
     return Results.Ok(new { revoked });
 });
 
+auth.MapPost("/devices/pairing-code", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+
+    try
+    {
+        return Results.Ok(await authService.CreateDevicePairingCodeAsync(
+            user.Id, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+}).RequireRateLimiting("mfa");
+
+auth.MapGet("/sessions", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    return user is null
+        ? Results.Unauthorized()
+        : Results.Ok(await authService.GetActiveSessionsAsync(user.Id, cancellationToken,
+            request.Headers.Authorization.ToString()["Bearer ".Length..].Trim()));
+}).RequireRateLimiting("auth");
+
+auth.MapDelete("/sessions", async (
+    HttpRequest request,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+
+    var bearerToken = request.Headers.Authorization.ToString();
+    var currentAccessToken = bearerToken.StartsWith(
+        "Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? bearerToken["Bearer ".Length..].Trim()
+        : null;
+
+    var revokedCount = await authService.RevokeAllSessionsAsync(
+        user.Id,
+        currentAccessToken,
+        cancellationToken);
+
+    return Results.Ok(new
+    {
+        revoked = true,
+        revokedCount,
+        currentSessionPreserved = currentAccessToken is not null
+    });
+}).RequireRateLimiting("auth");
+
 auth.MapGet("/devices", async (
     HttpRequest request,
     AuthService authService,
@@ -342,7 +416,58 @@ auth.MapGet("/devices", async (
         : Results.Ok(await authService.GetDevicesAsync(
             user.Id,
             cancellationToken));
-});
+}).RequireRateLimiting("auth");
+
+auth.MapDelete("/devices/{deviceId:guid}", async (
+    HttpRequest request,
+    Guid deviceId,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+
+    var deleted = await authService.DeleteDeviceAsync(
+        user.Id, deviceId, cancellationToken);
+
+    return deleted
+        ? Results.Ok(new { deleted = true })
+        : Results.NotFound(new { error = "Device was not found." });
+}).RequireRateLimiting("auth");
+
+auth.MapPost("/devices/{deviceId:guid}/blacklist", async (
+    HttpRequest request,
+    Guid deviceId,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var actor = await CurrentUserAsync(request, authService, cancellationToken);
+    if (actor is null) return Results.Unauthorized();
+    if (!CanManageUsers(actor)) return Results.Forbid();
+
+    var changed = await authService.SetDeviceBlacklistAsync(
+        actor.Id, deviceId, true, cancellationToken: cancellationToken);
+    return changed
+        ? Results.Ok(new { blacklisted = true })
+        : Results.NotFound(new { error = "Device was not found." });
+}).RequireRateLimiting("auth");
+
+auth.MapDelete("/devices/{deviceId:guid}/blacklist", async (
+    HttpRequest request,
+    Guid deviceId,
+    AuthService authService,
+    CancellationToken cancellationToken) =>
+{
+    var actor = await CurrentUserAsync(request, authService, cancellationToken);
+    if (actor is null) return Results.Unauthorized();
+    if (!CanManageUsers(actor)) return Results.Forbid();
+
+    var changed = await authService.SetDeviceBlacklistAsync(
+        actor.Id, deviceId, false, cancellationToken: cancellationToken);
+    return changed
+        ? Results.Ok(new { blacklisted = false, requiresPairing = true })
+        : Results.NotFound(new { error = "Device was not found." });
+}).RequireRateLimiting("auth");
 
 auth.MapPost("/devices/{deviceId:guid}/revoke", async (
     HttpRequest request,
@@ -368,7 +493,7 @@ auth.MapPost("/devices/{deviceId:guid}/revoke", async (
     return revoked
         ? Results.Ok(new { revoked = true })
         : Results.NotFound(new { error = "Device was not found." });
-});
+}).RequireRateLimiting("auth");
 
 app.MapGet("/api/me", async (
     HttpRequest request,

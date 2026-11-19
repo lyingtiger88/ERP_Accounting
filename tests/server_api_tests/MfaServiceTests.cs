@@ -53,6 +53,48 @@ public sealed class MfaServiceTests
         Assert.False(await service.VerifyLoginCodeAsync(user.Id, recovery, default));
     }
 
+
+    [Fact]
+    public async Task RepeatedInvalidCodes_LockMfaVerification_AndRejectValidCodeDuringLockout()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+
+        var company = new Company { Name = "MFA Lockout Test" };
+        var hasher = new PasswordHasher<AppUser>();
+        var user = new AppUser
+        {
+            CompanyId = company.Id,
+            Username = "mfa-lockout-owner",
+            DisplayName = "MFA Lockout Owner",
+            PasswordHash = "placeholder",
+            Role = UserRole.Owner
+        };
+        user.PasswordHash = hasher.HashPassword(user, "Strong-Test-Password-2026");
+        db.Companies.Add(company);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = new MfaService(db, new EphemeralDataProtectionProvider(), hasher);
+        var setup = await service.BeginSetupAsync(user.Id, user.Username, default);
+        var validCode = CurrentTotp(setup.Secret);
+        await service.ConfirmSetupAsync(user.Id, validCode, default);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+            Assert.False(await service.VerifyLoginCodeAsync(user.Id, "not-a-valid-code", default));
+
+        // The lockout must reject even a correct TOTP until the lock expires.
+        Assert.False(await service.VerifyLoginCodeAsync(user.Id, CurrentTotp(setup.Secret), default));
+
+        var credential = await db.MfaCredentials.SingleAsync(x => x.UserId == user.Id);
+        Assert.NotNull(credential.LockedUntil);
+        Assert.True(credential.LockedUntil > DateTimeOffset.UtcNow);
+        Assert.Equal(0, credential.FailedAttempts);
+    }
+
     private static string CurrentTotp(string secret)
     {
         var key = Base32Decode(secret);

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SecureSession {
@@ -30,9 +32,7 @@ class SecureSessionStore {
   static final SecureSessionStore instance = SecureSessionStore._();
 
   static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
   static const _accessToken = 'erp.access_token';
@@ -46,10 +46,83 @@ class SecureSessionStore {
   static const _mfaRequired = 'erp.mfa_required';
 
   SecureSession? _memory;
+  Future<String>? _installationIdentity;
+
+  Future<String> installationId() async {
+    final operation = _installationIdentity ??= _loadInstallationId();
+    try {
+      return await operation;
+    } catch (_) {
+      if (identical(_installationIdentity, operation)) {
+        _installationIdentity = null;
+      }
+      rethrow;
+    }
+  }
+
+  Future<String> _loadInstallationId() async {
+    const key = 'erp.installation_id';
+    final existing = await _storage.read(key: key);
+    if (existing != null && RegExp(r'^[0-9a-f]{64}$').hasMatch(existing)) {
+      return existing;
+    }
+
+    final random = Random.secure();
+    final id = List.generate(32, (_) => random.nextInt(256))
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    await _storage.write(key: key, value: id);
+    return id;
+  }
+
+  static const _timeZoneId = 'erp.time_zone_id';
+
+  Future<String?> readTimeZoneId() => _storage.read(key: _timeZoneId);
+
+  Future<void> writeTimeZoneId(String timeZoneId) =>
+      _storage.write(key: _timeZoneId, value: timeZoneId);
+
+  static const _savedUsername = 'erp.saved_username';
+  static const _savedPassword = 'erp.saved_password';
+  static const _rememberCredentials = 'erp.remember_credentials';
+
+  Future<bool> rememberCredentialsEnabled() async =>
+      (await _storage.read(key: _rememberCredentials)) == '1';
+
+  Future<(String, String)?> readSavedCredentials() async {
+    if (!await rememberCredentialsEnabled()) return null;
+    final values = await Future.wait([
+      _storage.read(key: _savedUsername),
+      _storage.read(key: _savedPassword),
+    ]);
+    if (values[0] == null || values[0]!.isEmpty ||
+        values[1] == null || values[1]!.isEmpty) {
+      return null;
+    }
+    return (values[0]!, values[1]!);
+  }
+
+  Future<void> saveCredentials({
+    required String username,
+    required String password,
+  }) async {
+    await Future.wait([
+      _storage.write(key: _savedUsername, value: username),
+      _storage.write(key: _savedPassword, value: password),
+      _storage.write(key: _rememberCredentials, value: '1'),
+    ]);
+  }
+
+  Future<void> forgetCredentials() async {
+    await Future.wait([
+      _storage.delete(key: _savedUsername),
+      _storage.delete(key: _savedPassword),
+      _storage.write(key: _rememberCredentials, value: '0'),
+    ]);
+  }
 
   Future<void> write(SecureSession session) async {
     _memory = session;
-
     await Future.wait([
       _storage.write(key: _accessToken, value: session.accessToken),
       _storage.write(
@@ -65,18 +138,13 @@ class SecureSessionStore {
       _storage.write(key: _companyId, value: session.companyId),
       _storage.write(key: _displayName, value: session.displayName),
       _storage.write(key: _role, value: session.role),
-      _storage.write(
-        key: _mfaRequired,
-        value: session.mfaRequired ? '1' : '0',
-      ),
+      _storage.write(key: _mfaRequired, value: session.mfaRequired ? '1' : '0'),
     ]);
   }
 
   Future<SecureSession?> read() async {
     final cached = _memory;
-    if (cached != null) {
-      return cached;
-    }
+    if (cached != null) return cached;
 
     final values = await Future.wait([
       _storage.read(key: _accessToken),
@@ -90,13 +158,10 @@ class SecureSessionStore {
       _storage.read(key: _mfaRequired),
     ]);
 
-    if (values.take(8).any((value) => value == null)) {
-      return null;
-    }
+    if (values.take(8).any((value) => value == null)) return null;
 
     final accessExpiry = DateTime.tryParse(values[1]!);
     final refreshExpiry = DateTime.tryParse(values[3]!);
-
     if (accessExpiry == null || refreshExpiry == null) {
       await clear();
       return null;
@@ -117,11 +182,9 @@ class SecureSessionStore {
     return session;
   }
 
-  Future<String?> currentAccessToken() async =>
-      (await read())?.accessToken;
+  Future<String?> currentAccessToken() async => (await read())?.accessToken;
 
-  Future<String?> currentRefreshToken() async =>
-      (await read())?.refreshToken;
+  Future<String?> currentRefreshToken() async => (await read())?.refreshToken;
 
   Future<void> clear() async {
     _memory = null;
