@@ -12,6 +12,7 @@ import 'fiscal_years_page.dart';
 import 'general_ledger_page.dart';
 import 'journal_report_page.dart';
 import 'local_documents_page.dart';
+import 'opening_balances_page.dart';
 import 'new_journal_page.dart';
 import 'profit_loss_page.dart';
 import 'trial_balance_page.dart';
@@ -86,6 +87,20 @@ class AccountingHomePage extends StatelessWidget {
               spacing: 16,
               runSpacing: 16,
               children: [
+                if (!isDemoMode)
+                  _ActionCard(
+                    title: 'مانده‌های افتتاحیه',
+                    subtitle: 'ثبت یک‌باره مانده حساب‌ها و تفصیلی‌ها',
+                    icon: Icons.account_balance_wallet_outlined,
+                    onTap: () => _open(
+                      context,
+                      OpeningBalancesPage(
+                        companyId: companyId,
+                        accessToken: accessToken,
+                        localDatabase: localDatabase,
+                      ),
+                    ),
+                  ),
                 _ActionCard(
                   title: 'ثبت سند جدید',
                   subtitle: isDemoMode
