@@ -23,6 +23,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<CostCenter> CostCenters => Set<CostCenter>();
     public DbSet<AccountingProject> AccountingProjects => Set<AccountingProject>();
     public DbSet<JournalEntryFiscalYear> JournalEntryFiscalYears => Set<JournalEntryFiscalYear>();
+    public DbSet<OpeningBalanceRecord> OpeningBalances => Set<OpeningBalanceRecord>();
     public DbSet<JournalLineDimension> JournalLineDimensions => Set<JournalLineDimension>();
     public DbSet<JournalSyncReceipt> JournalSyncReceipts => Set<JournalSyncReceipt>();
     public DbSet<JournalServerChange> JournalServerChanges => Set<JournalServerChange>();
@@ -324,6 +325,29 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .WithMany()
                 .HasForeignKey(x => x.CompanyId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<OpeningBalanceRecord>(entity =>
+        {
+            entity.ToTable("opening_balances");
+            entity.HasKey(x => x.FiscalYearId);
+            entity.HasIndex(x => x.JournalEntryId).IsUnique();
+            entity.HasOne<FiscalYear>()
+                .WithOne()
+                .HasForeignKey<OpeningBalanceRecord>(x => x.FiscalYearId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<JournalEntry>()
+                .WithOne()
+                .HasForeignKey<OpeningBalanceRecord>(x => x.JournalEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<JournalEntryFiscalYear>(entity =>
