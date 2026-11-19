@@ -754,8 +754,8 @@ public sealed class AuthService(
         }
         else
         {
-            // Unblocking does not restore trust or old sessions.
-            device.TrustState = DeviceTrustState.Pending;
+            // Unblocking does not restore trust or old sessions; a fresh QR pairing is required.
+            device.TrustState = DeviceTrustState.Revoked;
             device.RevokedAt = now;
         }
 
