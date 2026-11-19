@@ -1,8 +1,8 @@
 /// Single source of truth for the Zarr client version shown in the UI.
 /// Keep this synchronized with the version field in pubspec.yaml.
 abstract final class ZarrAppVersion {
-  static const String name = '0.5.0-beta.5';
-  static const int build = 9;
-  static const String display = '0.5.0-beta.5 (build 9)';
+  static const String name = '0.5.0-beta.6';
+  static const int build = 10;
+  static const String display = '0.5.0-beta.6 (build 10)';
   static const String platforms = 'Windows • Android';
 }
