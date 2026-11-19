@@ -2874,6 +2874,50 @@ accounting.MapGet("/sync/detail-accounts", async (
     }
 });
 
+accounting.MapGet("/opening-balances/{fiscalYearId:guid}", async (
+    HttpRequest request,
+    Guid fiscalYearId,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+
+    var result = await accountingService.GetOpeningBalanceAsync(
+        user.CompanyId, fiscalYearId, cancellationToken);
+    return result is null ? Results.NotFound() : Results.Ok(result);
+});
+
+accounting.MapPost("/opening-balances", async (
+    HttpRequest request,
+    CreateOpeningBalanceRequest payload,
+    AuthService authService,
+    AccountingService accountingService,
+    CancellationToken cancellationToken) =>
+{
+    var user = await CurrentUserAsync(request, authService, cancellationToken);
+    if (user is null) return Results.Unauthorized();
+    if (!CanWriteAccounting(user)) return Results.Forbid();
+
+    try
+    {
+        var result = await accountingService.CreateOpeningBalanceAsync(
+            user.CompanyId, user.Id, payload, cancellationToken);
+        return Results.Created(
+            $"/api/accounting/opening-balances/{result.FiscalYearId}",
+            result);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
 accounting.MapGet("/journals", async (
     HttpRequest request,
     DateOnly? from,

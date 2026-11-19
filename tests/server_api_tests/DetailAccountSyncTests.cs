@@ -2985,6 +2985,92 @@ public sealed class DetailAccountSyncTests
         Assert.Equal(-5_000_000m, payable.UnrealizedDifference);
     }
 
+    [Fact]
+    public async Task OpeningBalance_PostsOnce_PreservesDetailAndAppearsAsOpeningMovement()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var service = new AccountingService(fixture.Db);
+        await service.SeedDefaultAccountsAsync(fixture.Company.Id);
+        var fiscalYear = await service.EnsureDefaultFiscalYearAsync(
+            fixture.Company.Id);
+
+        var receivable = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id && x.Code == "1200");
+        var retainedEarnings = await fixture.Db.Accounts.SingleAsync(
+            x => x.CompanyId == fixture.Company.Id && x.Code == "3200");
+
+        var customer = new DetailAccount
+        {
+            CompanyId = fixture.Company.Id,
+            Code = "C-OPEN-01",
+            Name = "مشتری افتتاحیه",
+            Type = DetailAccountType.Customer
+        };
+        fixture.Db.DetailAccounts.Add(customer);
+        await fixture.Db.SaveChangesAsync();
+
+        var result = await service.CreateOpeningBalanceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            new CreateOpeningBalanceRequest(
+                fiscalYear.Id,
+                "مانده اول دوره",
+                new[]
+                {
+                    new CreateJournalLineRequest(
+                        receivable.Id,
+                        "مانده مطالبات مشتری",
+                        250_000m,
+                        0m,
+                        customer.Id),
+                    new CreateJournalLineRequest(
+                        retainedEarnings.Id,
+                        "مانده افتتاحیه حقوق مالکانه",
+                        0m,
+                        250_000m)
+                }));
+
+        Assert.Equal(fiscalYear.Id, result.FiscalYearId);
+        Assert.Equal(250_000m, result.TotalDebit);
+        Assert.Equal(250_000m, result.TotalCredit);
+
+        var dimension = await fixture.Db.JournalLineDimensions
+            .SingleAsync(x => x.DetailAccountId == customer.Id);
+        Assert.NotEqual(Guid.Empty, dimension.JournalLineId);
+
+        var report = await service.GetTrialBalanceAsync(
+            fixture.Company.Id,
+            fiscalYear.StartDate.AddDays(1),
+            fiscalYear.EndDate);
+
+        Assert.Equal(
+            250_000m,
+            report.Single(x => x.AccountId == receivable.Id).OpeningBalance);
+
+        var stored = await service.GetOpeningBalanceAsync(
+            fixture.Company.Id,
+            fiscalYear.Id);
+        Assert.NotNull(stored);
+        Assert.Equal(result.JournalEntryId, stored!.JournalEntryId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.CreateOpeningBalanceAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                new CreateOpeningBalanceRequest(
+                    fiscalYear.Id,
+                    "ثبت تکراری",
+                    new[]
+                    {
+                        new CreateJournalLineRequest(
+                            receivable.Id, null, 250_000m, 0m),
+                        new CreateJournalLineRequest(
+                            retainedEarnings.Id, null, 0m, 250_000m)
+                    })));
+
+        Assert.Single(await fixture.Db.OpeningBalances.ToArrayAsync());
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private TestFixture(
