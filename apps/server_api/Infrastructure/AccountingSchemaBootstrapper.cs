@@ -184,7 +184,6 @@ public static class AccountingSchemaBootstrapper
             ON accounting_projects ("CompanyId", "Code");
             """,
             """
-            """
             CREATE TABLE IF NOT EXISTS opening_balances (
                 "FiscalYearId" TEXT NOT NULL
                     CONSTRAINT "PK_opening_balances" PRIMARY KEY,
