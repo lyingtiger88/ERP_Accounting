@@ -665,6 +665,10 @@ public sealed class DevicePairingTests
                  x.Details!.Contains("Blacklisted installation"));
 
         Assert.True(await service.SetDeviceBlacklistAsync(owner.Id, device.Id, false));
+        var passwordOnly = await service.LoginAsync(new LoginRequest(
+            owner.Username, password, "Blocked Phone", "android",
+            InstallationId: installation));
+        Assert.Null(passwordOnly);
         var newPairing = await service.CreateDevicePairingCodeAsync(owner.Id);
         var allowed = await service.LoginAsync(new LoginRequest(
             owner.Username, password, "Blocked Phone", "android",
