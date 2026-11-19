@@ -1603,6 +1603,14 @@ public sealed class AccountingService(AppDbContext db)
                 "A finalized fiscal year cannot receive an opening balance.");
         }
 
+        if (await db.JournalEntryFiscalYears.AnyAsync(
+                x => x.FiscalYearId == fiscalYear.Id,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Opening balances must be posted before any other journal entries in the fiscal year.");
+        }
+
         if (request.Lines is null || request.Lines.Count < 2)
         {
             throw new ArgumentException(
@@ -1981,6 +1989,17 @@ public sealed class AccountingService(AppDbContext db)
         {
             throw new InvalidOperationException(
                 "Only posted journal entries can be reversed.");
+        }
+
+        var isOpeningBalance = await db.OpeningBalances.AnyAsync(
+            x => x.CompanyId == companyId &&
+                 x.JournalEntryId == original.Id,
+            cancellationToken);
+
+        if (isOpeningBalance)
+        {
+            throw new InvalidOperationException(
+                "Opening balance journals cannot be reversed through the standard journal reversal workflow.");
         }
 
         var isFiscalYearClosing = await db.FiscalYearClosings.AnyAsync(
