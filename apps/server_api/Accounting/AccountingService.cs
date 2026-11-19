@@ -1560,6 +1560,135 @@ public sealed class AccountingService(AppDbContext db)
         return account;
     }
 
+    public async Task<OpeningBalanceResponse> CreateOpeningBalanceAsync(
+        Guid companyId,
+        Guid userId,
+        CreateOpeningBalanceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var fiscalYear = await db.FiscalYears.SingleOrDefaultAsync(
+            x => x.Id == request.FiscalYearId && x.CompanyId == companyId,
+            cancellationToken)
+            ?? throw new ArgumentException(
+                "Fiscal year does not exist in this company.");
+
+        if (fiscalYear.IsClosed)
+        {
+            throw new InvalidOperationException(
+                "Opening balance cannot be posted to a closed fiscal year.");
+        }
+
+        var existing = await db.OpeningBalances.AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.FiscalYearId == fiscalYear.Id &&
+                     x.CompanyId == companyId,
+                cancellationToken);
+
+        if (existing is not null)
+        {
+            throw new InvalidOperationException(
+                "An opening balance has already been posted for this fiscal year.");
+        }
+
+        if (await db.FiscalYearClosings.AnyAsync(
+                x => x.FiscalYearId == fiscalYear.Id &&
+                     x.CompanyId == companyId,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "A finalized fiscal year cannot receive an opening balance.");
+        }
+
+        if (request.Lines is null || request.Lines.Count < 2)
+        {
+            throw new ArgumentException(
+                "Opening balance requires at least two journal lines.");
+        }
+
+        var journalRequest = new CreateJournalRequest(
+            null,
+            fiscalYear.StartDate,
+            string.IsNullOrWhiteSpace(request.Description)
+                ? "Opening balance"
+                : request.Description.Trim(),
+            request.Lines,
+            fiscalYear.Id);
+
+        var journal = await CreatePostedJournalCoreAsync(
+            companyId,
+            userId,
+            journalRequest,
+            cancellationToken);
+
+        var record = new OpeningBalanceRecord
+        {
+            FiscalYearId = fiscalYear.Id,
+            CompanyId = companyId,
+            JournalEntryId = journal.Id,
+            CreatedByUserId = userId
+        };
+
+        db.OpeningBalances.Add(record);
+        AddAuditLog(
+            companyId,
+            userId,
+            "OpeningBalance",
+            fiscalYear.Id,
+            "POST",
+            null,
+            new
+            {
+                journal.Id,
+                journal.Number,
+                fiscalYear.StartDate,
+                TotalDebit = request.Lines.Sum(x => x.Debit),
+                TotalCredit = request.Lines.Sum(x => x.Credit),
+                LineCount = request.Lines.Count
+            });
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new OpeningBalanceResponse(
+            fiscalYear.Id,
+            journal.Id,
+            journal.Number,
+            journal.DocumentDate,
+            journal.Lines.Sum(x => x.Debit),
+            journal.Lines.Sum(x => x.Credit),
+            record.CreatedAt);
+    }
+
+    public async Task<OpeningBalanceResponse?> GetOpeningBalanceAsync(
+        Guid companyId,
+        Guid fiscalYearId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await db.OpeningBalances.AsNoTracking()
+            .Where(x => x.CompanyId == companyId && x.FiscalYearId == fiscalYearId)
+            .Join(
+                db.JournalEntries.AsNoTracking(),
+                x => x.JournalEntryId,
+                x => x.Id,
+                (record, journal) => new { record, journal })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (record is null) return null;
+
+        return new OpeningBalanceResponse(
+            record.record.FiscalYearId,
+            record.journal.Id,
+            record.journal.Number,
+            record.journal.DocumentDate,
+            record.journal.Lines.Sum(x => x.Debit),
+            record.journal.Lines.Sum(x => x.Credit),
+            record.record.CreatedAt);
+    }
+
     public async Task<IReadOnlyList<JournalEntry>> GetJournalEntriesAsync(
         Guid companyId,
         DateOnly? from = null,
