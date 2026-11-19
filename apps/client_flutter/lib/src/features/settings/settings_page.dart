@@ -64,9 +64,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool get _isDemo => DemoMode.isDemoToken(widget.accessToken);
 
-  bool get _canManageUsers =>
-      !_isDemo &&
-      (widget.role == 'Owner' || widget.role == 'Administrator');
+  bool get _canManageUsers {
+    final normalizedRole = widget.role.trim().toLowerCase();
+    return !_isDemo &&
+        (normalizedRole == 'owner' ||
+         normalizedRole == 'administrator' ||
+         normalizedRole == 'admin');
+  }
 
   @override
   void initState() {
@@ -1390,7 +1394,15 @@ class _SettingsPageState extends State<SettingsPage> {
                               (device['lastSeenAt'] == null ? '' :
                                 ' • آخرین فعالیت: ' + _formatRegionalTime(device['lastSeenAt'])),
                             ),
-                            trailing: PopupMenuButton<String>(
+                            trailing: blacklisted && _canManageUsers
+                                ? TextButton.icon(
+                                    onPressed: _busy
+                                        ? null
+                                        : () => _setDeviceBlacklist(device, false),
+                                    icon: const Icon(Icons.lock_open),
+                                    label: const Text('رفع مسدودیت'),
+                                  )
+                                : PopupMenuButton<String>(
                               enabled: !_busy,
                               tooltip: 'عملیات دستگاه',
                               onSelected: (action) {
