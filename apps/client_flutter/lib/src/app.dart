@@ -20,15 +20,46 @@ class ZarrApp extends StatefulWidget {
   State<ZarrApp> createState() => _ZarrAppState();
 }
 
-class _ZarrAppState extends State<ZarrApp> {
+class _ZarrAppState extends State<ZarrApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<String>? _subscription;
   bool _redirecting = false;
+  Timer? _sessionCheckTimer;
+  bool _checkingSession = false;
+  bool _foreground = true;
 
   @override
   void initState() {
     super.initState();
     _subscription = ApiClient.sessionExpired.listen(_handleSessionExpired);
+    WidgetsBinding.instance.addObserver(this);
+    _sessionCheckTimer = Timer.periodic(
+      const Duration(seconds: 10), (_) => unawaited(_checkSession()),
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) unawaited(_checkSession());
+  }
+
+  Future<void> _checkSession() async {
+    if (!mounted || !_foreground || _checkingSession || _redirecting) return;
+    _checkingSession = true;
+    try {
+      final stored = await SecureSessionStore.instance.read();
+      if (stored == null || !mounted) return;
+      await ApiClient().getMfaStatus(bearerToken: stored.accessToken);
+      // The API client handles terminal authentication failures and emits
+      // sessionExpired. A network problem alone must not log the user out.
+    } on ApiException {
+      // Retry on the next foreground check.
+    } catch (_) {
+      // Secure storage or transient transport errors must not stop polling.
+    } finally {
+      _checkingSession = false;
+    }
   }
 
   void _handleSessionExpired(String message) {
@@ -52,6 +83,8 @@ class _ZarrAppState extends State<ZarrApp> {
 
   @override
   void dispose() {
+    _sessionCheckTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
     super.dispose();
   }
