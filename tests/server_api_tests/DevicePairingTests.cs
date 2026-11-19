@@ -606,10 +606,12 @@ public sealed class DevicePairingTests
             InstallationId: new string('d', 64)));
         var phone = await service.LoginAsync(new LoginRequest(
             owner.Username, password, "QR Paired Phone", "android",
+            PairingCode: (await service.CreateDevicePairingCodeAsync(owner.Id)).Code,
             InstallationId: new string('e', 64)));
         Assert.NotNull(desktop);
         Assert.NotNull(phone);
 
+        Assert.Equal(DeviceTrustState.Trusted, (await db.Devices.SingleAsync(x => x.DeviceName == "QR Paired Phone")).TrustState);
         var revoked = await service.RevokeAllSessionsAsync(
             owner.Id, desktop.AccessToken);
 
