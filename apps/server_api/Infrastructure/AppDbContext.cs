@@ -101,6 +101,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.Platform).HasMaxLength(80).IsRequired();
             entity.Property(x => x.PublicKeyFingerprint).HasMaxLength(256);
             entity.Property(x => x.InstallationIdHash).HasMaxLength(64);
+            entity.Property(x => x.BlacklistReason).HasMaxLength(500);
             entity.HasIndex(x => new { x.UserId, x.InstallationIdHash }).IsUnique();
             entity.Property(x => x.TrustState).HasConversion<string>().HasMaxLength(30);
             entity.HasIndex(x => new { x.UserId, x.TrustState });
