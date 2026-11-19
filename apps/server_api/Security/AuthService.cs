@@ -191,6 +191,14 @@ public sealed class AuthService(
                 x.UserId == user.Id && x.InstallationIdHash == installationHash,
                 cancellationToken);
 
+        if (device?.IsBlacklisted == true)
+        {
+            AddSecurityAudit(user.CompanyId, user.Id, "LOGIN", "DENIED",
+                user.Username, "Blacklisted installation denied. Device=" + deviceName);
+            await db.SaveChangesAsync(cancellationToken);
+            return null;
+        }
+
         if (device?.TrustState == DeviceTrustState.Revoked && pairingChallenge is null)
         {
             AddSecurityAudit(user.CompanyId, user.Id, "LOGIN", "DENIED",
@@ -611,7 +619,10 @@ public sealed class AuthService(
                 x.TrustState.ToString(),
                 x.FirstSeenAt,
                 x.LastSeenAt,
-                x.InstallationIdHash is null))
+                x.InstallationIdHash is null,
+                x.IsBlacklisted,
+                x.BlacklistedAt,
+                x.BlacklistReason))
             .ToArray();
     }
 
@@ -705,6 +716,58 @@ public sealed class AuthService(
             user?.Username,
             "Device=" + device.DeviceName +
             "; Platform=" + device.Platform);
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> SetDeviceBlacklistAsync(
+        Guid userId,
+        Guid deviceId,
+        bool blacklisted,
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await db.Devices.FirstOrDefaultAsync(
+            x => x.Id == deviceId && x.UserId == userId,
+            cancellationToken);
+        if (device is null) return false;
+
+        var now = DateTimeOffset.UtcNow;
+        device.IsBlacklisted = blacklisted;
+        device.BlacklistedAt = blacklisted ? now : null;
+        device.BlacklistReason = blacklisted
+            ? string.IsNullOrWhiteSpace(reason) ? "Blocked by account administrator" : reason.Trim()
+            : null;
+
+        if (blacklisted)
+        {
+            device.TrustState = DeviceTrustState.Revoked;
+            device.RevokedAt = now;
+            var sessions = await db.AuthSessions
+                .Where(x => x.UserId == userId && x.DeviceId == deviceId && x.RevokedAt == null)
+                .ToArrayAsync(cancellationToken);
+            foreach (var session in sessions)
+            {
+                session.RevokedAt = now;
+                session.RevokeReason = "DeviceBlacklisted";
+            }
+        }
+        else
+        {
+            // Unblocking does not restore trust or old sessions.
+            device.TrustState = DeviceTrustState.Pending;
+            device.RevokedAt = now;
+        }
+
+        var username = await db.Users.AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => x.Username)
+            .FirstOrDefaultAsync(cancellationToken);
+        AddSecurityAudit(device.CompanyId, userId,
+            blacklisted ? "DEVICE_BLACKLIST" : "DEVICE_UNBLACKLIST",
+            "SUCCESS", username,
+            "Device=" + device.DeviceName + "; Platform=" + device.Platform +
+            "; Reason=" + (device.BlacklistReason ?? "none"));
         await db.SaveChangesAsync(cancellationToken);
         return true;
     }
