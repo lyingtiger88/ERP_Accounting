@@ -1405,7 +1405,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 }
                               },
                               itemBuilder: (context) => [
-                                if (_canManageUsers && !blacklisted)
+                                if (_canManageUsers && !blacklisted && device['requiresRePairing'] != true)
                                   const PopupMenuItem(value: 'blacklist', child: ListTile(dense: true, leading: Icon(Icons.block), title: Text('قرار دادن در فهرست سیاه'))),
                                 if (_canManageUsers && blacklisted)
                                   const PopupMenuItem(value: 'unblacklist', child: ListTile(dense: true, leading: Icon(Icons.check_circle_outline), title: Text('رفع مسدودیت'))),
@@ -1418,7 +1418,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                       title: Text('لغو دسترسی'),
                                     ),
                                   ),
-                                const PopupMenuItem(
+                                if (!blacklisted)
+                                  const PopupMenuItem(
                                   value: 'delete',
                                   child: ListTile(
                                     dense: true,
