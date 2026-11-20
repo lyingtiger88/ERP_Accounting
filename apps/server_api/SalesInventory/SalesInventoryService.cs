@@ -1,4 +1,6 @@
 using System.Data;
+using System.Security.Cryptography;
+using System.Text.Json;
 using ERPAccounting.Api.Accounting;
 using ERPAccounting.Api.Contracts;
 using ERPAccounting.Api.Domain;
@@ -605,17 +607,28 @@ public sealed class SalesInventoryService(
         Guid companyId,
         Guid userId,
         CreateSalesInvoiceRequest request,
+        string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
+        var requestHash = CreateRequestHash(request);
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var existingReceipt = await FindStoreSyncReceiptAsync(
+            companyId, idempotencyKey, "SalesInvoice", requestHash,
+            cancellationToken);
+        if (existingReceipt is not null)
+        {
+            return await BuildInvoiceViewAsync(
+                existingReceipt.EntityId, companyId, cancellationToken);
+        }
+
         if (request.Lines.Count == 0)
         {
             throw new ArgumentException(
                 "Sales invoice requires at least one line.");
         }
-
-        await using var transaction = await db.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
 
         var fiscalYear = await db.FiscalYears
             .AsNoTracking()
@@ -785,6 +798,8 @@ public sealed class SalesInventoryService(
                 "Invoice grand total must be greater than zero.");
         }
 
+        AddStoreSyncReceipt(
+            companyId, idempotencyKey, "SalesInvoice", requestHash, invoice.Id);
         db.SalesInvoices.Add(invoice);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -1518,8 +1533,23 @@ public sealed class SalesInventoryService(
         Guid companyId,
         Guid userId,
         CreatePurchaseReceiptRequest request,
+        string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
+        var requestHash = CreateRequestHash(request);
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var existingReceipt = await FindStoreSyncReceiptAsync(
+            companyId, idempotencyKey, "PurchaseReceipt", requestHash,
+            cancellationToken);
+        if (existingReceipt is not null)
+        {
+            return await BuildPurchaseReceiptViewAsync(
+                existingReceipt.EntityId, companyId, cancellationToken);
+        }
+
         if (request.Lines.Count == 0)
         {
             throw new ArgumentException(
@@ -1758,8 +1788,11 @@ public sealed class SalesInventoryService(
                 "Purchase grand total must be greater than zero.");
         }
 
+        AddStoreSyncReceipt(
+            companyId, idempotencyKey, "PurchaseReceipt", requestHash, receipt.Id);
         db.PurchaseReceipts.Add(receipt);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return await BuildPurchaseReceiptViewAsync(
             receipt.Id,
@@ -2381,8 +2414,23 @@ public sealed class SalesInventoryService(
         Guid companyId,
         Guid userId,
         CreateWarehouseTransferRequest request,
+        string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
+        var requestHash = CreateRequestHash(request);
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var existingReceipt = await FindStoreSyncReceiptAsync(
+            companyId, idempotencyKey, "WarehouseTransfer", requestHash,
+            cancellationToken);
+        if (existingReceipt is not null)
+        {
+            return await BuildTransferViewAsync(
+                existingReceipt.EntityId, companyId, cancellationToken);
+        }
+
         if (request.FromWarehouseId == request.ToWarehouseId)
         {
             throw new ArgumentException(
@@ -2474,8 +2522,11 @@ public sealed class SalesInventoryService(
             });
         }
 
+        AddStoreSyncReceipt(
+            companyId, idempotencyKey, "WarehouseTransfer", requestHash, transfer.Id);
         db.WarehouseTransfers.Add(transfer);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return await BuildTransferViewAsync(
             transfer.Id,
@@ -4149,6 +4200,72 @@ public sealed class SalesInventoryService(
             baseAmount / exchangeRate,
             4,
             MidpointRounding.AwayFromZero);
+    }
+
+
+    private static string CreateRequestHash<TRequest>(TRequest request)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(request);
+        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    }
+
+    private async Task<StoreSyncReceipt?> FindStoreSyncReceiptAsync(
+        Guid companyId,
+        string? idempotencyKey,
+        string entityType,
+        string requestHash,
+        CancellationToken cancellationToken)
+    {
+        if (idempotencyKey is null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(idempotencyKey) ||
+            idempotencyKey.Length > 100)
+        {
+            throw new ArgumentException(
+                "Idempotency-Key must contain between 1 and 100 characters.");
+        }
+
+        var existing = await db.StoreSyncReceipts
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.CompanyId == companyId &&
+                     x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+
+        if (existing is not null &&
+            (existing.EntityType != entityType ||
+             existing.RequestHash != requestHash))
+        {
+            throw new InvalidOperationException(
+                "Idempotency-Key was already used with a different operation or payload.");
+        }
+
+        return existing;
+    }
+
+    private void AddStoreSyncReceipt(
+        Guid companyId,
+        string? idempotencyKey,
+        string entityType,
+        string requestHash,
+        Guid entityId)
+    {
+        if (idempotencyKey is null)
+        {
+            return;
+        }
+
+        db.StoreSyncReceipts.Add(new StoreSyncReceipt
+        {
+            CompanyId = companyId,
+            IdempotencyKey = idempotencyKey,
+            EntityType = entityType,
+            RequestHash = requestHash,
+            EntityId = entityId
+        });
     }
 
     private static string? NullIfBlank(string? value)
