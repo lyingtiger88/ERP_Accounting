@@ -87,6 +87,10 @@ class JournalPullChange {
 
   factory JournalPullChange.fromJson(Map<String, dynamic> json) {
     final cursor = _requiredCursor(json, 'cursor');
+    final documentDate = _requiredText(json, 'documentDate');
+    if (DateTime.tryParse(documentDate) == null) {
+      throw const FormatException('Journal documentDate must be a valid ISO date.');
+    }
     final lines = _parseList(json, 'lines')
         .map((item) => JournalPullLine.fromJson(item))
         .toList(growable: false);
@@ -98,7 +102,7 @@ class JournalPullChange {
       journalEntryId: _requiredText(json, 'journalEntryId'),
       number: _requiredText(json, 'number'),
       fiscalYearId: json['fiscalYearId'] as String?,
-      documentDate: _requiredText(json, 'documentDate'),
+      documentDate: documentDate,
       description: json['description'] as String?,
       status: json['status'].toString(),
       postedAt: json['postedAt'] == null
