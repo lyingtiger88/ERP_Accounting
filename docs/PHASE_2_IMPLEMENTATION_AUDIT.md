@@ -85,19 +85,17 @@ No attachment content-addressed transfer pipeline or complete sync-run history m
 
 ## Additional static findings from client sync review
 
-### 8. Outbox failure lifecycle needs a terminal state
+### 8. Outbox failure lifecycle — implementation added on this branch
 
-The current outbox selects every row where `sent_at IS NULL`. `markOutboxFailed` increments an attempt counter and records an error, but it does not distinguish retryable failures from permanent rejection or move exhausted items to a dead-letter/conflict state. Unsupported entity/operation pairs are also marked failed while remaining pending, so they can be selected on every future run.
+The branch now stores explicit Pending, Retry, Blocked, Conflict, Rejected, DeadLetter, and Sent states. Transient failures receive capped exponential retry scheduling; exhausted retries move to DeadLetter; unsupported/permanent operations move to Rejected; authentication failures are held as Blocked; conflicts are not auto-retried. Manual retry resets the retry budget while preserving the immutable ChangeId and payload.
 
-**Required before completion:** typed retryable/permanent outcomes, bounded exponential backoff with jitter for transient failures, a terminal rejected/dead-letter state, user-visible remediation, and a safe retry action that preserves ChangeId only when the payload is unchanged.
+**Verification:** dedicated Flutter tests have been added for retry scheduling, terminal rejection, dead-letter manual retry, and blocked-item resumption. CI results are pending.
 
-### 9. Store-document upload idempotency must be verified
+### 9. Store create idempotency — implementation added on this branch
 
-The outbox processor passes ChangeId to the journal and detail-account sync APIs. The inspected store invoice, purchase receipt, and warehouse transfer create calls do not pass the outbox ChangeId into their API calls.
+The outbox now sends its stable ChangeId as the `Idempotency-Key` header for sales invoice, purchase receipt, and warehouse transfer creation. The server stores a tenant- and user-scoped receipt with the entity type and SHA-256 hash of the typed request. The receipt and document are committed in the same serializable transaction. A matching replay returns the original document; reusing a key for a different user, operation, or payload returns a conflict.
 
-**Risk:** a server commit followed by a lost response may lead the client to retry a create request without a stable idempotency key. This can create duplicate business documents unless the domain API independently provides an equivalent idempotency guarantee.
-
-**Required before completion:** propagate ChangeId into server-side receipts for every create operation, or document and prove an equivalent idempotency mechanism. Add duplicate-delivery and lost-response tests before release.
+**Verification:** a SQLite-backed server regression test covers replay of all three create operations, single-document persistence, and changed-payload key reuse. CI results are pending.
 
 ### 10. Pull cursor handling is transactionally sound in the inspected paths, but recovery is incomplete
 
