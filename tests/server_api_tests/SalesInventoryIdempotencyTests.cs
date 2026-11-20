@@ -80,6 +80,13 @@ public sealed class SalesInventoryIdempotencyTests
                 invoiceRequest with { Description = "changed payload" },
                 "outbox-invoice-1"));
 
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CreateSalesInvoiceAsync(
+                fixture.Company.Id,
+                fixture.OtherUser.Id,
+                invoiceRequest,
+                "outbox-invoice-1"));
+
         var receiptRequest = new CreatePurchaseReceiptRequest(
             fiscalYear.Id,
             documentDate,
@@ -131,6 +138,44 @@ public sealed class SalesInventoryIdempotencyTests
         Assert.Equal(transferFirst.Id, transferReplay.Id);
         Assert.Single(await fixture.Db.WarehouseTransfers.ToArrayAsync());
 
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CreateWarehouseTransferAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                transferRequest,
+                "outbox-invoice-1"));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => store.CreateSalesInvoiceAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                invoiceRequest,
+                " "));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => store.CreateSalesInvoiceAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                invoiceRequest,
+                new string('k', 101)));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => store.CreateSalesInvoiceAsync(
+                fixture.Company.Id,
+                fixture.User.Id,
+                invoiceRequest with { Lines = Array.Empty<SalesInvoiceLineRequest>() },
+                "outbox-invalid-request"));
+
+        Assert.False(await fixture.Db.StoreSyncReceipts.AnyAsync(
+            x => x.IdempotencyKey == "outbox-invalid-request"));
+
+        // Legacy callers without an idempotency key retain their previous behavior.
+        await store.CreateSalesInvoiceAsync(
+            fixture.Company.Id,
+            fixture.User.Id,
+            invoiceRequest with { Description = "legacy no-key request" });
+
+        Assert.Equal(2, await fixture.Db.SalesInvoices.CountAsync());
         Assert.Equal(
             3,
             await fixture.Db.StoreSyncReceipts.CountAsync());
@@ -154,6 +199,7 @@ public sealed class SalesInventoryIdempotencyTests
         public AppDbContext Db { get; }
         public Company Company { get; }
         public AppUser User { get; }
+        public AppUser OtherUser { get; private set; } = null!;
 
         public static async Task<TestFixture> CreateAsync()
         {
@@ -178,10 +224,21 @@ public sealed class SalesInventoryIdempotencyTests
                 PasswordHash = "test-hash",
                 Role = UserRole.Owner
             };
-            db.Users.Add(user);
+            var otherUser = new AppUser
+            {
+                CompanyId = company.Id,
+                Username = "second-owner",
+                DisplayName = "Second Owner",
+                PasswordHash = "test-hash",
+                Role = UserRole.Owner
+            };
+            db.Users.AddRange(user, otherUser);
             await db.SaveChangesAsync();
 
-            return new TestFixture(connection, db, company, user);
+            return new TestFixture(connection, db, company, user)
+            {
+                OtherUser = otherUser
+            };
         }
 
         public async ValueTask DisposeAsync()
