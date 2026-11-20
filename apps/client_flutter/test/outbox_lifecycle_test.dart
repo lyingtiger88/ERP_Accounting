@@ -25,7 +25,8 @@ void main() {
         sent_at TEXT,
         status TEXT NOT NULL DEFAULT 'Pending',
         next_attempt_at TEXT,
-        last_attempt_at TEXT
+        last_attempt_at TEXT,
+        lease_expires_at TEXT
       )
     ''');
     return (
@@ -128,6 +129,35 @@ void main() {
     expect(row['attempt_count'], 0);
     expect(row['next_attempt_at'], isNull);
     expect(await fixture.local.getPendingOutbox(), hasLength(1));
+  });
+
+  test('claims are exclusive and expired processing leases are recoverable', () async {
+    final fixture = await createDatabase();
+    addTearDown(fixture.database.close);
+    final id = await insertOutbox(fixture.database, 'change-lease');
+
+    final firstClaim = await fixture.local.claimPendingOutbox();
+    expect(firstClaim, hasLength(1));
+    expect(firstClaim.single.id, id);
+
+    final secondClaim = await fixture.local.claimPendingOutbox();
+    expect(secondClaim, isEmpty);
+
+    await fixture.database.update(
+      'sync_outbox',
+      {
+        'lease_expires_at': DateTime.now()
+            .toUtc()
+            .subtract(const Duration(seconds: 1))
+            .toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    final recoveredClaim = await fixture.local.claimPendingOutbox();
+    expect(recoveredClaim, hasLength(1));
+    expect(recoveredClaim.single.changeId, 'change-lease');
   });
 
   test('blocked work is eligible on the next authenticated sync attempt', () async {
