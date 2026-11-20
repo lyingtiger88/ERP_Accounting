@@ -117,6 +117,7 @@ class OutboxSyncService {
             description: payload['description']?.toString(),
             currencyId: payload['currencyId']?.toString(),
             exchangeRate: payload['exchangeRate'] as num?,
+            idempotencyKey: item.changeId,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
@@ -151,6 +152,8 @@ class OutboxSyncService {
             description: payload['description']?.toString(),
             currencyId: payload['currencyId']?.toString(),
             exchangeRate: payload['exchangeRate'] as num?,
+            purchaseOrderId: payload['purchaseOrderId']?.toString(),
+            idempotencyKey: item.changeId,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
@@ -182,6 +185,7 @@ class OutboxSyncService {
             toWarehouseId:
                 payload['toWarehouseId'].toString(),
             description: payload['description']?.toString(),
+            idempotencyKey: item.changeId,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
