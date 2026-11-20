@@ -140,8 +140,31 @@ void main() {
     expect(firstClaim, hasLength(1));
     expect(firstClaim.single.id, id);
 
+    final processingRow = (await fixture.database.query(
+      'sync_outbox',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(processingRow['status'], 'Processing');
+    expect(processingRow['lease_expires_at'], isNotNull);
+
     final secondClaim = await fixture.local.claimPendingOutbox();
     expect(secondClaim, isEmpty);
+
+    final failureStatus = await fixture.local.markOutboxFailed(
+      outboxId: id,
+      error: 'transient after claim',
+      retryable: true,
+    );
+    expect(failureStatus, 'Retry');
+
+    final releasedRow = (await fixture.database.query(
+      'sync_outbox',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(releasedRow['lease_expires_at'], isNull);
+    expect(releasedRow['status'], 'Retry');
 
     await fixture.database.update(
       'sync_outbox',
