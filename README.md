@@ -119,12 +119,13 @@ This roadmap is intentionally kept on the repository home page so the current pl
 
 ### Phase 2 — Synchronization Engine
 
-> Phase 2 engineering docs: [Protocol](docs/SYNC_PROTOCOL.md) · [API contract](docs/PHASE_2_API_CONTRACT.md) · [Security threat model](docs/PHASE_2_SECURITY_THREAT_MODEL.md) · [Implementation audit](docs/PHASE_2_IMPLEMENTATION_AUDIT.md). The checklist tracks implementation, not documentation; no new item is marked complete by this documentation work.
+> Phase 2 engineering docs: [Protocol](docs/SYNC_PROTOCOL.md) · [API contract](docs/PHASE_2_API_CONTRACT.md) · [Security threat model](docs/PHASE_2_SECURITY_THREAT_MODEL.md) · [Implementation audit](docs/PHASE_2_IMPLEMENTATION_AUDIT.md). The checklist tracks implemented and automated-verified capabilities; broader device-bound and general-purpose sync remains open.
 
 - [ ] Device identity
 - [x] Client sync outbox/change-journal foundation
 - [x] Outbox push processor
 - [x] Outbox retry/backoff and terminal failure lifecycle
+- [x] Atomic Outbox batch claims with expiring leases and crash recovery
 - [x] Store create idempotency (sales invoices, purchase receipts, warehouse transfers)
 - [x] Detail-account optimistic revisions
 - [ ] General entity revisions
