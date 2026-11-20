@@ -1018,6 +1018,7 @@ store.MapPost("/invoices", async (
             user.CompanyId,
             user.Id,
             payload,
+            request.Headers["Idempotency-Key"].FirstOrDefault(),
             cancellationToken));
     }
     catch (ArgumentException ex)
@@ -1284,6 +1285,7 @@ store.MapPost("/purchases", async (
             user.CompanyId,
             user.Id,
             payload,
+            request.Headers["Idempotency-Key"].FirstOrDefault(),
             cancellationToken));
     }
     catch (ArgumentException ex)
@@ -1442,6 +1444,7 @@ store.MapPost("/transfers", async (
             user.CompanyId,
             user.Id,
             payload,
+            request.Headers["Idempotency-Key"].FirstOrDefault(),
             cancellationToken));
     }
     catch (ArgumentException ex)
