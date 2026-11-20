@@ -147,7 +147,8 @@ void main() {
     });
 
     test('rejects invalid journal document dates', () {
-      final change = journalChange()..['documentDate'] = 'not-a-date';
+      final change = journalChange();
+      change['documentDate'] = 'not-a-date';
       expect(
         () => JournalPullPage.fromJson(journalPage(changes: [change])),
         throwsFormatException,
