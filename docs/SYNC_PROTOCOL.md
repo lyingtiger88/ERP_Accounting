@@ -104,6 +104,23 @@ Revision checks and receipt creation must be transactional. A conflict response 
 
 A page cursor is not a timestamp. A failed page must be retried from the previous committed cursor.
 
+## 5.1 Local Outbox delivery lifecycle
+
+The Flutter client stores delivery state independently from the immutable change identity and payload:
+
+| State | Meaning | Automatic selection |
+|---|---|---|
+| Pending | Ready for first delivery | Yes |
+| Processing | Claimed by one local worker with an expiring lease | Only after lease expiry |
+| Retry | Transient failure with a due timestamp | When due |
+| Blocked | Authentication/authorization requires user or session recovery | On the next authenticated sync attempt |
+| Conflict | Server state requires explicit resolution | No |
+| Rejected | Permanent validation or unsupported-operation failure | No |
+| DeadLetter | Retry budget exhausted | No |
+| Sent | Server accepted the change and local acknowledgement committed | No |
+
+Batch claiming and lease assignment happen in one SQLite transaction. A worker clears its lease when it records success or failure. A worker crash leaves the item recoverable after the five-minute lease expires. Retry uses capped exponential backoff; the stable ChangeId and payload are never regenerated during retry. If the server may have committed but the local acknowledgement failed, the client retries the same idempotency key.
+
 ## 6. Idempotency and receipts
 
 - Receipt uniqueness is scoped by OrganizationId + ChangeId.
