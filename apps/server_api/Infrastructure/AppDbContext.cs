@@ -50,6 +50,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SalesReturn> SalesReturns => Set<SalesReturn>();
     public DbSet<SalesReturnLine> SalesReturnLines => Set<SalesReturnLine>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<StoreSyncReceipt> StoreSyncReceipts => Set<StoreSyncReceipt>();
     public DbSet<TreasuryAccount> TreasuryAccounts => Set<TreasuryAccount>();
     public DbSet<TreasuryTransaction> TreasuryTransactions => Set<TreasuryTransaction>();
 
@@ -601,6 +602,25 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.HasOne<LedgerAccount>()
                 .WithMany()
                 .HasForeignKey(x => x.PurchaseTaxReceivableAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<StoreSyncReceipt>(entity =>
+        {
+            entity.ToTable("store_sync_receipts");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.EntityType).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
+            entity.HasIndex(x => new { x.CompanyId, x.IdempotencyKey })
+                .IsUnique();
+            entity.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(x => x.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<AppUser>()
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

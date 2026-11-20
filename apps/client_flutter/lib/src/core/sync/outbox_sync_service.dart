@@ -9,7 +9,13 @@ class SyncRunResult {
     required this.conflicts,
     required this.remaining,
     required this.stoppedByNetwork,
-  });
+    this.stoppedByAuthentication = false,
+  })  : assert(processed >= 0),
+        assert(synced >= 0),
+        assert(failed >= 0),
+        assert(conflicts >= 0),
+        assert(remaining >= 0),
+        assert(synced + failed + conflicts == processed);
 
   final int processed;
   final int synced;
@@ -17,9 +23,13 @@ class SyncRunResult {
   final int conflicts;
   final int remaining;
   final bool stoppedByNetwork;
+  final bool stoppedByAuthentication;
 
   bool get hasErrors =>
-      failed > 0 || conflicts > 0 || stoppedByNetwork;
+      failed > 0 ||
+      conflicts > 0 ||
+      stoppedByNetwork ||
+      stoppedByAuthentication;
 }
 
 class OutboxSyncService {
@@ -35,8 +45,9 @@ class OutboxSyncService {
     required String bearerToken,
     int batchSize = 50,
   }) async {
-    final pending = await localDatabase.getPendingOutbox(
-      limit: batchSize,
+    final safeBatchSize = batchSize.clamp(1, 200).toInt();
+    final pending = await localDatabase.claimPendingOutbox(
+      limit: safeBatchSize,
     );
 
     var processed = 0;
@@ -44,8 +55,10 @@ class OutboxSyncService {
     var failed = 0;
     var conflicts = 0;
     var stoppedByNetwork = false;
+    var stoppedByAuthentication = false;
 
-    for (final item in pending) {
+    for (var index = 0; index < pending.length; index++) {
+      final item = pending[index];
       try {
         if (item.entityType == 'AccountingDocument' &&
             item.operation == 'Create') {
@@ -117,6 +130,7 @@ class OutboxSyncService {
             description: payload['description']?.toString(),
             currencyId: payload['currencyId']?.toString(),
             exchangeRate: payload['exchangeRate'] as num?,
+            idempotencyKey: item.changeId,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
@@ -151,6 +165,8 @@ class OutboxSyncService {
             description: payload['description']?.toString(),
             currencyId: payload['currencyId']?.toString(),
             exchangeRate: payload['exchangeRate'] as num?,
+            purchaseOrderId: payload['purchaseOrderId']?.toString(),
+            idempotencyKey: item.changeId,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
@@ -182,6 +198,7 @@ class OutboxSyncService {
             toWarehouseId:
                 payload['toWarehouseId'].toString(),
             description: payload['description']?.toString(),
+            idempotencyKey: item.changeId,
             lines: (payload['lines'] as List<dynamic>)
                 .map(
                   (line) => Map<String, dynamic>.from(line as Map),
@@ -207,19 +224,36 @@ class OutboxSyncService {
               item.entityType +
               '/' +
               item.operation,
+          retryable: false,
+          terminalStatus: 'Rejected',
         );
         processed++;
         failed++;
       } on ApiException catch (error) {
-        await localDatabase.markOutboxFailed(
+        final statusCode = error.statusCode;
+        final retryable = statusCode == null ||
+            statusCode == 408 ||
+            statusCode == 425 ||
+            statusCode == 429 ||
+            statusCode >= 500;
+        final terminalStatus = statusCode == 401 || statusCode == 403
+            ? 'Blocked'
+            : statusCode == 409
+                ? 'Conflict'
+                : 'Rejected';
+
+        final outboxStatus = await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error: error.message,
+          retryable: retryable,
+          terminalStatus: terminalStatus,
         );
 
         if (item.entityType == 'DetailAccount') {
           await localDatabase.markDetailAccountSyncError(
             entityId: item.entityId,
             error: error.message,
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
@@ -227,28 +261,45 @@ class OutboxSyncService {
           await localDatabase.markStoreDraftSyncError(
             localId: item.entityId,
             error: error.message,
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
         processed++;
-        failed++;
+        if (statusCode == 409) {
+          conflicts++;
+        } else {
+          failed++;
+        }
 
-        if (error.statusCode == null ||
-            error.statusCode == 401 ||
-            error.statusCode == 403) {
-          stoppedByNetwork = error.statusCode == null;
+        if (statusCode == null ||
+            statusCode == 401 ||
+            statusCode == 403) {
+          stoppedByNetwork = statusCode == null;
+          stoppedByAuthentication = statusCode == 401 || statusCode == 403;
+          // The whole batch was claimed before processing. Release untouched
+          // rows immediately instead of stranding them in Processing until
+          // their leases expire.
+          for (final unprocessed in pending.skip(index + 1)) {
+            await localDatabase.releaseOutboxClaim(unprocessed.id);
+          }
           break;
         }
       } catch (error) {
-        await localDatabase.markOutboxFailed(
+        // Unknown failures may happen after the server committed but before the
+        // local acknowledgement was persisted. Retry with the same ChangeId:
+        // server-side idempotency makes that recovery safe.
+        final outboxStatus = await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error: error.toString(),
+          retryable: true,
         );
 
         if (item.entityType == 'DetailAccount') {
           await localDatabase.markDetailAccountSyncError(
             entityId: item.entityId,
             error: error.toString(),
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
@@ -256,6 +307,7 @@ class OutboxSyncService {
           await localDatabase.markStoreDraftSyncError(
             localId: item.entityId,
             error: error.toString(),
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
@@ -264,7 +316,7 @@ class OutboxSyncService {
       }
     }
 
-    final remaining = await localDatabase.pendingOutboxCount();
+    final remaining = await localDatabase.unresolvedOutboxCount();
 
     return SyncRunResult(
       processed: processed,
@@ -273,6 +325,7 @@ class OutboxSyncService {
       conflicts: conflicts,
       remaining: remaining,
       stoppedByNetwork: stoppedByNetwork,
+      stoppedByAuthentication: stoppedByAuthentication,
     );
   }
 }

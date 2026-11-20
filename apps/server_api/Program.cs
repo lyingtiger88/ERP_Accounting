@@ -997,6 +997,17 @@ store.MapPost("/invoices", async (
     SalesInventoryService storeService,
     CancellationToken cancellationToken) =>
 {
+    var idempotencyHeaders = request.Headers["Idempotency-Key"];
+    if (idempotencyHeaders.Count > 1)
+    {
+        return Results.BadRequest(new
+        {
+            error = "Only one Idempotency-Key header may be supplied."
+        });
+    }
+
+    var idempotencyKey = idempotencyHeaders.FirstOrDefault();
+
     var user = await CurrentUserAsync(
         request,
         authService,
@@ -1018,6 +1029,7 @@ store.MapPost("/invoices", async (
             user.CompanyId,
             user.Id,
             payload,
+            idempotencyKey,
             cancellationToken));
     }
     catch (ArgumentException ex)
@@ -1263,6 +1275,17 @@ store.MapPost("/purchases", async (
     SalesInventoryService storeService,
     CancellationToken cancellationToken) =>
 {
+    var idempotencyHeaders = request.Headers["Idempotency-Key"];
+    if (idempotencyHeaders.Count > 1)
+    {
+        return Results.BadRequest(new
+        {
+            error = "Only one Idempotency-Key header may be supplied."
+        });
+    }
+
+    var idempotencyKey = idempotencyHeaders.FirstOrDefault();
+
     var user = await CurrentUserAsync(
         request,
         authService,
@@ -1284,6 +1307,7 @@ store.MapPost("/purchases", async (
             user.CompanyId,
             user.Id,
             payload,
+            request.Headers["Idempotency-Key"].FirstOrDefault(),
             cancellationToken));
     }
     catch (ArgumentException ex)
@@ -1421,6 +1445,17 @@ store.MapPost("/transfers", async (
     SalesInventoryService storeService,
     CancellationToken cancellationToken) =>
 {
+    var idempotencyHeaders = request.Headers["Idempotency-Key"];
+    if (idempotencyHeaders.Count > 1)
+    {
+        return Results.BadRequest(new
+        {
+            error = "Only one Idempotency-Key header may be supplied."
+        });
+    }
+
+    var idempotencyKey = idempotencyHeaders.FirstOrDefault();
+
     var user = await CurrentUserAsync(
         request,
         authService,
@@ -1442,6 +1477,7 @@ store.MapPost("/transfers", async (
             user.CompanyId,
             user.Id,
             payload,
+            request.Headers["Idempotency-Key"].FirstOrDefault(),
             cancellationToken));
     }
     catch (ArgumentException ex)
