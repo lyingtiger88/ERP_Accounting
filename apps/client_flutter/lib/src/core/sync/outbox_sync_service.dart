@@ -251,7 +251,11 @@ class OutboxSyncService {
         }
 
         processed++;
-        failed++;
+        if (statusCode == 409) {
+          conflicts++;
+        } else {
+          failed++;
+        }
 
         if (statusCode == null ||
             statusCode == 401 ||
@@ -286,7 +290,7 @@ class OutboxSyncService {
       }
     }
 
-    final remaining = await localDatabase.pendingOutboxCount();
+    final remaining = await localDatabase.unresolvedOutboxCount();
 
     return SyncRunResult(
       processed: processed,
