@@ -119,7 +119,7 @@ This roadmap is intentionally kept on the repository home page so the current pl
 
 ### Phase 2 — Synchronization Engine
 
-> Protocol specification: [docs/SYNC_PROTOCOL.md](docs/SYNC_PROTOCOL.md) · Static implementation audit: [docs/PHASE_2_IMPLEMENTATION_AUDIT.md](docs/PHASE_2_IMPLEMENTATION_AUDIT.md). The checklist below tracks implementation, not documentation; no new item is marked complete by the documentation audit.
+> Phase 2 engineering docs: [Protocol](docs/SYNC_PROTOCOL.md) · [API contract](docs/PHASE_2_API_CONTRACT.md) · [Security threat model](docs/PHASE_2_SECURITY_THREAT_MODEL.md) · [Implementation audit](docs/PHASE_2_IMPLEMENTATION_AUDIT.md). The checklist tracks implementation, not documentation; no new item is marked complete by this documentation work.
 
 - [ ] Device identity
 - [x] Client sync outbox/change-journal foundation
