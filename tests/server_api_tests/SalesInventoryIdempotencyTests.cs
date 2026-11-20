@@ -179,6 +179,18 @@ public sealed class SalesInventoryIdempotencyTests
         Assert.Equal(
             3,
             await fixture.Db.StoreSyncReceipts.CountAsync());
+
+        var uniqueIndexes = await fixture.Db.Database
+            .SqlQueryRaw<string>(
+                """
+                SELECT name AS Value
+                FROM pragma_index_list('store_sync_receipts')
+                WHERE "unique" = 1
+                """)
+            .ToListAsync();
+        Assert.Contains(
+            "IX_store_sync_receipts_CompanyId_IdempotencyKey",
+            uniqueIndexes);
     }
 
     private sealed class TestFixture : IAsyncDisposable
@@ -212,6 +224,7 @@ public sealed class SalesInventoryIdempotencyTests
 
             var db = new AppDbContext(options);
             await db.Database.EnsureCreatedAsync();
+            await SalesInventorySchemaBootstrapper.EnsureAsync(db);
 
             var company = new Company { Name = "Test Company" };
             db.Companies.Add(company);
