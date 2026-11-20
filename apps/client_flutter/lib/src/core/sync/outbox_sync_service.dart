@@ -9,7 +9,12 @@ class SyncRunResult {
     required this.conflicts,
     required this.remaining,
     required this.stoppedByNetwork,
-  });
+  })  : assert(processed >= 0),
+        assert(synced >= 0),
+        assert(failed >= 0),
+        assert(conflicts >= 0),
+        assert(remaining >= 0),
+        assert(synced + failed + conflicts == processed);
 
   final int processed;
   final int synced;
