@@ -19,7 +19,7 @@ class LocalDatabase {
   }
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 13;
+  static const _databaseVersion = 14;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -266,7 +266,8 @@ class LocalDatabase {
         sent_at TEXT,
         status TEXT NOT NULL DEFAULT 'Pending',
         next_attempt_at TEXT,
-        last_attempt_at TEXT
+        last_attempt_at TEXT,
+        lease_expires_at TEXT
       )
     ''');
 
@@ -420,6 +421,15 @@ class LocalDatabase {
       );
       await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_sync_outbox_due ON sync_outbox(status, next_attempt_at, created_at)",
+      );
+    }
+
+    if (oldVersion < 14) {
+      await db.execute(
+        'ALTER TABLE sync_outbox ADD COLUMN lease_expires_at TEXT',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sync_outbox_lease ON sync_outbox(status, lease_expires_at)',
       );
     }
   }
