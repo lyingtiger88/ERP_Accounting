@@ -191,11 +191,10 @@ void main() {
 
     test('rejects zero, negative and fractional revisions', () {
       for (final revision in [0, -1, 1.5]) {
+        final payload = detailChange();
+        (payload['entity'] as Map<String, dynamic>)['revision'] = revision;
         expect(
-          () => DetailAccountPullChange.fromJson(
-            detailChange(revision: revision is int ? revision : 1)
-              ..['entity']['revision'] = revision,
-          ),
+          () => DetailAccountPullChange.fromJson(payload),
           throwsFormatException,
         );
       }
