@@ -119,6 +119,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 
 ### Phase 2 — Synchronization Engine
 
+> Protocol specification: [docs/SYNC_PROTOCOL.md](docs/SYNC_PROTOCOL.md) · Static implementation audit: [docs/PHASE_2_IMPLEMENTATION_AUDIT.md](docs/PHASE_2_IMPLEMENTATION_AUDIT.md). The checklist below tracks implementation, not documentation; no new item is marked complete by the documentation audit.
+
 - [ ] Device identity
 - [x] Client sync outbox/change-journal foundation
 - [x] Outbox push processor
