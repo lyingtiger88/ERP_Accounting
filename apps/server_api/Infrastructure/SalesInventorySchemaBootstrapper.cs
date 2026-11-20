@@ -486,6 +486,30 @@ public static class SalesInventorySchemaBootstrapper
             await db.Database.ExecuteSqlRawAsync(command, cancellationToken);
         }
 
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS store_sync_receipts (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_store_sync_receipts" PRIMARY KEY,
+                "CompanyId" TEXT NOT NULL,
+                "IdempotencyKey" TEXT NOT NULL,
+                "EntityType" TEXT NOT NULL,
+                "RequestHash" TEXT NOT NULL,
+                "EntityId" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                CONSTRAINT "FK_store_sync_receipts_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_store_sync_receipts_CompanyId_IdempotencyKey"
+            ON store_sync_receipts ("CompanyId", "IdempotencyKey");
+            """,
+            cancellationToken);
+
         await EnsureSqliteColumnAsync(
             db, "store_products", "TrackingMode",
             "ALTER TABLE store_products ADD COLUMN \"TrackingMode\" TEXT NOT NULL DEFAULT 'None';",
@@ -1098,6 +1122,30 @@ public static class SalesInventorySchemaBootstrapper
         {
             await db.Database.ExecuteSqlRawAsync(command, cancellationToken);
         }
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS store_sync_receipts (
+                "Id" uuid NOT NULL CONSTRAINT "PK_store_sync_receipts" PRIMARY KEY,
+                "CompanyId" uuid NOT NULL,
+                "IdempotencyKey" character varying(100) NOT NULL,
+                "EntityType" character varying(40) NOT NULL,
+                "RequestHash" character varying(64) NOT NULL,
+                "EntityId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "FK_store_sync_receipts_companies"
+                    FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
+                    ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                "IX_store_sync_receipts_CompanyId_IdempotencyKey"
+            ON store_sync_receipts ("CompanyId", "IdempotencyKey");
+            """,
+            cancellationToken);
 
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE purchase_receipts ADD COLUMN IF NOT EXISTS \"PurchaseOrderId\" uuid NULL;",
