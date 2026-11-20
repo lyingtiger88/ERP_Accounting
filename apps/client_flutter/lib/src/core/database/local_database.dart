@@ -14,6 +14,11 @@ import '../sync/sync_models.dart';
 class LocalDatabase {
   LocalDatabase._();
 
+  @visibleForTesting
+  LocalDatabase.forTesting(Database database) : _() {
+    _database = database;
+  }
+
   static const _databaseName = 'erp_accounting_client.db';
   static const _databaseVersion = 13;
 
