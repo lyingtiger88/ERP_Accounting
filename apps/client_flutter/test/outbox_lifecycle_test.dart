@@ -34,6 +34,8 @@ void main() {
         id TEXT PRIMARY KEY,
         sync_status TEXT NOT NULL,
         last_error TEXT,
+        server_id TEXT,
+        server_number TEXT,
         updated_at TEXT NOT NULL
       )
     ''');
@@ -169,6 +171,43 @@ void main() {
     expect(row['status'], 'DeadLetter');
     expect(row['attempt_count'], 8);
     expect(row['next_attempt_at'], isNull);
+  });
+
+  test('successful store acknowledgement atomically marks draft and Outbox sent', () async {
+    final fixture = await createDatabase();
+    addTearDown(fixture.database.close);
+    final id = await insertOutbox(fixture.database, 'change-ack');
+    await fixture.database.insert('local_store_drafts', {
+      'id': 'draft-ack',
+      'sync_status': 'Pending',
+      'last_error': null,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+
+    await fixture.local.claimPendingOutbox();
+    await fixture.local.markStoreDraftSynced(
+      outboxId: id,
+      localId: 'draft-ack',
+      serverEntity: {'id': 'server-document', 'number': 'INV-001'},
+    );
+
+    final outbox = (await fixture.database.query(
+      'sync_outbox',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    final draft = (await fixture.database.query(
+      'local_store_drafts',
+      where: 'id = ?',
+      whereArgs: ['draft-ack'],
+    )).single;
+
+    expect(outbox['status'], 'Sent');
+    expect(outbox['sent_at'], isNotNull);
+    expect(outbox['lease_expires_at'], isNull);
+    expect(draft['sync_status'], 'Synced');
+    expect(draft['server_id'], 'server-document');
+    expect(draft['server_number'], 'INV-001');
   });
 
   test('local store draft exposes blocked and conflict states', () async {
