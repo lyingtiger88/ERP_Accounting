@@ -271,6 +271,11 @@ class LocalDatabase {
       ON sync_outbox(sent_at, created_at)
     ''');
 
+    await db.execute('''
+      CREATE INDEX idx_sync_outbox_due
+      ON sync_outbox(status, next_attempt_at, created_at)
+    ''');
+
     await _createAccountingSchema(db);
     await _createSalesInventoryCacheSchema(db);
     await _createDemoBusinessSchema(db);
