@@ -146,6 +146,14 @@ void main() {
       );
     });
 
+    test('rejects invalid journal document dates', () {
+      final change = journalChange()..['documentDate'] = 'not-a-date';
+      expect(
+        () => JournalPullPage.fromJson(journalPage(changes: [change])),
+        throwsFormatException,
+      );
+    });
+
     test('rejects invalid foreign amount and exchange rate', () {
       expect(
         () => JournalPullLine.fromJson({
@@ -158,6 +166,15 @@ void main() {
         () => JournalPullLine.fromJson({
           ...journalLine(),
           'exchangeRate': 0,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => JournalPullLine.fromJson({
+          ...journalLine(),
+          'foreignDebit': 10,
+          'foreignCredit': 10,
+          'exchangeRate': 2,
         }),
         throwsFormatException,
       );
