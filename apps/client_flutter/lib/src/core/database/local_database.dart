@@ -3075,7 +3075,7 @@ class LocalDatabase {
   }) async {
     final rows = await _db.query(
       'sync_outbox',
-      where: "sent_at IS NULL AND status IN ('Pending', 'Retry') AND (next_attempt_at IS NULL OR next_attempt_at <= ?)",
+      where: "sent_at IS NULL AND status IN ('Pending', 'Retry', 'Blocked') AND (next_attempt_at IS NULL OR next_attempt_at <= ?)",
       whereArgs: [DateTime.now().toUtc().toIso8601String()],
       orderBy: 'created_at ASC, id ASC',
       limit: limit,
@@ -3207,14 +3207,14 @@ class LocalDatabase {
         'attempt_count': 0,
         'last_error': null,
       },
-      where: "id = ? AND sent_at IS NULL AND status IN ('DeadLetter', 'Rejected', 'Blocked')",
+      where: "id = ? AND sent_at IS NULL AND status IN ('DeadLetter', 'Blocked')",
       whereArgs: [outboxId],
     );
   }
 
   Future<int> pendingOutboxCount() async {
     final rows = await _db.rawQuery(
-      "SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL AND status IN ('Pending', 'Retry')",
+      "SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL AND status IN ('Pending', 'Retry', 'Blocked')",
     );
 
     return (rows.first['count'] as int?) ?? 0;
