@@ -1832,6 +1832,9 @@ class ApiClient {
         'exchangeRate': exchangeRate,
         'purchaseOrderId': purchaseOrderId,
       },
+      headers: idempotencyKey == null
+          ? null
+          : {'Idempotency-Key': idempotencyKey},
     );
 
     return Map<String, dynamic>.from(response as Map);
@@ -1912,6 +1915,7 @@ class ApiClient {
     required String toWarehouseId,
     String? description,
     required List<Map<String, dynamic>> lines,
+    String? idempotencyKey,
   }) async {
     final response = await _request(
       'POST',
@@ -1924,6 +1928,9 @@ class ApiClient {
         'description': description,
         'lines': lines,
       },
+      headers: idempotencyKey == null
+          ? null
+          : {'Idempotency-Key': idempotencyKey},
     );
 
     return Map<String, dynamic>.from(response as Map);
@@ -2034,6 +2041,7 @@ class ApiClient {
     required List<Map<String, dynamic>> lines,
     String? currencyId,
     num? exchangeRate,
+    String? idempotencyKey,
   }) async {
     final response = await _request(
       'POST',
@@ -2050,6 +2058,9 @@ class ApiClient {
         'currencyId': currencyId,
         'exchangeRate': exchangeRate,
       },
+      headers: idempotencyKey == null
+          ? null
+          : {'Idempotency-Key': idempotencyKey},
     );
 
     return Map<String, dynamic>.from(response as Map);
@@ -2073,6 +2084,7 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
     String? bearerToken,
+    Map<String, String>? headers,
     bool allowRefresh = true,
   }) async {
     if (DemoMode.isDemoToken(bearerToken)) {
@@ -2106,6 +2118,7 @@ class ApiClient {
           'Bearer ' + effectiveBearerToken,
         );
       }
+      headers?.forEach(request.headers.set);
 
       if (body != null) {
         request.write(jsonEncode(body));
@@ -2126,6 +2139,7 @@ class ApiClient {
             path,
             body: body,
             bearerToken: refreshed.accessToken,
+            headers: headers,
             allowRefresh: false,
           );
         }
