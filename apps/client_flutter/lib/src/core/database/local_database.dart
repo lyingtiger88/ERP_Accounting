@@ -3203,6 +3203,8 @@ class LocalDatabase {
       {
         'status': 'Pending',
         'next_attempt_at': null,
+        'last_attempt_at': null,
+        'attempt_count': 0,
         'last_error': null,
       },
       where: "id = ? AND sent_at IS NULL AND status IN ('DeadLetter', 'Rejected', 'Blocked')",
