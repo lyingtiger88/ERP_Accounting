@@ -105,6 +105,26 @@ However, the inspected protocol/client path does not yet implement a complete cu
 
 **Required before completion:** typed cursor-expired response, snapshot bootstrap, retention watermark, and restart/recovery tests.
 
+### 12. Client delta payload validation and cursor safety — hardened on this branch
+
+The Flutter client now validates delta responses before they enter local apply code:
+- page cursors must be non-negative integers;
+- change cursors must be strictly increasing and duplicate-free;
+- nextCursor cannot trail the final change;
+- a page cannot claim hasMore while returning no changes;
+- journal identifiers and line arrays are required;
+- journal IRR debit/credit values must be finite whole amounts, non-negative, and one-sided;
+- foreign amounts must be finite/non-negative and exchange rates positive;
+- detail-account entities require an identifier and positive integral revision.
+
+Automated regression tests cover valid/empty pages and malformed cursor, line, amount, identity, and revision payloads. These checks are software-only and do not claim hardware/physical validation.
+
+### 13. Interrupted Outbox batches no longer strand untouched claims
+
+The sync service caps caller-provided batch sizes to 1–200. When a network/authentication interruption stops the batch, every untouched claimed row is immediately returned to Pending and its lease cleared rather than waiting for the five-minute lease timeout. SyncRunResult now asserts non-negative counters and exact processed-outcome reconciliation.
+
+Automated tests cover immediate release/re-claim and result-counter invariants. The current behavior is still a local single-client delivery lifecycle; it does not establish device-bound authorization or LAN/USB transport.
+
 ### 11. Sync run diagnostics are currently only partial
 
 The orchestration returns counts for the current run and stores a last-sync timestamp, but a durable sync-run history with transport, cursor range, per-outcome counts, correlation ID, and sanitized error categories was not identified in the inspected implementation.
