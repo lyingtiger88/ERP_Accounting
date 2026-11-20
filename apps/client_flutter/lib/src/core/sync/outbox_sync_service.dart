@@ -211,13 +211,29 @@ class OutboxSyncService {
               item.entityType +
               '/' +
               item.operation,
+          retryable: false,
+          terminalStatus: 'Rejected',
         );
         processed++;
         failed++;
       } on ApiException catch (error) {
+        final statusCode = error.statusCode;
+        final retryable = statusCode == null ||
+            statusCode == 408 ||
+            statusCode == 425 ||
+            statusCode == 429 ||
+            statusCode >= 500;
+        final terminalStatus = statusCode == 401 || statusCode == 403
+            ? 'Blocked'
+            : statusCode == 409
+                ? 'Conflict'
+                : 'Rejected';
+
         await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error: error.message,
+          retryable: retryable,
+          terminalStatus: terminalStatus,
         );
 
         if (item.entityType == 'DetailAccount') {
@@ -237,16 +253,18 @@ class OutboxSyncService {
         processed++;
         failed++;
 
-        if (error.statusCode == null ||
-            error.statusCode == 401 ||
-            error.statusCode == 403) {
-          stoppedByNetwork = error.statusCode == null;
+        if (statusCode == null ||
+            statusCode == 401 ||
+            statusCode == 403) {
+          stoppedByNetwork = statusCode == null;
           break;
         }
       } catch (error) {
         await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error: error.toString(),
+          retryable: false,
+          terminalStatus: 'Rejected',
         );
 
         if (item.entityType == 'DetailAccount') {
