@@ -14,7 +14,6 @@ import '../sync/sync_models.dart';
 class LocalDatabase {
   LocalDatabase._();
 
-  @visibleForTesting
   LocalDatabase.forTesting(Database database) : _() {
     _database = database;
   }
