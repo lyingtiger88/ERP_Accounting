@@ -87,15 +87,15 @@ No attachment content-addressed transfer pipeline or complete sync-run history m
 
 ### 8. Outbox failure lifecycle — implementation added on this branch
 
-The branch now stores explicit Pending, Retry, Blocked, Conflict, Rejected, DeadLetter, and Sent states. Transient failures receive capped exponential retry scheduling; exhausted retries move to DeadLetter; unsupported/permanent operations move to Rejected; authentication failures are held as Blocked; conflicts are not auto-retried. Manual retry resets the retry budget while preserving the immutable ChangeId and payload.
+The branch now stores explicit Pending, Processing, Retry, Blocked, Conflict, Rejected, DeadLetter, and Sent states. Transient failures receive capped exponential retry scheduling; exhausted retries move to DeadLetter; unsupported/permanent operations move to Rejected; authentication failures are held as Blocked; conflicts are not auto-retried. Manual retry resets the retry budget while preserving the immutable ChangeId and payload. A transactional claim operation leases each batch for five minutes, prevents two local sync workers from claiming the same row, and recovers abandoned Processing rows after lease expiry. Ambiguous failures after a possible server commit are retried with the same idempotency key rather than being prematurely rejected. Local draft status mirrors the durable Outbox outcome.
 
-**Verification:** dedicated Flutter tests have been added for retry scheduling, terminal rejection, dead-letter manual retry, and blocked-item resumption. CI results are pending.
+**Verification:** Flutter tests cover retry scheduling/backoff, terminal rejection, retry-budget exhaustion, dead-letter manual retry, blocked/conflict draft status, exclusive claims, lease release, and expired-lease recovery. The latest CI run passed Flutter analysis/tests and the ASP.NET Core build/tests.
 
 ### 9. Store create idempotency — implementation added on this branch
 
 The outbox now sends its stable ChangeId as the `Idempotency-Key` header for sales invoice, purchase receipt, and warehouse transfer creation. The server stores a tenant- and user-scoped receipt with the entity type and SHA-256 hash of the typed request. The receipt and document are committed in the same serializable transaction. A matching replay returns the original document; reusing a key for a different user, operation, or payload returns a conflict.
 
-**Verification:** a SQLite-backed server regression test covers replay of all three create operations, single-document persistence, and changed-payload key reuse. CI results are pending.
+**Verification:** a SQLite-backed server regression test covers replay of all three create operations, single-document persistence, changed-payload and cross-user key reuse, operation-type collisions, key length/blank validation, rollback without receipt creation, and legacy requests without an idempotency key. Duplicate HTTP Idempotency-Key headers are rejected at the API boundary. The latest CI run passed 29 server tests.
 
 ### 10. Pull cursor handling is transactionally sound in the inspected paths, but recovery is incomplete
 
