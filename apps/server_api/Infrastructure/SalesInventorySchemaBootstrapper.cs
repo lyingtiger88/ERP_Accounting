@@ -1140,7 +1140,10 @@ public static class SalesInventorySchemaBootstrapper
                 "CreatedAt" timestamp with time zone NOT NULL,
                 CONSTRAINT "FK_store_sync_receipts_companies"
                     FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
-                    ON DELETE CASCADE
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_store_sync_receipts_users"
+                    FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
             );
             """,
             cancellationToken);
