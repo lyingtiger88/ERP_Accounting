@@ -1373,6 +1373,7 @@ class LocalDatabase {
           'last_error': null,
           'status': 'Sent',
           'next_attempt_at': null,
+          'lease_expires_at': null,
         },
         where: 'id = ?',
         whereArgs: [outboxId],
@@ -3115,6 +3116,67 @@ class LocalDatabase {
         .toList(growable: false);
   }
 
+  Future<List<PendingOutboxItem>> claimPendingOutbox({
+    int limit = 50,
+    Duration leaseDuration = const Duration(minutes: 5),
+  }) async {
+    final now = DateTime.now().toUtc();
+    final nowText = now.toIso8601String();
+    final leaseUntil = now.add(leaseDuration).toIso8601String();
+
+    return _db.transaction<List<PendingOutboxItem>>((txn) async {
+      final rows = await txn.rawQuery(
+        '''
+        SELECT * FROM sync_outbox
+        WHERE sent_at IS NULL
+          AND (
+            (
+              status IN ('Pending', 'Retry', 'Blocked')
+              AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+            )
+            OR (
+              status = 'Processing'
+              AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+            )
+          )
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+        ''',
+        [nowText, nowText, limit],
+      );
+
+      for (final row in rows) {
+        await txn.update(
+          'sync_outbox',
+          {
+            'status': 'Processing',
+            'lease_expires_at': leaseUntil,
+          },
+          where: 'id = ? AND sent_at IS NULL',
+          whereArgs: [row['id']],
+        );
+      }
+
+      return rows
+          .map(
+            (row) => PendingOutboxItem(
+              id: row['id'] as int,
+              changeId: row['change_id'] as String,
+              companyId: row['company_id'] as String,
+              entityType: row['entity_type'] as String,
+              entityId: row['entity_id'] as String,
+              operation: row['operation'] as String,
+              payload: Map<String, dynamic>.from(
+                jsonDecode(row['payload_json'] as String) as Map,
+              ),
+              attemptCount: row['attempt_count'] as int,
+              lastError: row['last_error'] as String?,
+            ),
+          )
+          .toList(growable: false);
+    });
+  }
+
   Future<void> markOutboxSent({
     required int outboxId,
     required String localDocumentId,
@@ -3206,6 +3268,7 @@ class LocalDatabase {
           'last_attempt_at': now.toIso8601String(),
           'status': status,
           'next_attempt_at': nextAttempt,
+          'lease_expires_at': null,
         },
         where: 'id = ?',
         whereArgs: [outboxId],
@@ -3231,7 +3294,7 @@ class LocalDatabase {
 
   Future<int> pendingOutboxCount() async {
     final rows = await _db.rawQuery(
-      "SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL AND status IN ('Pending', 'Retry', 'Blocked')",
+      "SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL AND status IN ('Pending', 'Retry', 'Blocked', 'Processing')",
     );
 
     return (rows.first['count'] as int?) ?? 0;
