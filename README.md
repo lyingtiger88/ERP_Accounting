@@ -124,6 +124,8 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [ ] Device identity
 - [x] Client sync outbox/change-journal foundation
 - [x] Outbox push processor
+- [x] Outbox retry/backoff and terminal failure lifecycle
+- [x] Store create idempotency (sales invoices, purchase receipts, warehouse transfers)
 - [x] Detail-account optimistic revisions
 - [ ] General entity revisions
 - [x] Journal sync cursors
