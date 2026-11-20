@@ -83,6 +83,36 @@ No attachment content-addressed transfer pipeline or complete sync-run history m
 - Defined attachment integrity and diagnostics requirements.
 - Recorded the current implementation boundary without marking unimplemented features complete.
 
+## Additional static findings from client sync review
+
+### 8. Outbox failure lifecycle needs a terminal state
+
+The current outbox selects every row where `sent_at IS NULL`. `markOutboxFailed` increments an attempt counter and records an error, but it does not distinguish retryable failures from permanent rejection or move exhausted items to a dead-letter/conflict state. Unsupported entity/operation pairs are also marked failed while remaining pending, so they can be selected on every future run.
+
+**Required before completion:** typed retryable/permanent outcomes, bounded exponential backoff with jitter for transient failures, a terminal rejected/dead-letter state, user-visible remediation, and a safe retry action that preserves ChangeId only when the payload is unchanged.
+
+### 9. Store-document upload idempotency must be verified
+
+The outbox processor passes ChangeId to the journal and detail-account sync APIs. The inspected store invoice, purchase receipt, and warehouse transfer create calls do not pass the outbox ChangeId into their API calls.
+
+**Risk:** a server commit followed by a lost response may lead the client to retry a create request without a stable idempotency key. This can create duplicate business documents unless the domain API independently provides an equivalent idempotency guarantee.
+
+**Required before completion:** propagate ChangeId into server-side receipts for every create operation, or document and prove an equivalent idempotency mechanism. Add duplicate-delivery and lost-response tests before release.
+
+### 10. Pull cursor handling is transactionally sound in the inspected paths, but recovery is incomplete
+
+Both detail-account and journal page-apply methods write entity rows and their respective cursor inside the same SQLite transaction. This is a good atomicity foundation.
+
+However, the inspected protocol/client path does not yet implement a complete cursor-expiry/snapshot recovery contract. It also lacks a unified cursor namespace across entity types.
+
+**Required before completion:** typed cursor-expired response, snapshot bootstrap, retention watermark, and restart/recovery tests.
+
+### 11. Sync run diagnostics are currently only partial
+
+The orchestration returns counts for the current run and stores a last-sync timestamp, but a durable sync-run history with transport, cursor range, per-outcome counts, correlation ID, and sanitized error categories was not identified in the inspected implementation.
+
+**Required before completion:** persistent run history on client and server, redaction rules, retention, and a user-facing diagnostics view.
+
 ## Recommended implementation sequence
 
 1. Device identity end-to-end (client + server + auth integration).
