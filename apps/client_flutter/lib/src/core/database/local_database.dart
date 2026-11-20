@@ -15,7 +15,7 @@ class LocalDatabase {
   LocalDatabase._();
 
   static const _databaseName = 'erp_accounting_client.db';
-  static const _databaseVersion = 12;
+  static const _databaseVersion = 13;
 
   static final LocalDatabase instance = LocalDatabase._();
 
@@ -259,7 +259,10 @@ class LocalDatabase {
         created_at TEXT NOT NULL,
         attempt_count INTEGER NOT NULL DEFAULT 0,
         last_error TEXT,
-        sent_at TEXT
+        sent_at TEXT,
+        status TEXT NOT NULL DEFAULT 'Pending',
+        next_attempt_at TEXT,
+        last_attempt_at TEXT
       )
     ''');
 
@@ -391,6 +394,24 @@ class LocalDatabase {
 
     if (oldVersion < 12) {
       await _createDemoBusinessSchema(db);
+    }
+
+    if (oldVersion < 13) {
+      await db.execute(
+        "ALTER TABLE sync_outbox ADD COLUMN status TEXT NOT NULL DEFAULT 'Pending'",
+      );
+      await db.execute(
+        "ALTER TABLE sync_outbox ADD COLUMN next_attempt_at TEXT",
+      );
+      await db.execute(
+        "ALTER TABLE sync_outbox ADD COLUMN last_attempt_at TEXT",
+      );
+      await db.execute(
+        "UPDATE sync_outbox SET status = 'Sent' WHERE sent_at IS NOT NULL",
+      );
+      await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sync_outbox_due ON sync_outbox(status, next_attempt_at, created_at)",
+      );
     }
   }
 
@@ -1331,6 +1352,8 @@ class LocalDatabase {
         {
           'sent_at': now,
           'last_error': null,
+          'status': 'Sent',
+          'next_attempt_at': null,
         },
         where: 'id = ?',
         whereArgs: [outboxId],
@@ -2053,6 +2076,8 @@ class LocalDatabase {
         {
           'sent_at': now,
           'last_error': null,
+          'status': 'Sent',
+          'next_attempt_at': null,
         },
         where: 'id = ?',
         whereArgs: [outboxId],
@@ -3043,7 +3068,8 @@ class LocalDatabase {
   }) async {
     final rows = await _db.query(
       'sync_outbox',
-      where: 'sent_at IS NULL',
+      where: "sent_at IS NULL AND status IN ('Pending', 'Retry') AND (next_attempt_at IS NULL OR next_attempt_at <= ?)",
+      whereArgs: [DateTime.now().toUtc().toIso8601String()],
       orderBy: 'created_at ASC, id ASC',
       limit: limit,
     );
@@ -3120,23 +3146,72 @@ class LocalDatabase {
   Future<void> markOutboxFailed({
     required int outboxId,
     required String error,
+    bool retryable = true,
+    String terminalStatus = 'Rejected',
+    int maxAttempts = 8,
   }) async {
-    await _db.rawUpdate(
-      '''
-      UPDATE sync_outbox
-      SET attempt_count = attempt_count + 1,
-          last_error = ?
-      WHERE id = ?
-      ''',
-      [error, outboxId],
+    await _db.transaction((txn) async {
+      final rows = await txn.query(
+        'sync_outbox',
+        columns: ['attempt_count'],
+        where: 'id = ? AND sent_at IS NULL',
+        whereArgs: [outboxId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return;
+
+      final attempts = (rows.first['attempt_count'] as int) + 1;
+      final shouldRetry = retryable && attempts < maxAttempts;
+      final delaySeconds = (30 * (1 << (attempts - 1).clamp(0, 10)))
+          .clamp(30, 21600);
+      final now = DateTime.now().toUtc();
+      final nextAttempt = shouldRetry
+          ? now.add(Duration(seconds: delaySeconds)).toIso8601String()
+          : null;
+      final status = shouldRetry
+          ? 'Retry'
+          : (retryable ? 'DeadLetter' : terminalStatus);
+
+      await txn.update(
+        'sync_outbox',
+        {
+          'attempt_count': attempts,
+          'last_error': error,
+          'last_attempt_at': now.toIso8601String(),
+          'status': status,
+          'next_attempt_at': nextAttempt,
+        },
+        where: 'id = ?',
+        whereArgs: [outboxId],
+      );
+    });
+  }
+
+  Future<void> retryOutboxItem(int outboxId) async {
+    await _db.update(
+      'sync_outbox',
+      {
+        'status': 'Pending',
+        'next_attempt_at': null,
+        'last_error': null,
+      },
+      where: "id = ? AND sent_at IS NULL AND status IN ('DeadLetter', 'Rejected', 'Blocked')",
+      whereArgs: [outboxId],
     );
   }
 
   Future<int> pendingOutboxCount() async {
     final rows = await _db.rawQuery(
-      'SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL',
+      "SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL AND status IN ('Pending', 'Retry')",
     );
 
+    return (rows.first['count'] as int?) ?? 0;
+  }
+
+  Future<int> unresolvedOutboxCount() async {
+    final rows = await _db.rawQuery(
+      "SELECT COUNT(*) AS count FROM sync_outbox WHERE sent_at IS NULL",
+    );
     return (rows.first['count'] as int?) ?? 0;
   }
 
