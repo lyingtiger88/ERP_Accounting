@@ -283,6 +283,8 @@ void main() {
     await fixture.database.update(
       'sync_outbox',
       {
+        'status': 'Processing',
+        'next_attempt_at': null,
         'lease_expires_at': DateTime.now()
             .toUtc()
             .subtract(const Duration(seconds: 1))
