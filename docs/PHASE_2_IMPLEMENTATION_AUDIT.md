@@ -1,7 +1,7 @@
 # Phase 2 — Implementation Audit
 
-**Audited branch:** \`main\`  
-**Working branch:** \`feature/phase-2-sync-engine\`  
+**Audited branch:** `main`  
+**Working branch:** `feature/phase-2-sync-engine`  
 **Audit type:** static repository inspection and documentation completion  
 **Runtime/build/test claims:** none. This audit does not replace automated or integration tests.
 
@@ -15,15 +15,15 @@ The protocol specification has been expanded in [SYNC_PROTOCOL.md](SYNC_PROTOCOL
 
 | Area | Evidence in repository | Audit conclusion |
 |---|---|---|
-| Local outbox | \`local_database.dart\`, \`sync_outbox\` table | Exists; stores ChangeId, company, entity, operation and payload |
-| Outbox processor | \`outbox_sync_service.dart\` | Exists for a finite set of entity/operation handlers |
-| Journal upload | \`AccountingService.SyncJournalAsync\` | Exists with idempotency receipts |
-| Journal delta pull | \`JournalPullSyncService\` and server pull endpoint | Exists with cursor-based paging |
-| Detail-account revisions | \`AccountingService.SyncDetailAccountAsync\` | Exists for this entity type |
-| Detail-account idempotency | \`DetailAccountSyncReceipts\` | Exists |
-| Detail-account delta pull | \`DetailAccountPullSyncService\` | Exists with independent cursor |
-| Detail-account conflict workflow | \`local_database.dart\` conflict storage/resolution methods | Exists for detail accounts |
-| Device trust primitives | \`TrustedDevice\` and \`AuthSession.DeviceId\` | Authentication-side data model exists; sync integration is not established |
+| Local outbox | `local_database.dart`, `sync_outbox` table | Exists; stores ChangeId, company, entity, operation and payload |
+| Outbox processor | `outbox_sync_service.dart` | Exists for a finite set of entity/operation handlers |
+| Journal upload | `AccountingService.SyncJournalAsync` | Exists with idempotency receipts |
+| Journal delta pull | `JournalPullSyncService` and server pull endpoint | Exists with cursor-based paging |
+| Detail-account revisions | `AccountingService.SyncDetailAccountAsync` | Exists for this entity type |
+| Detail-account idempotency | `DetailAccountSyncReceipts` | Exists |
+| Detail-account delta pull | `DetailAccountPullSyncService` | Exists with independent cursor |
+| Detail-account conflict workflow | `local_database.dart` conflict storage/resolution methods | Exists for detail accounts |
+| Device trust primitives | `TrustedDevice` and `AuthSession.DeviceId` | Authentication-side data model exists; sync integration is not established |
 
 ## Gaps found by static inspection
 
@@ -62,7 +62,7 @@ The detail-account conflict path has an interactive resolution flow. Other entit
 
 ### 6. Transport and package security are not implemented by the inspected sync services
 
-No end-to-end LAN transport or \`.erp-sync\` package pipeline was found in the inspected sync module. Package encryption, signatures, and replay protection remain future work.
+No end-to-end LAN transport or `.erp-sync` package pipeline was found in the inspected sync module. Package encryption, signatures, and replay protection remain future work.
 
 **Required before completion:** pairing/trust, signed canonical manifests, AEAD encryption, package and change replay records, import quarantine/validation, and auditable transactional import.
 
@@ -74,11 +74,11 @@ No attachment content-addressed transfer pipeline or complete sync-run history m
 
 ## Work completed in this audit (no runtime tests required)
 
-- Rewrote \`docs/SYNC_PROTOCOL.md\` as a normative protocol specification.
+- Rewrote `docs/SYNC_PROTOCOL.md` as a normative protocol specification.
 - Documented identity boundaries and explicitly distinguished a DeviceId from proof of device trust.
 - Defined change envelope, canonical payload hashing, revisions, tombstones, idempotency receipts, cursor atomicity, and typed outcomes.
 - Defined conflict policies by entity class.
-- Defined LAN pairing requirements and the \`.erp-sync\` package import/export lifecycle.
+- Defined LAN pairing requirements and the `.erp-sync` package import/export lifecycle.
 - Specified cryptographic requirements using established primitives rather than custom cryptography.
 - Defined attachment integrity and diagnostics requirements.
 - Recorded the current implementation boundary without marking unimplemented features complete.
@@ -91,7 +91,7 @@ No attachment content-addressed transfer pipeline or complete sync-run history m
 4. Transactional client apply and generic cursor management.
 5. Per-entity conflict policy and conflict UI.
 6. LAN pairing and transport.
-7. \`.erp-sync\` export/import, cryptographic protection, and replay prevention.
+7. `.erp-sync` export/import, cryptographic protection, and replay prevention.
 8. Attachment transfer and sync diagnostics/history.
 
 ## Completion rule
