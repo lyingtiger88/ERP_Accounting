@@ -3178,6 +3178,18 @@ class LocalDatabase {
     });
   }
 
+  Future<void> releaseOutboxClaim(int outboxId) async {
+    await _db.update(
+      'sync_outbox',
+      {
+        'status': 'Pending',
+        'lease_expires_at': null,
+      },
+      where: "id = ? AND status = 'Processing' AND sent_at IS NULL",
+      whereArgs: [outboxId],
+    );
+  }
+
   Future<void> markOutboxSent({
     required int outboxId,
     required String localDocumentId,
