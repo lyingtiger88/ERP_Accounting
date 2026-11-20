@@ -1373,11 +1373,12 @@ class LocalDatabase {
   Future<void> markStoreDraftSyncError({
     required String localId,
     required String error,
+    String syncStatus = 'Pending',
   }) async {
     await _db.update(
       'local_store_drafts',
       {
-        'sync_status': 'Pending',
+        'sync_status': syncStatus,
         'last_error': error,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       },
@@ -3143,11 +3144,12 @@ class LocalDatabase {
   Future<void> markDetailAccountSyncError({
     required String entityId,
     required String error,
+    String syncStatus = 'Pending',
   }) async {
     await _db.update(
       'cached_detail_accounts',
       {
-        'sync_status': 'Pending',
+        'sync_status': syncStatus,
         'sync_error': error,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       },
@@ -3156,14 +3158,14 @@ class LocalDatabase {
     );
   }
 
-  Future<void> markOutboxFailed({
+  Future<String?> markOutboxFailed({
     required int outboxId,
     required String error,
     bool retryable = true,
     String terminalStatus = 'Rejected',
     int maxAttempts = 8,
   }) async {
-    await _db.transaction((txn) async {
+    return _db.transaction<String?>((txn) async {
       final rows = await txn.query(
         'sync_outbox',
         columns: ['attempt_count'],
@@ -3171,7 +3173,7 @@ class LocalDatabase {
         whereArgs: [outboxId],
         limit: 1,
       );
-      if (rows.isEmpty) return;
+      if (rows.isEmpty) return null;
 
       final attempts = (rows.first['attempt_count'] as int) + 1;
       final shouldRetry = retryable && attempts < maxAttempts;
@@ -3198,6 +3200,7 @@ class LocalDatabase {
         where: 'id = ?',
         whereArgs: [outboxId],
       );
+      return status;
     });
   }
 
