@@ -491,6 +491,7 @@ public static class SalesInventorySchemaBootstrapper
             CREATE TABLE IF NOT EXISTS store_sync_receipts (
                 "Id" TEXT NOT NULL CONSTRAINT "PK_store_sync_receipts" PRIMARY KEY,
                 "CompanyId" TEXT NOT NULL,
+                "CreatedByUserId" TEXT NOT NULL,
                 "IdempotencyKey" TEXT NOT NULL,
                 "EntityType" TEXT NOT NULL,
                 "RequestHash" TEXT NOT NULL,
@@ -498,7 +499,10 @@ public static class SalesInventorySchemaBootstrapper
                 "CreatedAt" TEXT NOT NULL,
                 CONSTRAINT "FK_store_sync_receipts_companies"
                     FOREIGN KEY ("CompanyId") REFERENCES companies ("Id")
-                    ON DELETE CASCADE
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_store_sync_receipts_users"
+                    FOREIGN KEY ("CreatedByUserId") REFERENCES users ("Id")
+                    ON DELETE RESTRICT
             );
             """,
             cancellationToken);
@@ -1128,6 +1132,7 @@ public static class SalesInventorySchemaBootstrapper
             CREATE TABLE IF NOT EXISTS store_sync_receipts (
                 "Id" uuid NOT NULL CONSTRAINT "PK_store_sync_receipts" PRIMARY KEY,
                 "CompanyId" uuid NOT NULL,
+                "CreatedByUserId" uuid NOT NULL,
                 "IdempotencyKey" character varying(100) NOT NULL,
                 "EntityType" character varying(40) NOT NULL,
                 "RequestHash" character varying(64) NOT NULL,
