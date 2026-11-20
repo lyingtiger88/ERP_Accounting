@@ -1815,6 +1815,7 @@ class ApiClient {
     String? currencyId,
     num? exchangeRate,
     String? purchaseOrderId,
+    String? idempotencyKey,
   }) async {
     final response = await _request(
       'POST',
