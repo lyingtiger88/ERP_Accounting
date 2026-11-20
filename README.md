@@ -126,6 +126,15 @@ This roadmap is intentionally kept on the repository home page so the current pl
 - [x] Outbox push processor
 - [x] Outbox retry/backoff and terminal failure lifecycle
 - [x] Atomic Outbox batch claims with expiring leases and crash recovery
+- [x] Immediate release of untouched claims after network/auth interruption
+- [x] Bounded client batch size (1–200)
+- [x] Strict journal delta payload validation
+- [x] Strict detail-account delta identity and revision validation
+- [x] Monotonic and duplicate-free delta cursor validation
+- [x] Journal line amount and exchange-rate validation
+- [x] Sync run counter invariants
+- [x] Automated parser regression coverage for malformed delta payloads
+- [x] Automated Outbox claim-release regression coverage
 - [x] Store create idempotency (sales invoices, purchase receipts, warehouse transfers)
 - [x] Detail-account optimistic revisions
 - [ ] General entity revisions
