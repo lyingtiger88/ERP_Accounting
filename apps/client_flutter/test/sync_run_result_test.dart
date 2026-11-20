@@ -28,6 +28,22 @@ void main() {
     expect(result.hasErrors, isTrue);
   });
 
+  test('reports authentication interruption separately from network failure', () {
+    const result = SyncRunResult(
+      processed: 1,
+      synced: 0,
+      failed: 1,
+      conflicts: 0,
+      remaining: 4,
+      stoppedByNetwork: false,
+      stoppedByAuthentication: true,
+    );
+
+    expect(result.stoppedByAuthentication, isTrue);
+    expect(result.stoppedByNetwork, isFalse);
+    expect(result.hasErrors, isTrue);
+  });
+
   test('rejects inconsistent processed counters', () {
     expect(
       () => SyncRunResult(
