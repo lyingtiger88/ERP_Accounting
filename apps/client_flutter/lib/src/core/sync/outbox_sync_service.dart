@@ -229,7 +229,7 @@ class OutboxSyncService {
                 ? 'Conflict'
                 : 'Rejected';
 
-        await localDatabase.markOutboxFailed(
+        final outboxStatus = await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error: error.message,
           retryable: retryable,
@@ -240,6 +240,7 @@ class OutboxSyncService {
           await localDatabase.markDetailAccountSyncError(
             entityId: item.entityId,
             error: error.message,
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
@@ -247,6 +248,7 @@ class OutboxSyncService {
           await localDatabase.markStoreDraftSyncError(
             localId: item.entityId,
             error: error.message,
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
@@ -267,7 +269,7 @@ class OutboxSyncService {
         // Unknown failures may happen after the server committed but before the
         // local acknowledgement was persisted. Retry with the same ChangeId:
         // server-side idempotency makes that recovery safe.
-        await localDatabase.markOutboxFailed(
+        final outboxStatus = await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error: error.toString(),
           retryable: true,
@@ -277,6 +279,7 @@ class OutboxSyncService {
           await localDatabase.markDetailAccountSyncError(
             entityId: item.entityId,
             error: error.toString(),
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
@@ -284,6 +287,7 @@ class OutboxSyncService {
           await localDatabase.markStoreDraftSyncError(
             localId: item.entityId,
             error: error.toString(),
+            syncStatus: outboxStatus ?? 'Pending',
           );
         }
 
