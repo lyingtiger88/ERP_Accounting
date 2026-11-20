@@ -245,6 +245,26 @@ void main() {
     expect(row['sync_status'], 'Conflict');
   });
 
+  test('an interrupted batch can release an untouched claim immediately', () async {
+    final fixture = await createDatabase();
+    addTearDown(fixture.database.close);
+    final id = await insertOutbox(fixture.database, 'change-release');
+
+    final claimed = await fixture.local.claimPendingOutbox();
+    expect(claimed, hasLength(1));
+
+    await fixture.local.releaseOutboxClaim(id);
+
+    final row = (await fixture.database.query(
+      'sync_outbox',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(row['status'], 'Pending');
+    expect(row['lease_expires_at'], isNull);
+    expect(await fixture.local.claimPendingOutbox(), hasLength(1));
+  });
+
   test('claims are exclusive and expired processing leases are recoverable', () async {
     final fixture = await createDatabase();
     addTearDown(fixture.database.close);
