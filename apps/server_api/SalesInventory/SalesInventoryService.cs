@@ -616,7 +616,7 @@ public sealed class SalesInventoryService(
             cancellationToken);
 
         var existingReceipt = await FindStoreSyncReceiptAsync(
-            companyId, idempotencyKey, "SalesInvoice", requestHash,
+            companyId, userId, idempotencyKey, "SalesInvoice", requestHash,
             cancellationToken);
         if (existingReceipt is not null)
         {
@@ -799,7 +799,7 @@ public sealed class SalesInventoryService(
         }
 
         AddStoreSyncReceipt(
-            companyId, idempotencyKey, "SalesInvoice", requestHash, invoice.Id);
+            companyId, userId, idempotencyKey, "SalesInvoice", requestHash, invoice.Id);
         db.SalesInvoices.Add(invoice);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -1542,7 +1542,7 @@ public sealed class SalesInventoryService(
             cancellationToken);
 
         var existingReceipt = await FindStoreSyncReceiptAsync(
-            companyId, idempotencyKey, "PurchaseReceipt", requestHash,
+            companyId, userId, idempotencyKey, "PurchaseReceipt", requestHash,
             cancellationToken);
         if (existingReceipt is not null)
         {
@@ -1789,7 +1789,7 @@ public sealed class SalesInventoryService(
         }
 
         AddStoreSyncReceipt(
-            companyId, idempotencyKey, "PurchaseReceipt", requestHash, receipt.Id);
+            companyId, userId, idempotencyKey, "PurchaseReceipt", requestHash, receipt.Id);
         db.PurchaseReceipts.Add(receipt);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -2423,7 +2423,7 @@ public sealed class SalesInventoryService(
             cancellationToken);
 
         var existingReceipt = await FindStoreSyncReceiptAsync(
-            companyId, idempotencyKey, "WarehouseTransfer", requestHash,
+            companyId, userId, idempotencyKey, "WarehouseTransfer", requestHash,
             cancellationToken);
         if (existingReceipt is not null)
         {
@@ -2523,7 +2523,7 @@ public sealed class SalesInventoryService(
         }
 
         AddStoreSyncReceipt(
-            companyId, idempotencyKey, "WarehouseTransfer", requestHash, transfer.Id);
+            companyId, userId, idempotencyKey, "WarehouseTransfer", requestHash, transfer.Id);
         db.WarehouseTransfers.Add(transfer);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -4211,6 +4211,7 @@ public sealed class SalesInventoryService(
 
     private async Task<StoreSyncReceipt?> FindStoreSyncReceiptAsync(
         Guid companyId,
+        Guid userId,
         string? idempotencyKey,
         string entityType,
         string requestHash,
@@ -4236,7 +4237,8 @@ public sealed class SalesInventoryService(
                 cancellationToken);
 
         if (existing is not null &&
-            (existing.EntityType != entityType ||
+            (existing.CreatedByUserId != userId ||
+             existing.EntityType != entityType ||
              existing.RequestHash != requestHash))
         {
             throw new InvalidOperationException(
@@ -4248,6 +4250,7 @@ public sealed class SalesInventoryService(
 
     private void AddStoreSyncReceipt(
         Guid companyId,
+        Guid userId,
         string? idempotencyKey,
         string entityType,
         string requestHash,
@@ -4261,6 +4264,7 @@ public sealed class SalesInventoryService(
         db.StoreSyncReceipts.Add(new StoreSyncReceipt
         {
             CompanyId = companyId,
+            CreatedByUserId = userId,
             IdempotencyKey = idempotencyKey,
             EntityType = entityType,
             RequestHash = requestHash,
