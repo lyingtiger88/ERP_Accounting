@@ -9,6 +9,7 @@ class SyncRunResult {
     required this.conflicts,
     required this.remaining,
     required this.stoppedByNetwork,
+    this.stoppedByAuthentication = false,
   })  : assert(processed >= 0),
         assert(synced >= 0),
         assert(failed >= 0),
@@ -22,9 +23,13 @@ class SyncRunResult {
   final int conflicts;
   final int remaining;
   final bool stoppedByNetwork;
+  final bool stoppedByAuthentication;
 
   bool get hasErrors =>
-      failed > 0 || conflicts > 0 || stoppedByNetwork;
+      failed > 0 ||
+      conflicts > 0 ||
+      stoppedByNetwork ||
+      stoppedByAuthentication;
 }
 
 class OutboxSyncService {
@@ -50,6 +55,7 @@ class OutboxSyncService {
     var failed = 0;
     var conflicts = 0;
     var stoppedByNetwork = false;
+    var stoppedByAuthentication = false;
 
     for (var index = 0; index < pending.length; index++) {
       final item = pending[index];
@@ -270,6 +276,7 @@ class OutboxSyncService {
             statusCode == 401 ||
             statusCode == 403) {
           stoppedByNetwork = statusCode == null;
+          stoppedByAuthentication = statusCode == 401 || statusCode == 403;
           // The whole batch was claimed before processing. Release untouched
           // rows immediately instead of stranding them in Processing until
           // their leases expire.
@@ -318,6 +325,7 @@ class OutboxSyncService {
       conflicts: conflicts,
       remaining: remaining,
       stoppedByNetwork: stoppedByNetwork,
+      stoppedByAuthentication: stoppedByAuthentication,
     );
   }
 }
