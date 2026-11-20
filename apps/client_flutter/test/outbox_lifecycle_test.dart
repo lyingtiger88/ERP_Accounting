@@ -29,6 +29,14 @@ void main() {
         lease_expires_at TEXT
       )
     ''');
+    await database.execute('''
+      CREATE TABLE local_store_drafts (
+        id TEXT PRIMARY KEY,
+        sync_status TEXT NOT NULL,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      )
+    ''');
     return (
       database: database,
       local: LocalDatabase.forTesting(database),
@@ -69,6 +77,13 @@ void main() {
     expect(row['status'], 'Retry');
     expect(row['attempt_count'], 1);
     expect(row['next_attempt_at'], isNotNull);
+    final firstRetryAt = DateTime.parse(row['next_attempt_at'] as String);
+    expect(
+      firstRetryAt.isAfter(
+        DateTime.now().toUtc().add(const Duration(seconds: 29)),
+      ),
+      isTrue,
+    );
     expect(await fixture.local.getPendingOutbox(), isEmpty);
     expect(await fixture.local.pendingOutboxCount(), 1);
     expect(await fixture.local.unresolvedOutboxCount(), 1);
@@ -129,6 +144,66 @@ void main() {
     expect(row['attempt_count'], 0);
     expect(row['next_attempt_at'], isNull);
     expect(await fixture.local.getPendingOutbox(), hasLength(1));
+  });
+
+  test('retry budget exhaustion moves an item to dead letter', () async {
+    final fixture = await createDatabase();
+    addTearDown(fixture.database.close);
+    final id = await insertOutbox(fixture.database, 'change-exhausted');
+
+    String? status;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      status = await fixture.local.markOutboxFailed(
+        outboxId: id,
+        error: 'temporary failure',
+        retryable: true,
+      );
+    }
+
+    final row = (await fixture.database.query(
+      'sync_outbox',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(status, 'DeadLetter');
+    expect(row['status'], 'DeadLetter');
+    expect(row['attempt_count'], 8);
+    expect(row['next_attempt_at'], isNull);
+  });
+
+  test('local store draft exposes blocked and conflict states', () async {
+    final fixture = await createDatabase();
+    addTearDown(fixture.database.close);
+    await fixture.database.insert('local_store_drafts', {
+      'id': 'draft-status',
+      'sync_status': 'Pending',
+      'last_error': null,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+
+    await fixture.local.markStoreDraftSyncError(
+      localId: 'draft-status',
+      error: 'authentication required',
+      syncStatus: 'Blocked',
+    );
+    var row = (await fixture.database.query(
+      'local_store_drafts',
+      where: 'id = ?',
+      whereArgs: ['draft-status'],
+    )).single;
+    expect(row['sync_status'], 'Blocked');
+
+    await fixture.local.markStoreDraftSyncError(
+      localId: 'draft-status',
+      error: 'document changed on server',
+      syncStatus: 'Conflict',
+    );
+    row = (await fixture.database.query(
+      'local_store_drafts',
+      where: 'id = ?',
+      whereArgs: ['draft-status'],
+    )).single;
+    expect(row['sync_status'], 'Conflict');
   });
 
   test('claims are exclusive and expired processing leases are recoverable', () async {
