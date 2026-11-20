@@ -14,7 +14,7 @@ import '../sync/sync_models.dart';
 class LocalDatabase {
   LocalDatabase._();
 
-  LocalDatabase.forTesting(Database database) : _() {
+  LocalDatabase.forTesting(Database database) {
     _database = database;
   }
 
