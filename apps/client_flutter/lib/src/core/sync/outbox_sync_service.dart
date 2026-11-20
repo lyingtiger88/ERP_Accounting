@@ -264,11 +264,13 @@ class OutboxSyncService {
           break;
         }
       } catch (error) {
+        // Unknown failures may happen after the server committed but before the
+        // local acknowledgement was persisted. Retry with the same ChangeId:
+        // server-side idempotency makes that recovery safe.
         await localDatabase.markOutboxFailed(
           outboxId: item.id,
           error: error.toString(),
-          retryable: false,
-          terminalStatus: 'Rejected',
+          retryable: true,
         );
 
         if (item.entityType == 'DetailAccount') {
