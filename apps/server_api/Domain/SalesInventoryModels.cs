@@ -365,6 +365,7 @@ public sealed class StoreSyncReceipt
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public required Guid CompanyId { get; set; }
+    public required Guid CreatedByUserId { get; set; }
     public required string IdempotencyKey { get; set; }
     public required string EntityType { get; set; }
     public required string RequestHash { get; set; }
