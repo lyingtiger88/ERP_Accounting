@@ -35,8 +35,9 @@ class OutboxSyncService {
     required String bearerToken,
     int batchSize = 50,
   }) async {
+    final safeBatchSize = batchSize.clamp(1, 200);
     final pending = await localDatabase.claimPendingOutbox(
-      limit: batchSize,
+      limit: safeBatchSize,
     );
 
     var processed = 0;
@@ -45,7 +46,8 @@ class OutboxSyncService {
     var conflicts = 0;
     var stoppedByNetwork = false;
 
-    for (final item in pending) {
+    for (var index = 0; index < pending.length; index++) {
+      final item = pending[index];
       try {
         if (item.entityType == 'AccountingDocument' &&
             item.operation == 'Create') {
@@ -263,6 +265,12 @@ class OutboxSyncService {
             statusCode == 401 ||
             statusCode == 403) {
           stoppedByNetwork = statusCode == null;
+          // The whole batch was claimed before processing. Release untouched
+          // rows immediately instead of stranding them in Processing until
+          // their leases expire.
+          for (final unprocessed in pending.skip(index + 1)) {
+            await localDatabase.releaseOutboxClaim(unprocessed.id);
+          }
           break;
         }
       } catch (error) {
