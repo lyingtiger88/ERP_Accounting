@@ -2119,7 +2119,9 @@ class ApiClient {
           'Bearer ' + effectiveBearerToken,
         );
       }
-      headers?.forEach(request.headers.set);
+      headers?.forEach((name, value) {
+        request.headers.set(name, value);
+      });
 
       if (body != null) {
         request.write(jsonEncode(body));
