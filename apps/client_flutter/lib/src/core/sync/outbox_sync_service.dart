@@ -35,7 +35,7 @@ class OutboxSyncService {
     required String bearerToken,
     int batchSize = 50,
   }) async {
-    final safeBatchSize = batchSize.clamp(1, 200);
+    final safeBatchSize = batchSize.clamp(1, 200).toInt();
     final pending = await localDatabase.claimPendingOutbox(
       limit: safeBatchSize,
     );
