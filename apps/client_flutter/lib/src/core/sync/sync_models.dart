@@ -26,18 +26,36 @@ class JournalPullLine {
   final num? exchangeRate;
 
   factory JournalPullLine.fromJson(Map<String, dynamic> json) {
+    final accountId = _requiredText(json, 'accountId');
+    final debit = _wholeAmount(json['debit'], 'debit');
+    final credit = _wholeAmount(json['credit'], 'credit');
+    if (debit < 0 || credit < 0 || (debit > 0 && credit > 0)) {
+      throw const FormatException(
+        'Journal line must have non-negative amounts on one side only.',
+      );
+    }
+    final foreignDebit = _optionalAmount(json['foreignDebit'], 'foreignDebit');
+    final foreignCredit = _optionalAmount(json['foreignCredit'], 'foreignCredit');
+    final exchangeRate = _optionalAmount(json['exchangeRate'], 'exchangeRate');
+    if ((foreignDebit ?? 0) < 0 ||
+        (foreignCredit ?? 0) < 0 ||
+        (exchangeRate != null && exchangeRate <= 0)) {
+      throw const FormatException(
+        'Foreign amounts must be non-negative and exchange rate must be positive.',
+      );
+    }
     return JournalPullLine(
-      accountId: json['accountId'] as String,
+      accountId: accountId,
       detailAccountId: json['detailAccountId'] as String?,
       costCenterId: json['costCenterId'] as String?,
       projectId: json['projectId'] as String?,
       description: json['description'] as String?,
-      debit: _wholeAmount(json['debit'], 'debit'),
-      credit: _wholeAmount(json['credit'], 'credit'),
+      debit: debit,
+      credit: credit,
       currencyId: json['currencyId'] as String?,
-      foreignDebit: json['foreignDebit'] as num?,
-      foreignCredit: json['foreignCredit'] as num?,
-      exchangeRate: json['exchangeRate'] as num?,
+      foreignDebit: foreignDebit,
+      foreignCredit: foreignCredit,
+      exchangeRate: exchangeRate,
     );
   }
 }
@@ -68,12 +86,19 @@ class JournalPullChange {
   final List<JournalPullLine> lines;
 
   factory JournalPullChange.fromJson(Map<String, dynamic> json) {
+    final cursor = _requiredCursor(json, 'cursor');
+    final lines = _parseList(json, 'lines')
+        .map((item) => JournalPullLine.fromJson(item))
+        .toList(growable: false);
+    if (lines.isEmpty) {
+      throw const FormatException('Journal change must contain at least one line.');
+    }
     return JournalPullChange(
-      cursor: (json['cursor'] as num).toInt(),
-      journalEntryId: json['journalEntryId'] as String,
-      number: json['number'] as String,
+      cursor: cursor,
+      journalEntryId: _requiredText(json, 'journalEntryId'),
+      number: _requiredText(json, 'number'),
       fiscalYearId: json['fiscalYearId'] as String?,
-      documentDate: json['documentDate'] as String,
+      documentDate: _requiredText(json, 'documentDate'),
       description: json['description'] as String?,
       status: json['status'].toString(),
       postedAt: json['postedAt'] == null
@@ -81,13 +106,7 @@ class JournalPullChange {
           : DateTime.parse(json['postedAt'] as String),
       reversalOfJournalEntryId:
           json['reversalOfJournalEntryId'] as String?,
-      lines: (json['lines'] as List<dynamic>)
-          .map(
-            (item) => JournalPullLine.fromJson(
-              Map<String, dynamic>.from(item as Map),
-            ),
-          )
-          .toList(growable: false),
+      lines: lines,
     );
   }
 }
@@ -104,16 +123,21 @@ class JournalPullPage {
   final List<JournalPullChange> changes;
 
   factory JournalPullPage.fromJson(Map<String, dynamic> json) {
+    final nextCursor = _requiredCursor(json, 'nextCursor');
+    final hasMore = json['hasMore'] as bool? ?? false;
+    final changes = _parseList(json, 'changes')
+        .map((item) => JournalPullChange.fromJson(item))
+        .toList(growable: false);
+    _validatePageCursors(
+      changes.map((change) => change.cursor).toList(growable: false),
+      nextCursor,
+      hasMore,
+      'journal',
+    );
     return JournalPullPage(
-      nextCursor: (json['nextCursor'] as num).toInt(),
-      hasMore: json['hasMore'] as bool? ?? false,
-      changes: (json['changes'] as List<dynamic>)
-          .map(
-            (item) => JournalPullChange.fromJson(
-              Map<String, dynamic>.from(item as Map),
-            ),
-          )
-          .toList(growable: false),
+      nextCursor: nextCursor,
+      hasMore: hasMore,
+      changes: changes,
     );
   }
 }
@@ -121,7 +145,7 @@ class JournalPullPage {
 int _wholeAmount(dynamic value, String field) {
   if (value is int) return value;
 
-  if (value is num) {
+  if (value is num && value.isFinite) {
     final rounded = value.round();
     if (value.toDouble() == rounded.toDouble()) {
       return rounded;
@@ -133,6 +157,63 @@ int _wholeAmount(dynamic value, String field) {
   );
 }
 
+
+String _requiredText(Map<String, dynamic> json, String field) {
+  final value = json[field];
+  if (value is String && value.trim().isNotEmpty) return value.trim();
+  throw FormatException('Server sync response is missing required $field.');
+}
+
+int _requiredCursor(Map<String, dynamic> json, String field) {
+  final value = json[field];
+  if (value is! num || !value.isFinite || value < 0 || value != value.toInt()) {
+    throw FormatException('Server sync $field must be a non-negative integer.');
+  }
+  return value.toInt();
+}
+
+num? _optionalAmount(dynamic value, String field) {
+  if (value == null) return null;
+  if (value is num && value.isFinite) return value;
+  throw FormatException('Server sync $field must be a finite number.');
+}
+
+List<Map<String, dynamic>> _parseList(
+  Map<String, dynamic> json,
+  String field,
+) {
+  final value = json[field];
+  if (value is! List) {
+    throw FormatException('Server sync $field must be an array.');
+  }
+  return value.map((item) {
+    if (item is! Map) {
+      throw FormatException('Server sync $field entries must be objects.');
+    }
+    return Map<String, dynamic>.from(item);
+  }).toList(growable: false);
+}
+
+void _validatePageCursors(
+  List<int> cursors,
+  int nextCursor,
+  bool hasMore,
+  String pageName,
+) {
+  if (hasMore && cursors.isEmpty) {
+    throw FormatException('$pageName page cannot be empty when hasMore is true.');
+  }
+  var previous = -1;
+  for (final cursor in cursors) {
+    if (cursor <= previous) {
+      throw FormatException('$pageName page cursors must be strictly increasing.');
+    }
+    previous = cursor;
+  }
+  if (cursors.isNotEmpty && nextCursor < cursors.last) {
+    throw FormatException('$pageName nextCursor cannot be behind its last change.');
+  }
+}
 
 class DetailAccountPullChange {
   const DetailAccountPullChange({
@@ -146,11 +227,24 @@ class DetailAccountPullChange {
   factory DetailAccountPullChange.fromJson(
     Map<String, dynamic> json,
   ) {
+    final entity = json['entity'];
+    if (entity is! Map) {
+      throw const FormatException('Detail-account change entity must be an object.');
+    }
+    final normalized = Map<String, dynamic>.from(entity);
+    _requiredText(normalized, 'id');
+    final revision = normalized['revision'];
+    if (revision is! num ||
+        !revision.isFinite ||
+        revision < 1 ||
+        revision != revision.toInt()) {
+      throw const FormatException(
+        'Detail-account revision must be a positive integer.',
+      );
+    }
     return DetailAccountPullChange(
-      cursor: (json['cursor'] as num).toInt(),
-      entity: Map<String, dynamic>.from(
-        json['entity'] as Map,
-      ),
+      cursor: _requiredCursor(json, 'cursor'),
+      entity: normalized,
     );
   }
 }
@@ -169,16 +263,21 @@ class DetailAccountPullPage {
   factory DetailAccountPullPage.fromJson(
     Map<String, dynamic> json,
   ) {
+    final nextCursor = _requiredCursor(json, 'nextCursor');
+    final hasMore = json['hasMore'] as bool? ?? false;
+    final changes = _parseList(json, 'changes')
+        .map((item) => DetailAccountPullChange.fromJson(item))
+        .toList(growable: false);
+    _validatePageCursors(
+      changes.map((change) => change.cursor).toList(growable: false),
+      nextCursor,
+      hasMore,
+      'detail-account',
+    );
     return DetailAccountPullPage(
-      nextCursor: (json['nextCursor'] as num).toInt(),
-      hasMore: json['hasMore'] as bool? ?? false,
-      changes: (json['changes'] as List<dynamic>)
-          .map(
-            (item) => DetailAccountPullChange.fromJson(
-              Map<String, dynamic>.from(item as Map),
-            ),
-          )
-          .toList(growable: false),
+      nextCursor: nextCursor,
+      hasMore: hasMore,
+      changes: changes,
     );
   }
 }
