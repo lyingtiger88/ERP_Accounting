@@ -39,6 +39,7 @@ class JournalPullLine {
     final exchangeRate = _optionalAmount(json['exchangeRate'], 'exchangeRate');
     if ((foreignDebit ?? 0) < 0 ||
         (foreignCredit ?? 0) < 0 ||
+        ((foreignDebit ?? 0) > 0 && (foreignCredit ?? 0) > 0) ||
         (exchangeRate != null && exchangeRate <= 0)) {
       throw const FormatException(
         'Foreign amounts must be non-negative and exchange rate must be positive.',
