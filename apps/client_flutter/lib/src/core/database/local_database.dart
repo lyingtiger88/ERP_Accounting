@@ -2121,6 +2121,8 @@ class LocalDatabase {
         {
           'sent_at': now,
           'last_error': 'Revision conflict',
+          'status': 'Conflict',
+          'next_attempt_at': null,
         },
         where: 'id = ?',
         whereArgs: [item.id],
@@ -3107,6 +3109,8 @@ class LocalDatabase {
         {
           'sent_at': now,
           'last_error': null,
+          'status': 'Sent',
+          'next_attempt_at': null,
         },
         where: 'id = ?',
         whereArgs: [outboxId],
@@ -3162,8 +3166,9 @@ class LocalDatabase {
 
       final attempts = (rows.first['attempt_count'] as int) + 1;
       final shouldRetry = retryable && attempts < maxAttempts;
-      final delaySeconds = (30 * (1 << (attempts - 1).clamp(0, 10)))
-          .clamp(30, 21600);
+      final exponent = (attempts - 1).clamp(0, 10).toInt();
+      final delaySeconds =
+          (30 * (1 << exponent)).clamp(30, 21600).toInt();
       final now = DateTime.now().toUtc();
       final nextAttempt = shouldRetry
           ? now.add(Duration(seconds: delaySeconds)).toIso8601String()
